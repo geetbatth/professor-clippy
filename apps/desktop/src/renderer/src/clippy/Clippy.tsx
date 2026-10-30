@@ -132,8 +132,14 @@ export function Clippy({ mood, big = false, seq = 0, look, mini = false, title, 
   const motion = motionFor(mood, big);
   const lean = leanFor(mood, useCursorDx(root, leansToCursor(mood) ? look : null));
 
-  // A new pose (or mode) changes what's solid under a cursor that hasn't moved.
-  useLayoutEffect(() => requestHitRecheck(), [pose, mini]);
+  // A new pose changes what's solid under a cursor that hasn't moved. Not on a mode switch:
+  // the window is about to resize and move, so the old cursor position means nothing there.
+  const lastMini = useRef(mini);
+  useLayoutEffect(() => {
+    const modeChanged = lastMini.current !== mini;
+    lastMini.current = mini;
+    if (!modeChanged) requestHitRecheck();
+  }, [pose, mini]);
 
   // Replay the one-shot motion when a new transient starts, even if it's the same as the last.
   const firstSeq = useRef(seq);

@@ -140,6 +140,18 @@ describe('createClickThrough', () => {
     expect(setIgnoreMouse).not.toHaveBeenCalled();
   });
 
+  it('forgets the cursor when the window resizes, keeping capture until the next move', () => {
+    const s = sprite((x) => x < 10);
+    const { ct, setIgnoreMouse } = setup([s, backdrop]);
+    ct.move(5, 5);
+    expect(setIgnoreMouse).toHaveBeenLastCalledWith(false);
+    ct.forget(); // mini -> expanded: (5,5) is now somewhere else on screen
+    ct.recheck();
+    expect(setIgnoreMouse).toHaveBeenCalledOnce();
+    ct.move(20, 5);
+    expect(setIgnoreMouse).toHaveBeenLastCalledWith(true);
+  });
+
   it('never flips mid-drag', () => {
     const s = sprite((x) => x < 10);
     const { ct, setIgnoreMouse, hold } = setup([s, backdrop]);

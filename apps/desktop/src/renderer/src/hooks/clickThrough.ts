@@ -63,6 +63,11 @@ export interface ClickThrough {
   leave(): void;
   /** Look again at the last cursor position (the layout changed under it). */
   recheck(): void;
+  /**
+   * The window moved or resized, so the last client position no longer points at the same spot
+   * on screen. Drop it (keeping the current capture state) until the next forwarded move.
+   */
+  forget(): void;
 }
 
 /** Click-through state (no React): starts letting clicks through, captures over solid parts. */
@@ -89,5 +94,8 @@ export function createClickThrough(opts: ClickThroughOptions): ClickThrough {
       if (!opts.hold()) set(false);
     },
     recheck: evaluate,
+    forget() {
+      last = undefined;
+    },
   };
 }

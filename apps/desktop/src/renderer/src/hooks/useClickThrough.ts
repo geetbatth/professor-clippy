@@ -16,7 +16,8 @@ export function requestHitRecheck(): void {
  * Click-through for the transparent window: main starts it ignoring the mouse (with
  * moves forwarded), and this flips capture on while the pointer is over an opaque part.
  * Never flips during a drag (`holdRef.current`), or the drag would lose the mouse.
- * Also looks again when the window resizes or a `requestHitRecheck()` says the layout changed.
+ * Looks again when a `requestHitRecheck()` says the layout changed under a still cursor; a
+ * resize (mini ↔ expanded) moves the window, so it forgets the old position instead.
  */
 export function useClickThrough(shell: ClippyWindowShell, holdRef: RefObject<boolean>, onSolidEnter: () => void): void {
   useEffect(() => {
@@ -29,13 +30,14 @@ export function useClickThrough(shell: ClippyWindowShell, holdRef: RefObject<boo
     const onMove = (e: MouseEvent) => ct.move(e.clientX, e.clientY);
     const onLeave = () => ct.leave();
     const onRecheck = () => ct.recheck();
+    const onResize = () => ct.forget();
     window.addEventListener('mousemove', onMove);
-    window.addEventListener('resize', onRecheck);
+    window.addEventListener('resize', onResize);
     window.addEventListener(RECHECK_EVENT, onRecheck);
     document.documentElement.addEventListener('mouseleave', onLeave);
     return () => {
       window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('resize', onRecheck);
+      window.removeEventListener('resize', onResize);
       window.removeEventListener(RECHECK_EVENT, onRecheck);
       document.documentElement.removeEventListener('mouseleave', onLeave);
     };
