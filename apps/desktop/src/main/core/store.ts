@@ -131,6 +131,8 @@ export class Store {
   readonly #bus: Bus | undefined;
   readonly #clock: Clock;
   readonly #ulid = monotonicFactory();
+  /** Events held back while a {@link transaction} is open; emitted on commit, dropped on rollback. */
+  #deferred: (() => void)[] | undefined;
 
   constructor(options: StoreOptions) {
     this.#bus = options.bus;
@@ -153,6 +155,30 @@ export class Store {
   /** New ULID whose time part is the injected clock's now. */
   newId(): string {
     return this.#ulid(this.#clock.now());
+  }
+
+  /**
+   * Run `fn` in a transaction. Bus events from writes inside it are emitted
+   * only after COMMIT (and dropped on ROLLBACK), so listeners never see a
+   * message that was rolled back. Not reentrant.
+   */
+  transaction<T>(fn: () => T): T {
+    if (this.#deferred) throw new Error('Store.transaction is not reentrant');
+    const deferred: (() => void)[] = [];
+    this.#deferred = deferred;
+    this.#db.exec('BEGIN');
+    let result: T;
+    try {
+      result = fn();
+      this.#db.exec('COMMIT');
+    } catch (err) {
+      this.#db.exec('ROLLBACK');
+      throw err;
+    } finally {
+      this.#deferred = undefined;
+    }
+    for (const emit of deferred) emit();
+    return result;
   }
 
   // ---- messages -------------------------------------------------------------
@@ -180,7 +206,7 @@ export class Store {
         missed: record.missed === undefined ? null : record.missed ? 1 : 0,
       });
     const message = this.getMessage(id)!;
-    this.#bus?.emit('message:new', message);
+    this.#emit('message:new', message);
     return message;
   }
 
@@ -253,7 +279,7 @@ export class Store {
       this.#db.prepare(`UPDATE messages SET ${sets.join(', ')} WHERE id = $id`).run(params);
     }
     const message = this.getMessage(id);
-    if (message) this.#bus?.emit('message:updated', message);
+    if (message) this.#emit('message:updated', message);
     return message;
   }
 
@@ -367,6 +393,13 @@ export class Store {
   }
 
   // ---- internals ------------------------------------------------------------
+
+  #emit<E extends 'message:new' | 'message:updated'>(event: E, message: Message): void {
+    const bus = this.#bus;
+    if (!bus) return;
+    if (this.#deferred) this.#deferred.push(() => bus.emit(event, message));
+    else bus.emit(event, message);
+  }
 
   #migrate(): void {
     for (let version = this.schemaVersion; version < MIGRATIONS.length; version++) {

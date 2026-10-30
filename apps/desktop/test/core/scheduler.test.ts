@@ -1,8 +1,8 @@
 import { Message, Reminder, type NewReminderInput } from '@clippy/shared';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Bus, type CoreEventMap } from '../../src/main/core/bus';
 import { NotFoundError, ValidationError } from '../../src/main/core/errors';
-import { MAX_ARM_MS, Scheduler } from '../../src/main/core/scheduler';
+import { ERROR_BACKOFF_MS, MAX_ARM_MS, Scheduler } from '../../src/main/core/scheduler';
 import { Store } from '../../src/main/core/store';
 import { FakeClock } from './fakeClock';
 
@@ -201,7 +201,10 @@ describe('Scheduler: recurring reminders', () => {
     ['BYDAY=MO', /FREQ is required/],
     ['FREQ=BOGUS', /Invalid rrule/],
     ['FREQ=DAILY;INTERVAL=x', /INTERVAL/],
-    ['FREQ=SECONDLY', /SECONDLY/],
+    ['FREQ=SECONDLY', /FREQ=SECONDLY is not supported/],
+    ['FREQ=MINUTELY', /FREQ=MINUTELY is not supported/],
+    ['FREQ=MINUTELY;INTERVAL=15', /MINUTELY/],
+    ['FREQ=DAILY;BYSECOND=30', /BYSECOND is not supported/],
     ['FREQ=DAILY;UNTIL=20200101T000000Z', /no occurrences in the future/],
   ])('rejects rrule %s', (rrule, error) => {
     expect(() => ctx.scheduler.create(input(T0 + HOUR, { rrule }))).toThrow(error);
@@ -326,6 +329,94 @@ describe('Scheduler: local time across DST', () => {
     clock.advanceTo(reminder.dueAt);
     expect(new Date(fired()[0]!.reminder.dueAt).toISOString()).toBe('2026-11-01T14:00:00.000Z'); // 09:00 EST
     expect(isoLocal(fired()[0]!.reminder.dueAt)).toBe('2026-11-01T09:00:00');
+    scheduler.stop();
+    store.close();
+  });
+
+  // Sun 1 Nov 2026: 01:00-02:00 local happens twice (EDT 05:00-06:00Z, then EST 06:00-07:00Z).
+  const SECOND_PASS = Date.parse('2026-11-01T06:10:00Z'); // 01:10 EST
+  const NEXT_DAY_0130 = '2026-11-02T06:30:00.000Z'; // 01:30 EST
+
+  it('creating during the repeated hour never schedules in the past', () => {
+    const { clock, store, scheduler, fired } = setup(SECOND_PASS);
+    scheduler.start();
+    const reminder = scheduler.create(input(0, { when: '2026-10-31T01:30:00', rrule: 'FREQ=DAILY' }));
+    // 01:30 today maps to 05:30Z (first pass), already over: next is tomorrow 01:30.
+    expect(new Date(reminder.dueAt).toISOString()).toBe(NEXT_DAY_0130);
+    clock.advance(0);
+    clock.advance(HOUR);
+    expect(fired()).toHaveLength(0);
+    scheduler.stop();
+    store.close();
+  });
+
+  it('catching up (start or resume) during the repeated hour fires once, not in a loop', () => {
+    const { clock, bus, store, scheduler, fired, reminderMessages } = setup(Date.parse('2026-10-31T12:00:00Z'));
+    scheduler.start();
+    scheduler.create(input(0, { when: '2026-10-31T01:30:00', rrule: 'FREQ=DAILY' })); // due Sun 01:30 EDT (05:30Z)
+    const other = scheduler.create(input(0, { when: '2026-10-31T01:45:00', rrule: 'FREQ=DAILY' }));
+    scheduler.stop();
+
+    clock.jump(SECOND_PASS - clock.now()); // off/asleep through 05:30Z, back at 01:10 EST
+    const restarted = new Scheduler({ store, bus, clock });
+    restarted.start();
+    expect(fired()).toHaveLength(2);
+    expect(reminderMessages().every((m) => m.missed)).toBe(true);
+    expect(restarted.list().map((r) => new Date(r.dueAt).toISOString())).toEqual([NEXT_DAY_0130, '2026-11-02T06:45:00.000Z']);
+    expect(clock.nextAt).toBeGreaterThan(SECOND_PASS);
+
+    restarted.onResume();
+    clock.advance(0);
+    clock.advanceTo(Date.parse('2026-11-01T07:00:00Z')); // rest of the repeated hour
+    expect(fired()).toHaveLength(2);
+    expect(store.getReminder(other.id)!.dueAt).toBe(Date.parse('2026-11-02T06:45:00Z'));
+    restarted.stop();
+    store.close();
+  });
+
+  it('a reminder fired on the first pass does not fire again on the second pass', () => {
+    const { clock, store, scheduler, fired } = setup(Date.parse('2026-11-01T05:00:00Z')); // 01:00 EDT
+    scheduler.start();
+    scheduler.create(input(0, { when: '2026-10-31T01:30:00', rrule: 'FREQ=DAILY' }));
+    clock.advanceTo(Date.parse('2026-11-01T07:00:00Z'));
+    expect(fired().map((f) => new Date(f.message.createdAt).toISOString())).toEqual(['2026-11-01T05:30:00.000Z']);
+    expect(new Date(scheduler.list()[0]!.dueAt).toISOString()).toBe(NEXT_DAY_0130);
+    scheduler.stop();
+    store.close();
+  });
+});
+
+describe('Scheduler: failures', () => {
+  it('backs off after a failing reminder, rolls back its message, and still fires the others', () => {
+    const { clock, store, scheduler, events, reminderMessages } = setup();
+    scheduler.start();
+    const bad = scheduler.create(input(T0 + MIN, { body: 'bad' }));
+    const good = scheduler.create(input(T0 + MIN, { body: 'good' }));
+    const original = store.updateReminder.bind(store);
+    const spy = vi.spyOn(store, 'updateReminder').mockImplementation((id, patch) => {
+      if (id === bad.id) throw new Error('disk on fire');
+      return original(id, patch);
+    });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    clock.advance(MIN);
+    // The good one fired; the bad one's message was rolled back and never announced.
+    expect(reminderMessages().map((m) => m.body)).toEqual(['good']);
+    expect(events.filter((e) => e.event === 'message:new').map((e) => (e.payload as Message).body)).toEqual(['good']);
+    expect(store.getReminder(good.id)!.active).toBe(false);
+    expect(store.getReminder(bad.id)!.active).toBe(true);
+    expect(errors).toHaveBeenCalledOnce();
+    // No busy loop: the retry waits ERROR_BACKOFF_MS.
+    expect(clock.pending).toBe(1);
+    expect(clock.nextAt).toBe(T0 + MIN + ERROR_BACKOFF_MS);
+    clock.advance(ERROR_BACKOFF_MS - 1);
+    expect(errors).toHaveBeenCalledOnce();
+
+    spy.mockRestore();
+    clock.advance(1);
+    expect(reminderMessages().map((m) => m.body)).toEqual(['bad', 'good']);
+    expect(scheduler.list()).toEqual([]);
+    errors.mockRestore();
     scheduler.stop();
     store.close();
   });

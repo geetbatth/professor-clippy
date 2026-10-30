@@ -3,8 +3,9 @@
  * reused afterwards.
  */
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { writeAtomic } from './files';
 
 const TOKEN_RE = /^[0-9a-f]{64}$/;
 
@@ -18,6 +19,6 @@ export async function loadOrCreateToken(file: string): Promise<string> {
   }
   const token = randomBytes(32).toString('hex');
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, token, { encoding: 'utf8', mode: 0o600 });
+  await writeAtomic(file, token, 0o600);
   return token;
 }

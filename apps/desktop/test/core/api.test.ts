@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MAX_LONG_POLL_S } from '@clippy/shared';
@@ -104,6 +104,14 @@ describe('local API (raw HTTP)', () => {
     });
   });
 
+  it('rejects a body over 1 MiB with 400 and accepts one just under', async () => {
+    const overhead = JSON.stringify({ body: '', sender: 's' }).length;
+    const big = await call('POST', '/messages', { body: 'x'.repeat(1024 * 1024 - overhead + 1), sender: 's' });
+    expect(big).toEqual({ status: 400, json: { error: 'Request body too large (max 1 MiB)' } });
+    const ok = await call('POST', '/messages', { body: 'x'.repeat(1024 * 1024 - overhead), sender: 's' });
+    expect(ok.status).toBe(201);
+  });
+
   it('parseWait defaults to 0 and clamps to MAX_LONG_POLL_S', () => {
     expect(parseWait(null)).toBe(0);
     expect(parseWait('')).toBe(0);
@@ -192,6 +200,7 @@ describe('startCore files', () => {
     expect(readFileSync(tokenFile, 'utf8')).toBe(first.token);
     expect(readFileSync(portFile, 'utf8')).toBe(String(first.port));
     expect(existsSync(join(dir, 'nested', 'clippy.db'))).toBe(true);
+    expect(readdirSync(join(dir, 'nested')).filter((f) => f.endsWith('.tmp'))).toEqual([]); // atomic writes leave no temp files
     await first.stop();
     await first.stop(); // idempotent
     expect(existsSync(portFile)).toBe(false);
@@ -200,6 +209,14 @@ describe('startCore files', () => {
     expect(second.token).toBe(first.token);
     expect(readFileSync(portFile, 'utf8')).toBe(String(second.port));
     await second.stop();
+  });
+
+  it('replaces a malformed token file', async () => {
+    writeFileSync(join(dir, 'token'), 'not-a-token');
+    const core = await startCore({ dataDir: dir });
+    expect(core.token).toMatch(/^[0-9a-f]{64}$/);
+    expect(readFileSync(join(dir, 'token'), 'utf8')).toBe(core.token);
+    await core.stop();
   });
 
   it('defaults to the shared app data dir (CLIPPY_HOME)', async () => {

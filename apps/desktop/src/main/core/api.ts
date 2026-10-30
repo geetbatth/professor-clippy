@@ -10,7 +10,7 @@
  *   to it. Missing/empty `wait` means 0 (answer immediately).
  */
 import { timingSafeEqual } from 'node:crypto';
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
@@ -28,6 +28,7 @@ import {
 import { z } from 'zod';
 import type { Asks } from './asks';
 import { CoreError, NotFoundError, ValidationError } from './errors';
+import { writeAtomic } from './files';
 import type { Scheduler } from './scheduler';
 import type { Store } from './store';
 
@@ -247,9 +248,10 @@ async function body<S extends z.ZodType>(req: IncomingMessage, schema: S): Promi
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY_BYTES) throw new ValidationError('Request body too large');
-    chunks.push(chunk as Buffer);
+    // Keep draining (and discarding) an oversized body so the client gets the 400, not a reset.
+    if (size <= MAX_BODY_BYTES) chunks.push(chunk as Buffer);
   }
+  if (size > MAX_BODY_BYTES) throw new ValidationError('Request body too large (max 1 MiB)');
   let json: unknown;
   try {
     json = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -273,12 +275,6 @@ function send(res: ServerResponse, reply: Reply): void {
       'cache-control': 'no-store',
     })
     .end(payload);
-}
-
-async function writeAtomic(file: string, contents: string): Promise<void> {
-  const tmp = `${file}.${process.pid}.tmp`;
-  await writeFile(tmp, contents, 'utf8');
-  await rename(tmp, file);
 }
 
 /** Remove the port file unless another instance has since overwritten it. */

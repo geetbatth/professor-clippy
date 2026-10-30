@@ -76,7 +76,7 @@ describe('ClippyClient ↔ core (end to end)', () => {
       sender: 'claude-code',
       project: 'shop',
     });
-    const once = await client.createReminder({ body: 'Call Bob', when: '2099-01-02T15:30:00Z', sender: 'claude-code' });
+    const once = await client.createReminder({ body: 'Call Bob', when: '2099-01-02T15:30Z', sender: 'claude-code' }); // minute precision + Z
     expect(weekly).toMatchObject({ active: true, rrule: 'FREQ=WEEKLY;BYDAY=MO', dueAt: new Date(2099, 0, 5, 9).getTime() });
     expect(once.dueAt).toBe(Date.UTC(2099, 0, 2, 15, 30));
     expect((await client.listReminders()).map((r) => r.id)).toEqual([once.id, weekly.id]);

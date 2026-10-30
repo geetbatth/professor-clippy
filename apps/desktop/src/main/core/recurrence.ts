@@ -25,13 +25,57 @@ export function normalizeRrule(rrule: string): string {
 }
 
 /**
- * First occurrence of `rrule` (anchored at `startAt`) after `after`, or at it when
- * `inclusive`. Epoch ms, or undefined when the rule has no more occurrences.
+ * First occurrence of `rrule` (anchored at `startAt`) strictly after `after`, or
+ * at/after it when `inclusive`. Epoch ms, or undefined when the rule has no more
+ * occurrences.
+ *
+ * The result is guaranteed to be > `after` (>= when inclusive) as a real instant.
+ * That isn't automatic: when the clocks fall back, a floating occurrence in the
+ * repeated hour maps to the *first* pass of that hour, which can lie before
+ * `after` during the second pass. Such occurrences are skipped (they already
+ * happened, on the first pass).
  */
 export function nextOccurrence(rrule: string, startAt: number, after: number, inclusive = false): number | undefined {
-  const rule = new RRule({ ...parseRrule(rrule), dtstart: toFloating(startAt) });
-  const next = rule.after(toFloating(after), inclusive);
-  return next ? fromFloating(next) : undefined;
+  const options = parseRrule(rrule);
+  const target = toFloating(after);
+  const rule = new RRule({ ...options, dtstart: new Date(fastForward(options, toFloating(startAt).getTime(), target.getTime())) });
+  let cursor = target;
+  let inc = inclusive;
+  for (let i = 0; i < 100; i++) {
+    const next = rule.after(cursor, inc);
+    if (!next) return undefined;
+    const at = fromFloating(next);
+    if (inclusive ? at >= after : at > after) return at;
+    cursor = next;
+    inc = false;
+  }
+  return undefined;
+}
+
+/** Allowed FREQ values (controller ruling, shared with the Worker). */
+const ALLOWED_FREQS = new Set<number>([Frequency.HOURLY, Frequency.DAILY, Frequency.WEEKLY, Frequency.MONTHLY, Frequency.YEARLY]);
+
+/** Fixed period of each FREQ in floating time (no DST there), for fast-forwarding. */
+const PERIOD_MS = new Map<number, number>([
+  [Frequency.HOURLY, 3_600_000],
+  [Frequency.DAILY, 86_400_000],
+  [Frequency.WEEKLY, 7 * 86_400_000],
+]);
+
+/**
+ * rrule iterates from DTSTART, so an old anchor makes every lookup slow (an
+ * hourly rule anchored 10 years back costs ~0.3 s). Without COUNT, moving the
+ * anchor forward by whole INTERVAL periods gives exactly the same future
+ * occurrences (period alignment and the defaults rrule derives from DTSTART,
+ * like time of day and weekday, are unchanged), so jump to within a period or
+ * two of `target`. MONTHLY/YEARLY rules have few iterations anyway.
+ */
+function fastForward(options: Partial<Options>, anchor: number, target: number): number {
+  const base = PERIOD_MS.get(options.freq!);
+  if (base === undefined || options.count != null) return anchor;
+  const period = base * (options.interval ?? 1);
+  const periods = Math.floor((target - anchor) / period) - 1;
+  return periods > 0 ? anchor + periods * period : anchor;
 }
 
 function parseRrule(rrule: string): Partial<Options> {
@@ -42,7 +86,10 @@ function parseRrule(rrule: string): Partial<Options> {
     throw new ValidationError(`Invalid rrule: ${(err as Error).message}`);
   }
   if (options.freq === undefined || options.freq === null) throw new ValidationError('Invalid rrule: FREQ is required');
-  if (options.freq === Frequency.SECONDLY) throw new ValidationError('Invalid rrule: FREQ=SECONDLY is not supported');
+  if (!ALLOWED_FREQS.has(options.freq)) {
+    throw new ValidationError(`Invalid rrule: FREQ=${Frequency[options.freq]} is not supported (use HOURLY, DAILY, WEEKLY, MONTHLY or YEARLY)`);
+  }
+  if (options.bysecond != null) throw new ValidationError('Invalid rrule: BYSECOND is not supported');
   for (const key of ['interval', 'count'] as const) {
     const value = options[key];
     if (value !== undefined && value !== null && !(Number.isInteger(value) && value > 0)) {

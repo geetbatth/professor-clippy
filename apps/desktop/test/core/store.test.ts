@@ -189,6 +189,28 @@ describe('Store', () => {
     expect(store.getReminder('01ARZ3NDEKTSV4RRFFQ69G5FA9')).toBeUndefined();
   });
 
+  it('transaction() emits events only after commit and drops them on rollback', () => {
+    const inside: number[] = [];
+    const result = store.transaction(() => {
+      store.createMessage({ kind: 'note', body: 'committed', sender: 's' });
+      inside.push(events.length);
+      return 42;
+    });
+    expect(result).toBe(42);
+    expect(inside).toEqual([0]);
+    expect(events.map(([e]) => e)).toEqual(['message:new']);
+
+    expect(() =>
+      store.transaction(() => {
+        store.createMessage({ kind: 'note', body: 'rolled back', sender: 's' });
+        throw new Error('nope');
+      }),
+    ).toThrow('nope');
+    expect(events).toHaveLength(1);
+    expect(store.listMessages().map((m) => m.body)).toEqual(['committed']);
+    expect(store.listMessages({ q: 'rolled' })).toEqual([]);
+  });
+
   it('has a key/value table', () => {
     expect(store.getKv('session')).toBeUndefined();
     store.setKv('session', 'abc');
