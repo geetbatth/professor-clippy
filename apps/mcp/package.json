@@ -6,7 +6,7 @@
   "description": "Professor Clippy stdio MCP server; forwards agent tool calls to the desktop app's local API.",
   "scripts": {
     "build": "vite build",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
