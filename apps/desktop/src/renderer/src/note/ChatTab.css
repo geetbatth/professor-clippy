@@ -1,0 +1,115 @@
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 300px;
+}
+.chat-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+.chat-log {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 4px 0 8px;
+}
+.chat-hint {
+  margin: 30px 18px;
+  text-align: center;
+  font: 13px/1.4 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;
+  color: rgba(74, 61, 18, 0.7);
+}
+.chat-line {
+  max-width: 82%;
+  padding: 6px 11px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.chat-line p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-line--user {
+  align-self: flex-end;
+  background: #4a3d12;
+  color: #fff8d1;
+  border-bottom-right-radius: 4px;
+}
+.chat-line--clippy {
+  align-self: flex-start;
+  background: #ffffff;
+  color: #2f2710;
+  border: 1px solid rgba(74, 61, 18, 0.15);
+  border-bottom-left-radius: 4px;
+}
+.chat-line--live p::after {
+  content: '▍';
+  margin-left: 1px;
+  animation: caret 0.9s steps(1) infinite;
+}
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+.chat-typing {
+  display: flex;
+  gap: 4px;
+  padding: 9px 12px;
+}
+.chat-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8a7a40;
+  animation: typing 1s ease-in-out infinite;
+}
+.chat-typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.chat-typing span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes typing {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+.chat-input {
+  position: sticky;
+  bottom: -18px;
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  padding: 8px 0 2px;
+  background: linear-gradient(180deg, rgba(255, 236, 110, 0), #ffe96e 30%);
+}
+.chat-input textarea {
+  flex: 1;
+  resize: none;
+  padding: 6px 10px;
+  border: 1px solid rgba(74, 61, 18, 0.3);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  outline: none;
+}
+.chat-input textarea:focus {
+  border-color: #4a3d12;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-typing span,
+  .chat-line--live p::after {
+    animation: none;
+  }
+}

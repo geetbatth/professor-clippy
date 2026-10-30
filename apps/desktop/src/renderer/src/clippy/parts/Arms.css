@@ -1,0 +1,289 @@
+.arm-wire {
+  fill: none;
+  stroke: #3f4855;
+  stroke-width: 3.6;
+  stroke-linecap: round;
+}
+.glove-palm,
+.glove-thumb {
+  fill: #ffffff;
+  stroke: #33373d;
+  stroke-width: 1.3;
+}
+.glove-line {
+  fill: none;
+  stroke: #8a9099;
+  stroke-width: 0.9;
+  stroke-linecap: round;
+}
+
+.arm {
+  transition: transform 450ms cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.arm-l {
+  transform-origin: 50px 106px;
+}
+.arm-r {
+  transform-origin: 92px 106px;
+}
+.glove-l {
+  transform-origin: 37px 128px;
+}
+.glove-r {
+  transform-origin: 105px 128px;
+}
+
+/* idle: arms hang and sway a touch out of step */
+.clippy[data-mood='idle'] .arm-l,
+.clippy[data-mood='blink'] .arm-l {
+  animation: arm-sway-l 3.8s ease-in-out infinite alternate;
+}
+.clippy[data-mood='idle'] .arm-r,
+.clippy[data-mood='blink'] .arm-r {
+  animation: arm-sway-r 4.3s ease-in-out infinite alternate;
+}
+@keyframes arm-sway-l {
+  from {
+    transform: rotate(-5deg);
+  }
+  to {
+    transform: rotate(6deg);
+  }
+}
+@keyframes arm-sway-r {
+  from {
+    transform: rotate(5deg);
+  }
+  to {
+    transform: rotate(-6deg);
+  }
+}
+
+/* read: hands clasped behind his back (tucked in) */
+.clippy[data-mood='read'] .arm-l {
+  transform: rotate(-38deg);
+}
+.clippy[data-mood='read'] .arm-r {
+  transform: rotate(38deg);
+}
+
+/* sleep: limp */
+.clippy[data-mood='sleep'] .arm-l {
+  transform: rotate(-14deg);
+}
+.clippy[data-mood='sleep'] .arm-r {
+  transform: rotate(16deg);
+}
+
+/* think: hand on chin, other hand on hip */
+.clippy[data-mood='think'] .arm-r {
+  transform: rotate(174deg);
+}
+.clippy[data-mood='think'] .arm-l {
+  transform: rotate(-30deg);
+}
+.clippy[data-mood='think'] .glove-r {
+  animation: chin-stroke 1.6s ease-in-out infinite;
+}
+@keyframes chin-stroke {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: translate(1.5px, -1.5px);
+  }
+}
+
+/* wake: arms fling out in alarm */
+.clippy[data-mood='wake'] .arm-l {
+  animation: arm-fling-l 1200ms ease-out;
+}
+.clippy[data-mood='wake'] .arm-r {
+  animation: arm-fling-r 1200ms ease-out;
+}
+@keyframes arm-fling-l {
+  0%,
+  100% {
+    transform: none;
+  }
+  12%,
+  60% {
+    transform: rotate(55deg);
+  }
+}
+@keyframes arm-fling-r {
+  0%,
+  100% {
+    transform: none;
+  }
+  12%,
+  60% {
+    transform: rotate(-55deg);
+  }
+}
+
+/* jump: arms up while airborne */
+.clippy[data-mood='jump'] .arm-l {
+  animation: arm-up-l 1100ms ease-in-out;
+}
+.clippy[data-mood='jump'] .arm-r {
+  animation: arm-up-r 1100ms ease-in-out;
+}
+@keyframes arm-up-l {
+  0%,
+  100% {
+    transform: none;
+  }
+  25%,
+  65% {
+    transform: rotate(105deg);
+  }
+}
+@keyframes arm-up-r {
+  0%,
+  100% {
+    transform: none;
+  }
+  25%,
+  65% {
+    transform: rotate(-105deg);
+  }
+}
+
+/* big jump: windmilling arms */
+.clippy[data-mood='jump'][data-big='true'] .arm-l {
+  animation: windmill-l 600ms linear 3;
+}
+.clippy[data-mood='jump'][data-big='true'] .arm-r {
+  animation: windmill-r 600ms linear 3;
+}
+@keyframes windmill-l {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes windmill-r {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+/* tapGlass: raise a fist and knock on the inside of the screen, three times.
+   The arm's own glove hides; KnockFist (drawn in front of the face) does the knocking. */
+.clippy-fist {
+  display: none;
+}
+.fist-knuckles,
+.fist-impact {
+  fill: none;
+  stroke: #33373d;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.fist-impact {
+  stroke-width: 1.7;
+  opacity: 0;
+}
+.fist {
+  transform-origin: 106px 85px;
+}
+.clippy[data-mood='tapGlass'] .clippy-fist {
+  display: inline;
+}
+.clippy[data-mood='tapGlass'] .arm-r {
+  animation: arm-knock 1600ms ease-in-out;
+}
+.clippy[data-mood='tapGlass'] .glove-r {
+  opacity: 0;
+}
+.clippy[data-mood='tapGlass'] .fist {
+  animation: fist-knock 1600ms ease-in-out;
+}
+.clippy[data-mood='tapGlass'] .fist-impact {
+  animation: impact-flash 1600ms linear;
+}
+.clippy[data-mood='tapGlass'] .arm-l {
+  transform: rotate(-30deg);
+}
+@keyframes arm-knock {
+  0%,
+  100% {
+    transform: none;
+  }
+  14%,
+  86% {
+    transform: rotate(-115deg);
+  }
+}
+@keyframes fist-knock {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  13%,
+  20%,
+  34%,
+  48%,
+  62%,
+  87% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  27%,
+  41%,
+  55% {
+    transform: scale(2);
+  }
+}
+@keyframes impact-flash {
+  0%,
+  25%,
+  31%,
+  39%,
+  45%,
+  53%,
+  59%,
+  100% {
+    opacity: 0;
+  }
+  27%,
+  29%,
+  41%,
+  43%,
+  55%,
+  57% {
+    opacity: 1;
+  }
+}
+
+/* celebrate: both arms up, waving */
+.clippy[data-mood='celebrate'] .arm-l {
+  animation: wave-l 480ms ease-in-out 5 alternate;
+}
+.clippy[data-mood='celebrate'] .arm-r {
+  animation: wave-r 480ms ease-in-out 5 alternate;
+}
+@keyframes wave-l {
+  from {
+    transform: rotate(92deg);
+  }
+  to {
+    transform: rotate(124deg);
+  }
+}
+@keyframes wave-r {
+  from {
+    transform: rotate(-92deg);
+  }
+  to {
+    transform: rotate(-124deg);
+  }
+}

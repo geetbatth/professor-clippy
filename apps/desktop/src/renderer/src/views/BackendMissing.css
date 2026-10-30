@@ -1,0 +1,23 @@
+.missing {
+  position: relative;
+  width: 140px;
+  height: 160px;
+}
+.missing-clippy {
+  position: absolute;
+  inset: 0 0 34px 0;
+}
+.missing-text {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 2px;
+  margin: 0;
+  padding: 3px 5px;
+  border: 1.5px solid #8e1b1b;
+  border-radius: 8px;
+  background: #fff4f2;
+  color: #8e1b1b;
+  font: 700 10px/1.2 'Segoe UI', sans-serif;
+  text-align: center;
+}

@@ -1,0 +1,162 @@
+/**
+ * In-memory `ClippyWindowApi` for developing and screenshotting the UI without the app's
+ * main process (`?mock=1`, or whenever `window.clippy` is missing). Chat replies stream
+ * through `chat:delta` / `chat:done` on timers, like the real brain.
+ */
+import { ulid } from 'ulid';
+import type { ClippyEvent, ClippyEventMap, ClippyWindowApi } from '@clippy/shared/ipc';
+import type { AskResult, Message, MessageFilter } from '@clippy/shared/schemas';
+import { applySettingsPatch, DEFAULT_SETTINGS, SettingsPatch, type Settings } from '@clippy/shared/settings';
+import { MOCK_REPLIES, sampleMessages } from './sampleData';
+
+export interface MockOptions {
+  now?: () => number;
+  /** Start with these messages instead of the samples. */
+  messages?: Message[];
+  /** Delay before the reply starts and between streamed chunks. */
+  thinkMs?: number;
+  chunkMs?: number;
+}
+
+export interface MockBackend extends ClippyWindowApi {
+  /** Simulate an agent posting a note (emits `message:new`). */
+  pushMessage(input: Partial<Message> & Pick<Message, 'body'>): Message;
+}
+
+function matches(m: Message, filter: MessageFilter): boolean {
+  if (filter.state && m.state !== filter.state) return false;
+  if (filter.kind && m.kind !== filter.kind) return false;
+  if (filter.q && !containsText(m, filter.q)) return false;
+  return true;
+}
+
+function containsText(m: Message, q: string): boolean {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  return [m.body, m.title, m.sender, m.project, m.answer].some((f) => f?.toLowerCase().includes(needle));
+}
+
+/** Newest first. */
+const byNewest = (a: Message, b: Message) => b.createdAt - a.createdAt;
+
+export function createMockBackend(opts: MockOptions = {}): MockBackend {
+  const now = opts.now ?? Date.now;
+  const thinkMs = opts.thinkMs ?? 900;
+  const chunkMs = opts.chunkMs ?? 60;
+  const messages = new Map((opts.messages ?? sampleMessages(now())).map((m) => [m.id, { ...m }]));
+  let settings: Settings = { ...DEFAULT_SETTINGS };
+  let replyIndex = 0;
+  const listeners = new Map<ClippyEvent, Set<(payload: never) => void>>();
+
+  function emit<E extends ClippyEvent>(event: E, payload: ClippyEventMap[E]): void {
+    for (const cb of listeners.get(event) ?? []) (cb as (p: ClippyEventMap[E]) => void)(payload);
+  }
+
+  function get(id: string): Message {
+    const m = messages.get(id);
+    if (!m) throw new Error(`No message ${id}`);
+    return m;
+  }
+
+  function update(id: string, patch: Partial<Message>): Message {
+    const next = { ...get(id), ...patch };
+    messages.set(id, next);
+    emit('message:updated', { ...next });
+    return { ...next };
+  }
+
+  function streamReply(): void {
+    const reply = MOCK_REPLIES[replyIndex++ % MOCK_REPLIES.length] ?? '';
+    const chunks = reply.match(/\S+\s*/g) ?? [reply];
+    emit('brain:state', 'thinking');
+    chunks.forEach((text, i) => setTimeout(() => emit('chat:delta', { text }), thinkMs + i * chunkMs));
+    setTimeout(() => {
+      const t = now();
+      const message: Message = {
+        id: ulid(t),
+        kind: 'chat',
+        body: reply,
+        sender: 'clippy',
+        role: 'clippy',
+        urgent: false,
+        state: 'done',
+        createdAt: t,
+      };
+      messages.set(message.id, message);
+      emit('chat:done', { message: { ...message } });
+      emit('brain:state', 'idle');
+    }, thinkMs + chunks.length * chunkMs);
+  }
+
+  return {
+    async listMessages(filter) {
+      return [...messages.values()].filter((m) => matches(m, filter)).sort(byNewest).map((m) => ({ ...m }));
+    },
+    async markDone(id) {
+      return update(id, { state: 'done', doneAt: now(), snoozedUntil: undefined });
+    },
+    async snooze(id, until) {
+      return update(id, { state: 'snoozed', snoozedUntil: until });
+    },
+    async answerAsk(id, answer): Promise<AskResult> {
+      const m = get(id);
+      if (m.kind !== 'ask') throw new Error(`${id} is not an ask`);
+      update(id, { answer, answeredVia: 'desk', state: 'done', doneAt: now() });
+      return { id, status: 'answered', answer, answeredVia: 'desk' };
+    },
+    async sendChat(text) {
+      const t = now();
+      const message: Message = {
+        id: ulid(t),
+        kind: 'chat',
+        body: text,
+        sender: 'user',
+        role: 'user',
+        urgent: false,
+        state: 'done',
+        createdAt: t,
+      };
+      messages.set(message.id, message);
+      streamReply();
+      return { ...message };
+    },
+    async newChat() {},
+    async searchHistory(q) {
+      return [...messages.values()]
+        .filter((m) => m.state === 'done' && m.kind !== 'chat' && containsText(m, q))
+        .sort(byNewest)
+        .map((m) => ({ ...m }));
+    },
+    async getSettings() {
+      return { ...settings };
+    },
+    async setSettings(patch) {
+      settings = applySettingsPatch(settings, SettingsPatch.parse(patch));
+      return { ...settings };
+    },
+    on(event, cb) {
+      const set = listeners.get(event) ?? new Set();
+      listeners.set(event, set);
+      const fn = cb as (payload: never) => void;
+      set.add(fn);
+      return () => {
+        set.delete(fn);
+      };
+    },
+    pushMessage(input) {
+      const t = now();
+      const message: Message = {
+        kind: 'note',
+        sender: 'claude-code',
+        urgent: false,
+        state: 'unread',
+        createdAt: t,
+        ...input,
+        id: input.id ?? ulid(t),
+      };
+      messages.set(message.id, message);
+      emit('message:new', { ...message });
+      return { ...message };
+    },
+  };
+}

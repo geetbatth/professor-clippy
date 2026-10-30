@@ -7,10 +7,12 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:renderer": "vite --config src/renderer/vite.config.mjs",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "harness": "node scripts/run-harness.mjs"
   },
   "dependencies": {
     "@clippy/shared": "0.1.0",

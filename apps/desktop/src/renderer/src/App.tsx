@@ -1,7 +1,149 @@
-export function App() {
-  return (
-    <main style={{ fontFamily: 'Segoe UI, sans-serif', display: 'grid', placeItems: 'center', height: '100vh', margin: 0 }}>
-      <h1>Professor Clippy</h1>
-    </main>
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Message } from '@clippy/shared/schemas';
+import type { WindowMode } from '../../main/window/windowApi';
+import { TrackingClippy } from './clippy/TrackingClippy';
+import { useClippyMood, type ClippyMood } from './clippy/useClippyMood';
+import { useAdvice } from './hooks/useAdvice';
+import { useAutoCollapse } from './hooks/useAutoCollapse';
+import { useChat } from './hooks/useChat';
+import { useClickThrough } from './hooks/useClickThrough';
+import { useSettings } from './hooks/useSettings';
+import { useUnread } from './hooks/useUnread';
+import { useWindowDrag } from './hooks/useWindowDrag';
+import { ChatTab } from './note/ChatTab';
+import { HistoryTab } from './note/HistoryTab';
+import { NotesTab } from './note/NotesTab';
+import { SettingsTab } from './note/SettingsTab';
+import { StickyNote, type Tab } from './note/StickyNote';
+import { pickQuip, quipForMessage } from './quips/pickQuip';
+import type { Runtime } from './runtime';
+import { createSoundBoard } from './sound/sounds';
+import { BrowserFrame } from './views/BrowserFrame';
+import { ExpandedView } from './views/ExpandedView';
+import { MiniView } from './views/MiniView';
+import { SpeechBubble } from './views/SpeechBubble';
+
+/** The open note tucks itself away after this long with nothing to show and nobody about. */
+const AUTO_COLLAPSE_MS = 2 * 60_000;
+const TABS: readonly Tab[] = ['notes', 'chat', 'history', 'settings'];
+
+export function App({ runtime }: { runtime: Runtime }) {
+  const { api, shell } = runtime;
+  // Dev/screenshot hooks: ?mode=expanded&tab=chat
+  const params = useMemo(() => new URLSearchParams(location.search), []);
+  const [mode, setModeState] = useState<WindowMode>(params.get('mode') === 'expanded' ? 'expanded' : 'mini');
+  const [tab, setTab] = useState<Tab>(TABS.find((t) => t === params.get('tab')) ?? 'notes');
+  const [quip, setQuip] = useState<string>();
+  const [wiggle, setWiggle] = useState(0);
+
+  const settingsState = useSettings(api);
+  const { settings } = settingsState;
+  const soundOn = useRef(true);
+  soundOn.current = settings?.soundEnabled ?? true;
+  const sounds = useMemo(() => createSoundBoard(() => soundOn.current), []);
+  const chat = useChat(api);
+
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const moodRef = useRef<ClippyMood>(null);
+  const lastActivity = useRef(Date.now());
+
+  const setMode = useCallback(
+    (m: WindowMode) => {
+      setModeState(m);
+      shell.setMode(m);
+      if (m === 'mini') setQuip(undefined);
+    },
+    [shell],
   );
+  useEffect(() => shell.setMode(modeRef.current), [shell]);
+  useEffect(() => shell.onModeChanged(setModeState), [shell]);
+
+  /** Pop the note open (if tucked away) on the Notes tab. */
+  const open = useCallback(() => {
+    if (modeRef.current === 'mini') {
+      setTab('notes');
+      setMode('expanded');
+    }
+  }, [setMode]);
+
+  const onNewMessage = useCallback(
+    (m: Message) => {
+      moodRef.current?.message(m.urgent);
+      sounds.play('ding');
+      setQuip((last) => quipForMessage(m, new Date(), Math.random, last));
+      setWiggle((w) => w + 1);
+      lastActivity.current = Date.now();
+      open();
+    },
+    [sounds, open],
+  );
+  const stack = useUnread(api, onNewMessage);
+  const unread = stack.messages.length;
+
+  const mood = useClippyMood({ unread, thinking: chat.thinking, expanded: mode === 'expanded' });
+  moodRef.current = mood;
+
+  // Antics come with sound effects.
+  useEffect(() => {
+    if (mood.mood === 'tapGlass') sounds.play('tap');
+    else if (mood.mood === 'jump' && mood.big) sounds.play('boing');
+  }, [mood.seq, mood.mood, mood.big, sounds]);
+
+  const activity = useCallback(() => {
+    lastActivity.current = Date.now();
+    moodRef.current?.activity();
+  }, []);
+  useEffect(() => {
+    const events = ['pointerdown', 'keydown', 'wheel'] as const;
+    events.forEach((e) => window.addEventListener(e, activity, { passive: true }));
+    return () => events.forEach((e) => window.removeEventListener(e, activity));
+  }, [activity]);
+
+  const draggingRef = useRef(false);
+  useClickThrough(shell, draggingRef, activity);
+  const toggleMode = useCallback(() => setMode(modeRef.current === 'mini' ? 'expanded' : 'mini'), [setMode]);
+  const clippyDrag = useWindowDrag(shell, draggingRef, toggleMode);
+  const noteDrag = useWindowDrag(shell, draggingRef);
+
+  useAdvice(settings?.unsolicitedAdvice ?? false, () => {
+    setQuip((last) => pickQuip('advice', Math.random, last));
+    moodRef.current?.message(false);
+    open();
+  });
+  useAutoCollapse(mode === 'expanded' && unread === 0 && !chat.thinking, lastActivity, AUTO_COLLAPSE_MS, () => setMode('mini'));
+
+  const dismissQuip = useCallback(() => setQuip(undefined), []);
+
+  const clippy = (
+    <TrackingClippy
+      shell={shell}
+      mood={mood.mood}
+      big={mood.big}
+      seq={mood.seq}
+      shadow={mode === 'mini'}
+      title="Professor Clippy: drag me, or click me"
+      {...clippyDrag}
+    />
+  );
+
+  const view =
+    mode === 'mini' ? (
+      <MiniView clippy={clippy} unread={unread} urgent={stack.messages.some((m) => m.urgent)} onBadgeClick={open} />
+    ) : (
+      <ExpandedView
+        clippy={clippy}
+        bubble={quip && <SpeechBubble text={quip} onDismiss={dismissQuip} />}
+        note={
+          <StickyNote tab={tab} onTab={setTab} unread={unread} onCollapse={() => setMode('mini')} drag={noteDrag} wiggleKey={wiggle}>
+            {tab === 'notes' && <NotesTab stack={stack} />}
+            {tab === 'chat' && <ChatTab chat={chat} />}
+            {tab === 'history' && <HistoryTab api={api} />}
+            {tab === 'settings' && <SettingsTab state={settingsState} />}
+          </StickyNote>
+        }
+      />
+    );
+
+  return runtime.browser ? <BrowserFrame mode={mode}>{view}</BrowserFrame> : view;
 }
