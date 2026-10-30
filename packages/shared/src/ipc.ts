@@ -44,6 +44,33 @@ export interface ClaudeWiringReport {
   warnings: string[];
 }
 
+/** Telegram connection state, for the Settings status line. */
+export type TelegramState = 'off' | 'connecting' | 'connected' | 'error';
+
+/** What Settings shows about Telegram. Never contains the token. */
+export interface TelegramStatus {
+  /** A bot token is saved (encrypted). */
+  tokenSaved: boolean;
+  /** `off` without a token; otherwise the long-poll's state. */
+  state: TelegramState;
+  /** Why the last call failed (token redacted), when `state` is `error`. */
+  error?: string;
+  /** The bot's @username, once Telegram has confirmed the token. */
+  botUsername?: string;
+  /** The paired private chat. */
+  chatId?: number;
+  /** First name of the paired user. */
+  chatName?: string;
+  /** Token saved but no chat paired: send `/start <code>` to the bot to pair. */
+  pairingCode?: string;
+}
+
+/** Result of "Send test". */
+export interface TelegramTestResult {
+  ok: boolean;
+  error?: string;
+}
+
 /** Request/response API the renderer calls (all async, via `ipcRenderer.invoke`). */
 export interface ClippyBackend {
   /** Messages matching a filter (e.g. `{ state: 'unread' }` for the sticky-note stack). */
@@ -68,6 +95,17 @@ export interface ClippyBackend {
    * log; call `'install'` only after the user confirms.
    */
   connectClaude(step: ClaudeWiringStep): Promise<ClaudeWiringReport>;
+  /** Telegram's state, pairing code and paired chat. */
+  telegramStatus(): Promise<TelegramStatus>;
+  /**
+   * Save the bot token (main encrypts it with `safeStorage`), or clear it with `null`, which
+   * stops Telegram. Rejects a token that doesn't look like one (`123456:ABC...`).
+   */
+  setTelegramToken(token: string | null): Promise<TelegramStatus>;
+  /** Forget the paired chat; a new pairing code is shown. */
+  telegramUnpair(): Promise<TelegramStatus>;
+  /** Send a test message to the paired chat. */
+  telegramSendTest(): Promise<TelegramTestResult>;
 }
 
 /** `ipcMain.handle` / `ipcRenderer.invoke` channel for each backend method. */
@@ -82,6 +120,10 @@ export const IpcInvoke = {
   getSettings: 'clippy:getSettings',
   setSettings: 'clippy:setSettings',
   connectClaude: 'clippy:connectClaude',
+  telegramStatus: 'clippy:telegramStatus',
+  setTelegramToken: 'clippy:setTelegramToken',
+  telegramUnpair: 'clippy:telegramUnpair',
+  telegramSendTest: 'clippy:telegramSendTest',
 } as const satisfies { [K in keyof ClippyBackend]: `clippy:${K}` };
 
 /** Push-event channels (main → renderer via `webContents.send`). */

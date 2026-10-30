@@ -17,6 +17,8 @@ describe('createBackend', () => {
   let asked: [string, unknown][];
   let newChats: number;
   let backend: ReturnType<typeof createBackend>;
+  let settings: SettingsStore;
+  let telegramCalls: unknown[][];
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'clippy-backend-'));
@@ -35,7 +37,21 @@ describe('createBackend', () => {
       },
     };
     const claudeWiring = { connect: async (step: string) => ({ ok: true, log: [step], warnings: [] }) };
-    backend = createBackend({ store, asks, brain, settings: await SettingsStore.load(join(dir, 'settings.json')), claudeWiring });
+    telegramCalls = [];
+    const telegram = {
+      status: () => ({ tokenSaved: false, state: 'off' as const }),
+      setToken: async (token: string | null) => {
+        telegramCalls.push(['setToken', token]);
+        return { tokenSaved: token !== null, state: 'connecting' as const };
+      },
+      unpair: async () => {
+        telegramCalls.push(['unpair']);
+        return { tokenSaved: true, state: 'connected' as const, pairingCode: 'ABC234' };
+      },
+      sendTest: async () => ({ ok: false, error: 'not paired' }),
+    };
+    settings = await SettingsStore.load(join(dir, 'settings.json'));
+    backend = createBackend({ store, asks, brain, settings, claudeWiring, telegram });
   });
   afterEach(() => {
     store.close();
@@ -78,6 +94,27 @@ describe('createBackend', () => {
     expect((await backend.getSettings()).soundEnabled).toBe(true);
     expect((await backend.setSettings({ soundEnabled: false })).soundEnabled).toBe(false);
     expect((await backend.getSettings()).soundEnabled).toBe(false);
+  });
+
+  it('never hands the encrypted Telegram token to the renderer', async () => {
+    const secrets = { available: () => true, encrypt: (s: string) => `enc(${s})`, decrypt: (s: string) => s.slice(4, -1) };
+    const withToken = await SettingsStore.load(join(dir, 'settings.json'), { secrets });
+    await withToken.setTelegramToken('123456:AAHfakefakefakefakefakefake');
+    const b = createBackend({ store, asks, brain: { ask: async () => ({}), newChat: () => {} }, settings: withToken, claudeWiring: { connect: async () => ({ ok: true, log: [], warnings: [] }) }, telegram: { status: () => ({ tokenSaved: true, state: 'off' }), setToken: async () => ({ tokenSaved: true, state: 'off' }), unpair: async () => ({ tokenSaved: true, state: 'off' }), sendTest: async () => ({ ok: true }) } });
+    expect(withToken.get().telegramBotTokenEnc).toBeDefined();
+    expect(await b.getSettings()).not.toHaveProperty('telegramBotTokenEnc');
+    expect(await b.setSettings({ telegramChatId: 42 })).toMatchObject({ telegramChatId: 42 });
+    expect(await b.setSettings({ soundEnabled: false })).not.toHaveProperty('telegramBotTokenEnc');
+  });
+
+  it('forwards the Telegram controls', async () => {
+    expect(await backend.telegramStatus()).toEqual({ tokenSaved: false, state: 'off' });
+    expect(await backend.setTelegramToken('123:x')).toMatchObject({ tokenSaved: true });
+    expect(await backend.setTelegramToken(null)).toMatchObject({ tokenSaved: false });
+    expect(await backend.telegramUnpair()).toMatchObject({ pairingCode: 'ABC234' });
+    expect(await backend.telegramSendTest()).toEqual({ ok: false, error: 'not paired' });
+    expect(telegramCalls).toEqual([['setToken', '123:x'], ['setToken', null], ['unpair']]);
+    expect(settings.get()).toBeDefined();
   });
 
   it('forwards Connect Claude Code to the wiring', async () => {

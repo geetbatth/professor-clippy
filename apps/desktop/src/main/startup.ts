@@ -1,12 +1,16 @@
 /**
- * Starts the app's services in an order that loses no WhatsApp mirroring:
+ * Starts the app's services in an order that loses no WhatsApp or Telegram mirroring:
  *
- * 1. settings and the brain's config files (async, before anything is listening);
- * 2. `startCore` (its API is live, and the port file written, when this resolves);
- * 3. then **synchronously**, with no `await` in between: the brain and the relay, which
- *    subscribes to the bus. An agent (often the MCP server that just launched the app) can
- *    post as soon as `/health` answers; its request is only handled on a later turn of the
- *    event loop, by which time the relay is listening.
+ * 1. settings (encrypting a plaintext Telegram token) and the brain's config files (async,
+ *    before anything is listening);
+ * 2. `startCore` (its API is live, and the port file written, when this resolves). Its
+ *    scheduler catch-up (reminders missed while the app was off) fires inside it, so the
+ *    messages it creates are collected from the bus meanwhile;
+ * 3. then **synchronously**, with no `await` in between: the brain, the relay and Telegram,
+ *    which subscribe to the bus; Telegram is then handed the catch-up messages. An agent
+ *    (often the MCP server that just launched the app) can post as soon as `/health`
+ *    answers; its request is only handled on a later turn of the event loop, by which time
+ *    both channels are listening.
  *
  * Electron-free, so the ordering is testable.
  */
@@ -14,8 +18,10 @@ import { Bus } from './core/bus';
 import { startCore as defaultStartCore, type Core, type StartCoreOptions } from './core/core';
 import { Brain, type BrainOptions } from './brain/brain';
 import { writeBrainFiles, type McpConfigInput } from './brain/mcpConfig';
+import type { Message } from '@clippy/shared';
 import { RelayManager, type RelayManagerOptions } from './relay';
-import { SettingsStore } from './settings';
+import { SettingsStore, type SecretBox } from './settings';
+import { TelegramManager, type TelegramManagerOptions } from './telegram';
 
 export interface StartServicesOptions {
   dataDir: string;
@@ -32,6 +38,10 @@ export interface StartServicesOptions {
   startCore?: (options: StartCoreOptions) => Promise<Core>;
   makeTransport?: RelayManagerOptions['makeTransport'];
   relayLog?: RelayManagerOptions['log'];
+  /** Encrypts the Telegram bot token at rest (Electron `safeStorage` in the app). */
+  secrets?: SecretBox;
+  /** Telegram test seams (fake Bot API server, short timings). */
+  telegram?: Omit<TelegramManagerOptions, 'store' | 'bus' | 'asks' | 'brain' | 'settings'>;
 }
 
 export interface Services {
@@ -39,17 +49,27 @@ export interface Services {
   settings: SettingsStore;
   brain: Brain;
   relay: RelayManager;
+  telegram: TelegramManager;
 }
 
 export async function startServices(options: StartServicesOptions): Promise<Services> {
-  const settings = await SettingsStore.load(options.settingsFile);
+  const settings = await SettingsStore.load(options.settingsFile, { ...(options.secrets && { secrets: options.secrets }) });
   const brainFiles = await writeBrainFiles(options.dataDir, options.mcp);
   const bus = options.bus ?? new Bus();
-  const core = await (options.startCore ?? defaultStartCore)({
-    dataDir: options.dataDir,
-    bus,
-    ...(options.version !== undefined && { version: options.version }),
-  });
+  // Reminders the scheduler catches up on inside startCore (missed while the app was off):
+  // Telegram has no Worker to have sent them, so it gets them once it is listening.
+  const early: Message[] = [];
+  const stopCollecting = bus.on('message:new', (m) => early.push(m));
+  let core: Core;
+  try {
+    core = await (options.startCore ?? defaultStartCore)({
+      dataDir: options.dataDir,
+      bus,
+      ...(options.version !== undefined && { version: options.version }),
+    });
+  } finally {
+    stopCollecting();
+  }
 
   // ---- no await from here on: the API is live ----
   const brain = new Brain({
@@ -68,6 +88,19 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
     ...(options.relayLog && { log: options.relayLog }),
   });
   relay.apply(settings.get());
-  settings.onChange((next) => relay.apply(next));
-  return { core, settings, brain, relay };
+  const telegram = new TelegramManager({
+    ...options.telegram,
+    store: core.store,
+    bus,
+    asks: core.asks,
+    brain,
+    settings,
+  });
+  telegram.apply();
+  telegram.replay(early);
+  settings.onChange((next) => {
+    relay.apply(next);
+    telegram.apply();
+  });
+  return { core, settings, brain, relay, telegram };
 }

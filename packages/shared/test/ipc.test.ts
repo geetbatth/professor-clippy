@@ -13,7 +13,11 @@ describe('IPC channels', () => {
       'searchHistory',
       'sendChat',
       'setSettings',
+      'setTelegramToken',
       'snooze',
+      'telegramSendTest',
+      'telegramStatus',
+      'telegramUnpair',
     ]);
     expectTypeOf<keyof typeof IpcInvoke>().toEqualTypeOf<keyof ClippyBackend>();
     expect(new Set(Object.values(IpcInvoke)).size).toBe(Object.keys(IpcInvoke).length);

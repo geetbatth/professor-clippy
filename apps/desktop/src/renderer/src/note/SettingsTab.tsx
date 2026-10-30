@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { ClippyWindowApi } from '@clippy/shared/ipc';
+import type { ClippyWindowApi, TelegramStatus } from '@clippy/shared/ipc';
 import type { Settings } from '@clippy/shared/settings';
 import type { SettingsState } from '../hooks/useSettings';
 import { ASK_WAIT_MAX_MINUTES, ASK_WAIT_MIN_MINUTES, askWaitMinutes, parseAskWait } from './askWait';
 import { ConnectClaude } from './ConnectClaude';
 import { relayBadge, relayPatch } from './firstRun';
+import { TelegramBadge, TelegramSetup } from './TelegramSetup';
 import './SettingsTab.css';
 
 type Toggle = { [K in keyof Settings]-?: Settings[K] extends boolean ? K : never }[keyof Settings];
@@ -17,7 +18,7 @@ const TOGGLES: readonly { key: Toggle; label: string; hint: string }[] = [
   { key: 'autoStart', label: 'Start with Windows', hint: 'Clippy turns up for work when you do.' },
 ];
 
-/** Every `Settings` option: toggles, the default ask wait, the WhatsApp relay, and Claude Code wiring. */
+/** Every `Settings` option: toggles, the default ask wait, WhatsApp, Telegram, and Claude Code wiring. */
 export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: SettingsState }) {
   const { settings, update, error } = state;
   const [workerUrl, setWorkerUrl] = useState('');
@@ -26,6 +27,7 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
 
   const [askWait, setAskWait] = useState('');
   const [askWaitError, setAskWaitError] = useState(false);
+  const [telegram, setTelegram] = useState<TelegramStatus>();
 
   useEffect(() => {
     setWorkerUrl(settings?.workerUrl ?? '');
@@ -167,6 +169,14 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
       </fieldset>
       {relayError && <p className="card-error">{relayError}</p>}
       {error && <p className="card-error">Couldn't save that: {error}</p>}
+
+      <fieldset className="setting-group">
+        <legend>
+          Telegram <TelegramBadge status={telegram} />
+        </legend>
+        <span className="setting-hint">Notes, reminders and questions on your phone through your own bot, no Worker needed.</span>
+        <TelegramSetup api={api} update={update} onStatus={setTelegram} />
+      </fieldset>
 
       <fieldset className="setting-group">
         <legend>Claude Code</legend>

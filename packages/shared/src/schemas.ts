@@ -21,7 +21,7 @@ export const MessageState = z.enum(['unread', 'done', 'snoozed']);
 export type MessageState = z.infer<typeof MessageState>;
 
 /** Where an ask was answered from. */
-export const AnsweredVia = z.enum(['desk', 'whatsapp', 'clippy']);
+export const AnsweredVia = z.enum(['desk', 'whatsapp', 'telegram', 'clippy']);
 export type AnsweredVia = z.infer<typeof AnsweredVia>;
 
 /** Who wrote a chat line (only meaningful for `kind: 'chat'`). */
@@ -51,6 +51,11 @@ export const Message = z.object({
   snoozedUntil: Timestamp.optional(),
   /** WhatsApp message id of the mirrored copy (used to match quote-replies). */
   waId: z.string().optional(),
+  /**
+   * Telegram `message_id` of the mirrored copy in the paired chat (used to route replies and
+   * button taps, and to edit an answered ask). Optional, so older stored messages still parse.
+   */
+  tgMsgId: z.number().int().optional(),
   /** Suggested answers for an `ask`. */
   options: z.array(z.string()).optional(),
   /** The answer to an `ask`, once given. */

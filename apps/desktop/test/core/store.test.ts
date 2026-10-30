@@ -257,12 +257,12 @@ describe('Store on disk', () => {
   it('migrates once and persists data and the FTS index across reopen', () => {
     const path = join(dir, 'clippy.db');
     const first = new Store({ path });
-    expect(first.schemaVersion).toBe(2);
+    expect(first.schemaVersion).toBe(3);
     const m = first.createMessage({ kind: 'note', body: 'persist me please', sender: 's' });
     first.close();
 
     const second = new Store({ path });
-    expect(second.schemaVersion).toBe(2);
+    expect(second.schemaVersion).toBe(3);
     expect(second.getMessage(m.id)).toEqual(m);
     expect(second.listMessages({ q: 'persist' }).map((x) => x.id)).toEqual([m.id]);
     second.close();
@@ -284,10 +284,23 @@ describe('Store on disk', () => {
       PRAGMA user_version = 1;`);
     v1.close();
     const store = new Store({ path });
-    expect(store.schemaVersion).toBe(2);
+    expect(store.schemaVersion).toBe(3);
     expect(store.getMessage('01ARZ3NDEKTSV4RRFFQ69G5FAV')?.body).toBe('old');
     store.createMessage({ kind: 'reminder', body: 'new', sender: 's', reminderId: 'R' });
     expect(store.findLatestReminderMessage('R')?.body).toBe('new');
+    store.close();
+  });
+
+  it('stores and finds the Telegram message id (version 3), and clears it with null', () => {
+    const store = new Store({ path: join(dir, 'tg.db') });
+    const old = store.createMessage({ kind: 'note', body: 'before Telegram', sender: 's' });
+    expect(old).not.toHaveProperty('tgMsgId');
+    const m = store.createMessage({ kind: 'ask', body: 'Ship?', sender: 's', tgMsgId: 7 });
+    expect(m.tgMsgId).toBe(7);
+    expect(store.findMessageByTgMsgId(7)?.id).toBe(m.id);
+    expect(store.updateMessage(old.id, { tgMsgId: 8 })?.tgMsgId).toBe(8);
+    expect(store.updateMessage(old.id, { tgMsgId: null })).not.toHaveProperty('tgMsgId');
+    expect(store.findMessageByTgMsgId(8)).toBeUndefined();
     store.close();
   });
 });

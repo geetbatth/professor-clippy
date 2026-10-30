@@ -1,6 +1,7 @@
 /**
  * Professor Clippy's Electron main process: one instance, the core service (local API,
- * SQLite, scheduler), settings, the brain, the WhatsApp relay, the Clippy window and a tray icon.
+ * SQLite, scheduler), settings, the brain, the WhatsApp relay, Telegram, the Clippy window and a
+ * tray icon.
  */
 import { homedir } from 'node:os';
 import { app, powerMonitor } from 'electron';
@@ -14,6 +15,7 @@ import { startServices } from './startup';
 import { createTray, type ClippyTray } from './tray';
 import { createClippyWindow, type ClippyWindow } from './window/createClippyWindow';
 import { registerIpc, type ClippyIpc } from './window/registerIpc';
+import { electronSecretBox } from './secrets';
 import { runInstallInUtilityProcess } from './wiringProcess';
 
 let clippy: ClippyWindow | undefined;
@@ -53,14 +55,18 @@ async function main(): Promise<void> {
     mainDir: import.meta.dirname,
   });
   if (!mcpServerPath) console.warn('[clippy] MCP server not built (apps/mcp/dist/index.js); the brain runs without clippy tools');
-  // Settings, core, brain and relay; the relay is subscribed before any API request is handled.
-  const { core, settings, brain, relay } = await startServices({
+  // Settings, core, brain, relay and Telegram; both channels are subscribed before any API
+  // request is handled.
+  const { core, settings, brain, relay, telegram } = await startServices({
     dataDir,
     settingsFile: settingsPath(),
     version: app.getVersion(),
     bus,
     mcp: mcpServerPath ? { serverPath: mcpServerPath, dataDir, nodePath: findNode(), execPath: process.execPath } : undefined,
     brain: { emit, cwd: homedir() },
+    secrets: electronSecretBox,
+    // A fake Bot API for trying Telegram out without the real one (default api.telegram.org).
+    ...(process.env.CLIPPY_TELEGRAM_API && { telegram: { baseUrl: process.env.CLIPPY_TELEGRAM_API } }),
   });
 
   const claudeWiring = createClaudeWiring({
@@ -75,7 +81,7 @@ async function main(): Promise<void> {
     findClaude: () => resolveClaude(),
     runInstall: (job) => runInstallInUtilityProcess(job),
   });
-  const backend = createBackend({ store: core.store, asks: core.asks, brain, settings, claudeWiring });
+  const backend = createBackend({ store: core.store, asks: core.asks, brain, settings, claudeWiring, telegram });
   clippy = createClippyWindow({
     loadPos: () => settings.get().windowPos,
     savePos: (windowPos) => {
@@ -115,26 +121,29 @@ async function main(): Promise<void> {
     core.scheduler.onResume();
     // The socket may have died silently while asleep: reconnect now rather than on the next ping.
     relay.reconnect();
+    telegram.poke();
   });
 
-  // Orderly shutdown: stop the relay and brain, then the core (API, scheduler, database).
+  // Orderly shutdown: stop the relay, Telegram and the brain, then the core (API, scheduler, database).
   let stopped = false;
   app.on('will-quit', (e) => {
     if (stopped) return;
     e.preventDefault();
     quitting = true;
     relay.stop();
+    // Aborts the long-poll in flight; never wait long for an update being handled.
+    const telegramStopped = Promise.race([telegram.stop(), new Promise((r) => setTimeout(r, 2000))]);
     brain.dispose();
     tray.destroy();
-    void core
-      .stop()
+    void telegramStopped
+      .then(() => core.stop())
       .catch((err) => console.error('[clippy] core stop failed:', err))
       .finally(() => {
         stopped = true;
         app.quit();
       });
   });
-  console.info(`[clippy] ready: API on 127.0.0.1:${core.port}, data in ${dataDir}, relay ${relay.active ? 'on' : 'off'}`);
+  console.info(`[clippy] ready: API on 127.0.0.1:${core.port}, data in ${dataDir}, relay ${relay.active ? 'on' : 'off'}, telegram ${telegram.active ? 'on' : 'off'}`);
 }
 
 // The installer's appId: names the login item and groups toasts/taskbar under Professor Clippy

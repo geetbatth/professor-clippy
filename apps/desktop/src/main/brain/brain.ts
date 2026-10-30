@@ -1,6 +1,6 @@
 /**
  * Clippy's brain: one headless Claude Code turn at a time (`claude -p`), resuming one shared
- * session for the desk chat and WhatsApp (decision 19).
+ * session for the desk chat, WhatsApp and Telegram (decision 19).
  *
  * - Turns are queued and run strictly one after another.
  * - Streamed text goes out as `chat:delta`; the finished reply is stored as a
@@ -13,7 +13,7 @@
 import { homedir } from 'node:os';
 import type { ChatDone, ClippyEvent, ClippyEventMap, Message } from '@clippy/shared';
 import type { Store } from '../core/store';
-import { PERSONA, WHATSAPP_PREFIX } from './persona';
+import { PERSONA, TELEGRAM_PREFIX, WHATSAPP_PREFIX } from './persona';
 import { createSpawnRunner, type ClaudeRunner, type ClaudeRunResult } from './runner';
 import { StreamJsonParser } from './streamParser';
 
@@ -54,7 +54,10 @@ export const BRAIN_ERRORS = {
   timeout: 'That took far too long, even for a professor. I gave up on it; please try again.',
 } as const;
 
-export type Channel = 'desk' | 'whatsapp';
+/** Where a chat turn came from; the phone channels get a prefix so the persona keeps replies short. */
+export type Channel = 'desk' | 'whatsapp' | 'telegram';
+
+const CHANNEL_PREFIX: Record<Channel, string> = { desk: '', whatsapp: WHATSAPP_PREFIX, telegram: TELEGRAM_PREFIX };
 
 export interface BrainReply {
   /** The stored reply (absent on error). */
@@ -184,7 +187,7 @@ export class Brain {
 
   async #turn(turn: Turn): Promise<BrainReply> {
     const generation = this.#generation;
-    const prompt = turn.channel === 'whatsapp' ? WHATSAPP_PREFIX + turn.text : turn.text;
+    const prompt = CHANNEL_PREFIX[turn.channel] + turn.text;
     const sessionId = this.#opts.store.getKv(SESSION_KV_KEY);
     let outcome = await this.#run(prompt, sessionId);
     // A resumed session that no longer exists (deleted, or another machine): start afresh once.

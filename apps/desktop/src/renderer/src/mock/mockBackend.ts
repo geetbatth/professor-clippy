@@ -4,7 +4,7 @@
  * through `chat:delta` / `chat:done` on timers, like the real brain.
  */
 import { ulid } from 'ulid';
-import type { ClippyEvent, ClippyEventMap, ClippyWindowApi } from '@clippy/shared/ipc';
+import type { ClippyEvent, ClippyEventMap, ClippyWindowApi, TelegramStatus } from '@clippy/shared/ipc';
 import type { AskResult, Message, MessageFilter } from '@clippy/shared/schemas';
 import { applySettingsPatch, DEFAULT_SETTINGS, SettingsPatch, type Settings } from '@clippy/shared/settings';
 import { MOCK_REPLIES, sampleMessages } from './sampleData';
@@ -18,11 +18,15 @@ export interface MockOptions {
   chunkMs?: number;
   /** Start as a fresh install (the first-run wizard shows). */
   firstRun?: boolean;
+  /** Start with a Telegram bot token saved (and this chat paired, if given). */
+  telegram?: { chatId?: number; chatName?: string };
 }
 
 export interface MockBackend extends ClippyWindowApi {
   /** Simulate an agent posting a note (emits `message:new`). */
   pushMessage(input: Partial<Message> & Pick<Message, 'body'>): Message;
+  /** Simulate `/start <code>` from Telegram (pairs if the code is right). */
+  telegramStart(code: string, chat?: { id: number; firstName: string }): boolean;
 }
 
 function matches(m: Message, filter: MessageFilter): boolean {
@@ -46,7 +50,24 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
   const thinkMs = opts.thinkMs ?? 900;
   const chunkMs = opts.chunkMs ?? 60;
   const messages = new Map((opts.messages ?? sampleMessages(now())).map((m) => [m.id, { ...m }]));
-  let settings: Settings = { ...DEFAULT_SETTINGS, firstRunDone: !opts.firstRun };
+  let settings: Settings = {
+    ...DEFAULT_SETTINGS,
+    firstRunDone: !opts.firstRun,
+    ...(opts.telegram?.chatId !== undefined && { telegramChatId: opts.telegram.chatId }),
+    ...(opts.telegram?.chatName !== undefined && { telegramChatName: opts.telegram.chatName }),
+  };
+  let telegramToken = opts.telegram !== undefined;
+  const pairingCode = 'K7QF3M';
+  const telegramStatus = (): TelegramStatus => {
+    if (!telegramToken) return { tokenSaved: false, state: 'off' };
+    return {
+      tokenSaved: true,
+      state: 'connected',
+      botUsername: 'ProfessorClippyBot',
+      ...(settings.telegramChatId !== undefined ? { chatId: settings.telegramChatId } : { pairingCode }),
+      ...(settings.telegramChatName !== undefined && { chatName: settings.telegramChatName }),
+    };
+  };
   let previewed = false;
   let replyIndex = 0;
   const listeners = new Map<ClippyEvent, Set<(payload: never) => void>>();
@@ -159,6 +180,30 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
       }
       if (!previewed) return { ok: false, log: [], error: 'Show the changes first (preview), then install.', warnings: [] };
       return { ok: true, warnings: [], log: [`Installing Professor Clippy wiring (Claude config dir: ${config})`, 'Done.'] };
+    },
+    async telegramStatus() {
+      return telegramStatus();
+    },
+    async setTelegramToken(token) {
+      if (token !== null && !/^\d{3,}:[\w-]{20,}$/.test(token.trim())) {
+        throw new Error("That doesn't look like a bot token. BotFather gives you one like 123456789:AAH…");
+      }
+      telegramToken = token !== null;
+      return telegramStatus();
+    },
+    async telegramUnpair() {
+      const { telegramChatId: _id, telegramChatName: _name, ...rest } = settings;
+      settings = rest;
+      return telegramStatus();
+    },
+    async telegramSendTest() {
+      if (settings.telegramChatId === undefined) return { ok: false, error: 'No chat is paired yet: send /start with the code to your bot first.' };
+      return { ok: true };
+    },
+    telegramStart(code, chat = { id: 123456789, firstName: 'You' }) {
+      if (!telegramToken || settings.telegramChatId !== undefined || code.toUpperCase() !== pairingCode) return false;
+      settings = { ...settings, telegramChatId: chat.id, telegramChatName: chat.firstName };
+      return true;
     },
     on(event, cb) {
       const set = listeners.get(event) ?? new Set();

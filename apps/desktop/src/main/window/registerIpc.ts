@@ -26,6 +26,10 @@ const argSchemas: { [K in keyof ClippyBackend]: z.ZodType<Parameters<ClippyBacke
   getSettings: z.tuple([]),
   setSettings: z.tuple([SettingsPatch]),
   connectClaude: z.tuple([z.enum(['preview', 'install'])]),
+  telegramStatus: z.tuple([]),
+  setTelegramToken: z.tuple([z.string().max(200).nullable()]),
+  telegramUnpair: z.tuple([]),
+  telegramSendTest: z.tuple([]),
 };
 
 export interface ClippyIpc {

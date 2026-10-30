@@ -32,6 +32,25 @@ describe('Settings', () => {
   });
 });
 
+describe('Settings: Telegram', () => {
+  it('keeps the encrypted token and the paired chat, and accepts a numeric-string chat id', () => {
+    expect(Settings.parse({ telegramBotTokenEnc: 'djEwAAAA', telegramChatId: 123456789, telegramChatName: 'Geet' })).toMatchObject({
+      telegramBotTokenEnc: 'djEwAAAA',
+      telegramChatId: 123456789,
+      telegramChatName: 'Geet',
+    });
+    expect(Settings.parse({ telegramChatId: '987654321' }).telegramChatId).toBe(987654321);
+    expect(Settings.safeParse({ telegramChatId: 1.5 }).success).toBe(false);
+    expect(Settings.safeParse({ telegramChatId: 'abc' }).success).toBe(false);
+  });
+
+  it('never carries a plaintext token, and the token is not patchable', () => {
+    expect(Settings.parse({ telegramBotToken: '123:abc' })).not.toHaveProperty('telegramBotToken');
+    expect(SettingsPatch.parse({ telegramBotTokenEnc: 'x', telegramBotToken: 'y' })).toEqual({});
+    expect(SettingsPatch.parse({ telegramChatId: null, telegramChatName: null })).toEqual({ telegramChatId: null, telegramChatName: null });
+  });
+});
+
 describe('SettingsPatch', () => {
   it('applies no defaults', () => {
     expect(SettingsPatch.parse({})).toEqual({});

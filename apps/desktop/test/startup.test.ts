@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RelaySendRequest } from '@clippy/shared';
@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startCore, type Core } from '../src/main/core/core';
 import type { RelayTransport } from '../src/main/relay/relayClient';
 import { startServices, type Services } from '../src/main/startup';
+import { Store } from '../src/main/core/store';
+import { MISSED_NOTE } from '../src/main/telegram/format';
+import { FakeTelegram, fakeSecrets, guardFetch, waitFor } from './telegram/fakeTelegram';
+
 
 describe('startServices', () => {
   let dir: string;
@@ -15,6 +19,7 @@ describe('startServices', () => {
   });
   afterEach(async () => {
     services?.relay.stop();
+    await services?.telegram.stop();
     services?.brain.dispose();
     await services?.core.stop();
     services = undefined;
@@ -59,6 +64,43 @@ describe('startServices', () => {
     expect(services.relay.active).toBe(true);
   });
 
+  it('has Telegram listening before the first API request, and sends what the startup catch-up fired', async () => {
+    const guard = guardFetch();
+    const fake = await FakeTelegram.start();
+    try {
+      // A reminder that came due while the app was off, and a plaintext token written headlessly.
+      const db = new Store({ path: join(dir, 'clippy.db') });
+      const now = Date.now();
+      db.insertReminder({ id: db.newId(), body: 'Missed me?', sender: 'agent', dueAt: now - 3_600_000, active: true, createdAt: now - 7_200_000, startAt: now - 3_600_000 });
+      db.close();
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify({ telegramBotToken: fake.token, telegramChatId: 4242 }));
+
+      services = await startServices({
+        dataDir: dir,
+        settingsFile: join(dir, 'settings.json'),
+        brain: { emit: () => {} },
+        secrets: fakeSecrets,
+        telegram: { baseUrl: fake.baseUrl, log: () => {} },
+        startCore: async (options): Promise<Core> => {
+          const core = await startCore(options);
+          setImmediate(() => core.store.createMessage({ kind: 'note', body: 'first!', sender: 'agent' }));
+          return core;
+        },
+      });
+      expect(services.telegram.active).toBe(true);
+      await waitFor(() => fake.sentTexts.length === 2, 3000, 'both messages');
+      expect(fake.sentTexts).toEqual([`⏰ Missed me?\n\n<i>— agent</i>\n<i>${MISSED_NOTE}</i>`, '📝 first!\n\n<i>— agent</i>']);
+      const onDisk = readFileSync(join(dir, 'settings.json'), 'utf8');
+      expect(onDisk).not.toContain(fake.token);
+      expect(JSON.parse(onDisk)).toMatchObject({ telegramChatId: 4242, telegramBotTokenEnc: fakeSecrets.encrypt(fake.token) });
+      expect(guard.urls.every((u) => u.startsWith(fake.baseUrl))).toBe(true);
+    } finally {
+      await services?.telegram.stop();
+      await fake.close();
+      guard.restore();
+    }
+  });
+
   it('wires settings changes to the relay and writes the brain files first', async () => {
     let transports = 0;
     services = await startServices({
@@ -71,6 +113,7 @@ describe('startServices', () => {
       },
     });
     expect(services.relay.active).toBe(false); // no Worker configured: nothing on the network
+    expect(services.telegram.active).toBe(false); // no Telegram token either
     await services.settings.update({ workerUrl: 'https://relay.example.workers.dev', workerSecret: 's' });
     expect(services.relay.active).toBe(true);
     expect(transports).toBe(1);

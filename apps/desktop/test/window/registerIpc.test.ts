@@ -40,6 +40,10 @@ function fakeBackend(): ClippyBackend {
     getSettings: vi.fn(async () => ({}) as never),
     setSettings: vi.fn(async () => ({}) as never),
     connectClaude: vi.fn(async () => ({ ok: true, log: [], warnings: [] })),
+    telegramStatus: vi.fn(async () => ({ tokenSaved: false, state: 'off' as const })),
+    setTelegramToken: vi.fn(async () => ({ tokenSaved: true, state: 'connecting' as const })),
+    telegramUnpair: vi.fn(async () => ({ tokenSaved: true, state: 'connected' as const })),
+    telegramSendTest: vi.fn(async () => ({ ok: true })),
   };
 }
 
@@ -64,6 +68,12 @@ describe('registerIpc', () => {
     expect(backend.newChat).toHaveBeenCalledOnce();
     await handlers.get(IpcInvoke.connectClaude)!(e, 'preview');
     expect(backend.connectClaude).toHaveBeenCalledWith('preview');
+    await handlers.get(IpcInvoke.setTelegramToken)!(e, '123456:abc');
+    expect(backend.setTelegramToken).toHaveBeenCalledWith('123456:abc');
+    await handlers.get(IpcInvoke.setTelegramToken)!(e, null);
+    expect(backend.setTelegramToken).toHaveBeenLastCalledWith(null);
+    await handlers.get(IpcInvoke.telegramSendTest)!(e);
+    expect(backend.telegramSendTest).toHaveBeenCalledOnce();
   });
 
   it('rejects bad arguments before they reach the backend', () => {
@@ -77,6 +87,7 @@ describe('registerIpc', () => {
     expect(() => handlers.get(IpcInvoke.setSettings)!(e, { askTimeoutDefaultS: -1 })).toThrow();
     expect(() => handlers.get(IpcInvoke.sendChat)!(e, '')).toThrow();
     expect(() => handlers.get(IpcInvoke.connectClaude)!(e, 'uninstall')).toThrow();
+    expect(() => handlers.get(IpcInvoke.setTelegramToken)!(e, 42)).toThrow();
     expect(backend.snooze).not.toHaveBeenCalled();
     expect(backend.markDone).not.toHaveBeenCalled();
   });

@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import type { ClippyWindowApi } from '@clippy/shared/ipc';
+import type { ClippyWindowApi, TelegramStatus } from '@clippy/shared/ipc';
 import type { SettingsState } from '../hooks/useSettings';
 import { ConnectClaude } from './ConnectClaude';
 import { nextStep, relayPatch, WIZARD_STEPS, type WizardStep } from './firstRun';
+import { TelegramSetup } from './TelegramSetup';
 import './FirstRunWizard.css';
 
 const PREFS = [
@@ -12,8 +13,8 @@ const PREFS = [
 ] as const;
 
 /**
- * First run, inside the note: WhatsApp relay (or skip), sounds and advice, then
- * "Connect Claude Code". Finishing (or skipping) sets `firstRunDone`.
+ * First run, inside the note: WhatsApp relay (or skip), Telegram (optional), sounds and
+ * advice, then "Connect Claude Code". Finishing (or skipping) sets `firstRunDone`.
  */
 export function FirstRunWizard({ api, state }: { api: ClippyWindowApi; state: SettingsState }) {
   const { settings, update, error: saveError } = state;
@@ -23,6 +24,7 @@ export function FirstRunWizard({ api, state }: { api: ClippyWindowApi; state: Se
   const [relayError, setRelayError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [claudeConnected, setClaudeConnected] = useState(false);
+  const [telegram, setTelegram] = useState<TelegramStatus>();
 
   if (!settings) return <p className="settings-loading">Fetching my notes…</p>;
 
@@ -92,6 +94,22 @@ export function FirstRunWizard({ api, state }: { api: ClippyWindowApi; state: Se
             </button>
             <button className="btn btn-ghost" onClick={advance}>
               Skip WhatsApp for now
+            </button>
+          </div>
+        </section>
+      )}
+
+      {step === 'telegram' && (
+        <section>
+          <h2 className="wizard-title">Telegram too? (optional)</h2>
+          <p className="wizard-text">
+            I can send the same notes, reminders and questions to Telegram, and you can answer or chat with me there. No Worker
+            needed: make a bot with @BotFather, paste its token here, then send it the pairing code.
+          </p>
+          <TelegramSetup api={api} update={update} onStatus={setTelegram} />
+          <div className="setting-actions wizard-finish">
+            <button className={`btn ${telegram?.chatId !== undefined ? 'btn-done' : 'btn-ghost'}`} onClick={advance}>
+              {telegram?.chatId !== undefined ? 'Next' : 'Skip Telegram for now'}
             </button>
           </div>
         </section>

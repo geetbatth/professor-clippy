@@ -4,8 +4,9 @@ import { nextStep, relayBadge, relayPatch, WIZARD_STEPS } from '../../src/render
 
 describe('first-run wizard', () => {
   it('goes WhatsApp → preferences → Claude Code, then finishes', () => {
-    expect(WIZARD_STEPS).toEqual(['whatsapp', 'prefs', 'claude']);
-    expect(nextStep('whatsapp')).toBe('prefs');
+    expect(WIZARD_STEPS).toEqual(['whatsapp', 'telegram', 'prefs', 'claude']);
+    expect(nextStep('whatsapp')).toBe('telegram');
+    expect(nextStep('telegram')).toBe('prefs');
     expect(nextStep('prefs')).toBe('claude');
     expect(nextStep('claude')).toBeUndefined();
   });

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_SETTINGS } from '@clippy/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseSettingsLenient, SettingsStore } from '../src/main/settings';
+import { parseSettingsLenient, SettingsStore, type SecretBox } from '../src/main/settings';
 
 let dir: string;
 let file: string;
@@ -67,5 +67,83 @@ describe('SettingsStore', () => {
     const s = await SettingsStore.load(file);
     await Promise.all([s.update({ askTimeoutDefaultS: 60 }), s.update({ askTimeoutDefaultS: 120 }), s.update({ hookEnabled: false })]);
     expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ askTimeoutDefaultS: 120, hookEnabled: false });
+  });
+});
+
+describe('SettingsStore: the Telegram token', () => {
+  /** Mock safeStorage: reversible, never the plaintext. */
+  const secrets: SecretBox = {
+    available: () => true,
+    encrypt: (plain) => Buffer.from(`v10${[...plain].reverse().join('')}`).toString('base64'),
+    decrypt: (stored) => {
+      const raw = Buffer.from(stored, 'base64').toString('utf8');
+      if (!raw.startsWith('v10')) throw new Error('bad ciphertext');
+      return [...raw.slice(3)].reverse().join('');
+    },
+  };
+  const TOKEN = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw';
+
+  it('migrates a plaintext telegramBotToken: encrypts it into telegramBotTokenEnc and removes the plaintext', async () => {
+    writeFileSync(file, JSON.stringify({ soundEnabled: false, telegramBotToken: ` ${TOKEN} `, telegramChatId: 4242 }));
+    const logs: string[] = [];
+    const s = await SettingsStore.load(file, { secrets, log: (m) => logs.push(m) });
+    const onDisk = readFileSync(file, 'utf8');
+    expect(onDisk).not.toContain(TOKEN);
+    expect(onDisk).not.toContain('AAHdqTcv');
+    const json = JSON.parse(onDisk);
+    expect(json).not.toHaveProperty('telegramBotToken');
+    expect(json).toMatchObject({ soundEnabled: false, telegramChatId: 4242, telegramBotTokenEnc: secrets.encrypt(TOKEN) });
+    expect(s.telegramToken()).toBe(TOKEN);
+    expect(s.hasTelegramToken).toBe(true);
+    expect(logs.join('\n')).not.toContain('AAHdqTcv');
+    // Loading again changes nothing.
+    const again = await SettingsStore.load(file, { secrets });
+    expect(again.telegramToken()).toBe(TOKEN);
+    expect(readFileSync(file, 'utf8')).toBe(onDisk);
+  });
+
+  it('a new plaintext token replaces the encrypted one', async () => {
+    writeFileSync(file, JSON.stringify({ telegramBotTokenEnc: secrets.encrypt('111:old'), telegramBotToken: TOKEN }));
+    const s = await SettingsStore.load(file, { secrets, log: () => {} });
+    expect(s.telegramToken()).toBe(TOKEN);
+    expect(JSON.parse(readFileSync(file, 'utf8'))).not.toHaveProperty('telegramBotToken');
+  });
+
+  it('keeps a plaintext token as it is when this PC cannot encrypt', async () => {
+    writeFileSync(file, JSON.stringify({ telegramBotToken: TOKEN }));
+    const s = await SettingsStore.load(file, { secrets: { ...secrets, available: () => false }, log: () => {} });
+    expect(s.telegramToken()).toBe(TOKEN);
+    await s.update({ soundEnabled: false }); // a later write doesn't lose it
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ telegramBotToken: TOKEN, soundEnabled: false });
+    await expect(s.setTelegramToken(TOKEN)).rejects.toThrow(/can't encrypt/);
+  });
+
+  it('saves a token encrypted, clears it, and refuses anything that is not a token', async () => {
+    const s = await SettingsStore.load(file, { secrets });
+    const changes: (string | undefined)[] = [];
+    s.onChange((next) => changes.push(next.telegramBotTokenEnc));
+    await s.setTelegramToken(` ${TOKEN}\n`);
+    expect(readFileSync(file, 'utf8')).not.toContain(TOKEN);
+    expect(s.telegramToken()).toBe(TOKEN);
+    await expect(s.setTelegramToken('not-a-token')).rejects.toThrow(/bot token/);
+    await s.setTelegramToken(null);
+    expect(s.hasTelegramToken).toBe(false);
+    expect(s.telegramToken()).toBeUndefined();
+    expect(JSON.parse(readFileSync(file, 'utf8'))).not.toHaveProperty('telegramBotTokenEnc');
+    expect(changes).toEqual([secrets.encrypt(TOKEN), undefined]);
+  });
+
+  it('a token that cannot be decrypted here (another user or PC) reads as none', async () => {
+    writeFileSync(file, JSON.stringify({ telegramBotTokenEnc: Buffer.from('garbage').toString('base64') }));
+    const logs: string[] = [];
+    const s = await SettingsStore.load(file, { secrets, log: (m) => logs.push(m) });
+    expect(s.hasTelegramToken).toBe(true);
+    expect(s.telegramToken()).toBeUndefined();
+    expect(logs.join()).toMatch(/cannot be decrypted/);
+  });
+
+  it('without a SecretBox (tests, tools) no token can be saved', async () => {
+    const s = await SettingsStore.load(file);
+    await expect(s.setTelegramToken(TOKEN)).rejects.toThrow(/can't encrypt/);
   });
 });

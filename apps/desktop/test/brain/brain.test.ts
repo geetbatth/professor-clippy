@@ -118,6 +118,15 @@ describe('Brain', () => {
     expect(second.stdin).toBe('[via WhatsApp] from my phone');
   });
 
+  it('prefixes Telegram turns, and the persona covers both phone channels without double quotes', async () => {
+    const { b, fake } = brain([{ stdout: fixture('pong') }]);
+    await b.ask('from my phone', { channel: 'telegram' });
+    expect(fake.calls[0]!.stdin).toBe('[via Telegram] from my phone');
+    expect(PERSONA).toMatch(/\[via WhatsApp\] or \[via Telegram\]/);
+    expect(PERSONA).toMatch(/on the phone \(WhatsApp\/Telegram\)/);
+    expect(PERSONA).not.toMatch(/"|%/);
+  });
+
   it('runs turns strictly one at a time, in order', async () => {
     const { b, fake } = brain([{ stdout: fixture('pong'), hold: true }, { stdout: fixture('no-partials') }]);
     const first = b.ask('one');

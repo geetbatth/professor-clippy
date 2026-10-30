@@ -33,6 +33,21 @@ const fields = {
   /** Bearer secret for the relay Worker. */
   workerSecret: z.string().min(1),
   windowPos: WindowPos,
+  /**
+   * The Telegram bot token, encrypted with Electron `safeStorage` (base64). Never plaintext:
+   * a plaintext `telegramBotToken` in settings.json is encrypted into this key on load and
+   * removed. Set and cleared only by main (`setTelegramToken`), never by a settings patch.
+   */
+  telegramBotTokenEnc: z.string().min(1),
+  /**
+   * The one private Telegram chat Clippy talks to (your user id). Updates from any other chat
+   * are ignored. A numeric string (hand-edited settings.json) is accepted too.
+   */
+  telegramChatId: z
+    .union([z.number(), z.string().regex(/^-?\d+$/).transform(Number)])
+    .pipe(z.number().int().refine(Number.isSafeInteger, 'Not a Telegram chat id')),
+  /** First name of the paired Telegram user (shown in Settings). */
+  telegramChatName: z.string().min(1),
   /** The first-run wizard has been finished or skipped. */
   firstRunDone: z.boolean(),
 };
@@ -48,6 +63,9 @@ export const Settings = z.object({
   workerUrl: fields.workerUrl.optional(),
   workerSecret: fields.workerSecret.optional(),
   windowPos: fields.windowPos.optional(),
+  telegramBotTokenEnc: fields.telegramBotTokenEnc.optional(),
+  telegramChatId: fields.telegramChatId.optional(),
+  telegramChatName: fields.telegramChatName.optional(),
   firstRunDone: fields.firstRunDone.default(false),
 });
 export type Settings = z.infer<typeof Settings>;
@@ -57,8 +75,9 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze(Settings.parse({}));
 
 /**
  * Partial update for `setSettings(patch)`. Omitted keys are left unchanged
- * (no defaults are applied). For the optional keys `workerUrl`, `workerSecret`
- * and `windowPos`, `null` clears the stored value.
+ * (no defaults are applied). For the optional keys `workerUrl`, `workerSecret`,
+ * `windowPos`, `telegramChatId` and `telegramChatName`, `null` clears the stored value.
+ * The Telegram token is not patchable (main encrypts it: `setTelegramToken`).
  */
 export const SettingsPatch = z.object({
   hookEnabled: fields.hookEnabled.optional(),
@@ -70,6 +89,8 @@ export const SettingsPatch = z.object({
   workerUrl: fields.workerUrl.nullable().optional(),
   workerSecret: fields.workerSecret.nullable().optional(),
   windowPos: fields.windowPos.nullable().optional(),
+  telegramChatId: fields.telegramChatId.nullable().optional(),
+  telegramChatName: fields.telegramChatName.nullable().optional(),
   firstRunDone: fields.firstRunDone.optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;

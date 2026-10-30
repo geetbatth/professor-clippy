@@ -1,0 +1,55 @@
+.tg-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tg-pairing,
+.tg-paired {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(74, 61, 18, 0.07);
+  font-size: 12.5px;
+}
+.tg-code-line {
+  margin: 0;
+}
+.tg-code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #fffbe0;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  user-select: all;
+}
+.tg-chat-id {
+  flex: 1;
+  min-width: 0;
+}
+.tg-status {
+  margin: 0;
+  font-size: 11.5px;
+  color: rgba(74, 61, 18, 0.75);
+}
+.tg-status--connected {
+  color: #2e6b2e;
+}
+.tg-status--error {
+  color: #c62828;
+}
+.tg-note {
+  margin: 0;
+  font-size: 12px;
+  color: #2e6b2e;
+}
+.tg-badge-error {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fde0dc;
+  color: #b3261e;
+}

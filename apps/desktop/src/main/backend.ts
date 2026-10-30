@@ -2,7 +2,7 @@
  * The `ClippyBackend` the renderer talks to over IPC, implemented over the core service,
  * the brain and the settings store.
  */
-import type { ClippyBackend } from '@clippy/shared';
+import type { ClippyBackend, Settings, TelegramStatus, TelegramTestResult } from '@clippy/shared';
 import type { Asks } from './core/asks';
 import { NotFoundError } from './core/errors';
 import type { Store } from './core/store';
@@ -17,9 +17,25 @@ export interface BackendDeps {
   settings: SettingsStore;
   /** "Connect Claude Code" (preview, then install). */
   claudeWiring: ClaudeWiring;
+  /** The Telegram channel (`TelegramManager`). */
+  telegram: TelegramControl;
 }
 
-export function createBackend({ store, asks, brain, settings, claudeWiring }: BackendDeps): ClippyBackend {
+/** What Settings needs from the Telegram channel. */
+export interface TelegramControl {
+  status(): TelegramStatus;
+  setToken(token: string | null): Promise<TelegramStatus>;
+  unpair(): Promise<TelegramStatus>;
+  sendTest(): Promise<TelegramTestResult>;
+}
+
+/** Settings as the renderer sees them: without the (encrypted) Telegram token. */
+export function forRenderer(settings: Settings): Settings {
+  const { telegramBotTokenEnc: _secret, ...rest } = settings;
+  return rest;
+}
+
+export function createBackend({ store, asks, brain, settings, claudeWiring, telegram }: BackendDeps): ClippyBackend {
   const found = <T>(value: T | undefined, id: string): T => {
     if (value === undefined) throw new NotFoundError(`No message ${id}`);
     return value;
@@ -52,13 +68,25 @@ export function createBackend({ store, asks, brain, settings, claudeWiring }: Ba
       return store.listMessages({ q, state: 'done' }).filter((m) => m.kind !== 'chat');
     },
     async getSettings() {
-      return settings.get();
+      return forRenderer(settings.get());
     },
     async setSettings(patch) {
-      return settings.update(patch);
+      return forRenderer(await settings.update(patch));
     },
     async connectClaude(step) {
       return claudeWiring.connect(step);
+    },
+    async telegramStatus() {
+      return telegram.status();
+    },
+    async setTelegramToken(token) {
+      return telegram.setToken(token);
+    },
+    async telegramUnpair() {
+      return telegram.unpair();
+    },
+    async telegramSendTest() {
+      return telegram.sendTest();
     },
   };
 }

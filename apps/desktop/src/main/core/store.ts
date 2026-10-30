@@ -31,6 +31,8 @@ export interface NewMessageRecord {
   role?: ChatRole;
   missed?: boolean;
   waId?: string;
+  /** Telegram message id of the copy in the paired chat. */
+  tgMsgId?: number;
   /** Initial state; default `'unread'` (chat lines are stored straight into history as `'done'`). */
   state?: MessageState;
   /** For `kind: 'reminder'`: the Reminder that produced it (internal link, not part of the shared Message). */
@@ -43,6 +45,7 @@ export interface MessagePatch {
   doneAt?: number | null;
   snoozedUntil?: number | null;
   waId?: string | null;
+  tgMsgId?: number | null;
   answer?: string;
   answeredVia?: AnsweredVia;
 }
@@ -131,6 +134,11 @@ const MIGRATIONS: readonly string[] = [
   ALTER TABLE messages ADD COLUMN reminder_id TEXT;
   CREATE INDEX messages_reminder ON messages (reminder_id, created_at) WHERE reminder_id IS NOT NULL;
   `,
+  // 3: Telegram message id of the mirrored copy (reply-to and button routing, answered edits).
+  `
+  ALTER TABLE messages ADD COLUMN tg_msg_id INTEGER;
+  CREATE INDEX messages_tg_msg_id ON messages (tg_msg_id) WHERE tg_msg_id IS NOT NULL;
+  `,
 ];
 
 type Row = Record<string, SQLOutputValue>;
@@ -200,8 +208,8 @@ export class Store {
     const state = record.state ?? 'unread';
     this.#db
       .prepare(
-        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, done_at, wa_id, options, role, missed, reminder_id)
-         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, $state, $createdAt, $doneAt, $waId, $options, $role, $missed, $reminderId)`,
+        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, done_at, wa_id, tg_msg_id, options, role, missed, reminder_id)
+         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, $state, $createdAt, $doneAt, $waId, $tgMsgId, $options, $role, $missed, $reminderId)`,
       )
       .run({
         id,
@@ -215,6 +223,7 @@ export class Store {
         createdAt,
         doneAt: state === 'done' ? createdAt : null,
         waId: record.waId ?? null,
+        tgMsgId: record.tgMsgId ?? null,
         options: record.options ? JSON.stringify(record.options) : null,
         role: record.role ?? null,
         missed: record.missed === undefined ? null : record.missed ? 1 : 0,
@@ -233,6 +242,14 @@ export class Store {
   /** The message mirrored to WhatsApp as `waId` (for matching quote-replies). */
   findMessageByWaId(waId: string): Message | undefined {
     const row = this.#db.prepare('SELECT * FROM messages WHERE wa_id = ?').get(waId);
+    return row && toMessage(row);
+  }
+
+  /** The latest message whose Telegram copy is `tgMsgId` (for matching replies and button taps). */
+  findMessageByTgMsgId(tgMsgId: number): Message | undefined {
+    const row = this.#db
+      .prepare('SELECT * FROM messages WHERE tg_msg_id = ? ORDER BY created_at DESC, seq DESC LIMIT 1')
+      .get(tgMsgId);
     return row && toMessage(row);
   }
 
@@ -288,6 +305,7 @@ export class Store {
       doneAt: 'done_at',
       snoozedUntil: 'snoozed_until',
       waId: 'wa_id',
+      tgMsgId: 'tg_msg_id',
       answer: 'answer',
       answeredVia: 'answered_via',
     };
@@ -470,6 +488,7 @@ function toMessage(row: Row): Message {
   if (row.done_at !== null) message.doneAt = Number(row.done_at);
   if (row.snoozed_until !== null) message.snoozedUntil = Number(row.snoozed_until);
   if (row.wa_id !== null) message.waId = String(row.wa_id);
+  if (row.tg_msg_id !== null && row.tg_msg_id !== undefined) message.tgMsgId = Number(row.tg_msg_id);
   if (row.options !== null) message.options = JSON.parse(String(row.options)) as string[];
   if (row.answer !== null) message.answer = String(row.answer);
   if (row.answered_via !== null) message.answeredVia = String(row.answered_via) as AnsweredVia;

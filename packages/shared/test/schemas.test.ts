@@ -42,6 +42,12 @@ describe('Message', () => {
     expect(Message.parse(ask)).toEqual(ask);
   });
 
+  it('accepts a Telegram-answered ask with its Telegram message id; older messages without one still parse', () => {
+    const ask = { ...note, kind: 'ask', tgMsgId: 42, answer: 'yes', answeredVia: 'telegram' };
+    expect(Message.parse(ask)).toEqual(ask);
+    expect(Message.parse(note)).not.toHaveProperty('tgMsgId');
+  });
+
   it('accepts chat lines with a role and missed reminders', () => {
     expect(Message.parse({ ...note, kind: 'chat', role: 'clippy' }).role).toBe('clippy');
     expect(Message.parse({ ...note, kind: 'reminder', missed: true }).missed).toBe(true);

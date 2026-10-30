@@ -1,8 +1,8 @@
 /** First-run wizard: its steps, and the checks on what the user types. */
 import type { Settings, SettingsPatch } from '@clippy/shared/settings';
 
-export type WizardStep = 'whatsapp' | 'prefs' | 'claude';
-export const WIZARD_STEPS: readonly WizardStep[] = ['whatsapp', 'prefs', 'claude'];
+export type WizardStep = 'whatsapp' | 'telegram' | 'prefs' | 'claude';
+export const WIZARD_STEPS: readonly WizardStep[] = ['whatsapp', 'telegram', 'prefs', 'claude'];
 
 /** The step after `step`, or undefined after the last one. */
 export function nextStep(step: WizardStep): WizardStep | undefined {
