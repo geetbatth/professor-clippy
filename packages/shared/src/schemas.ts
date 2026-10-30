@@ -96,7 +96,10 @@ export type NewMessageInput = z.infer<typeof NewMessageInput>;
  * as the PC's local time). Minutes precision is enough; seconds/fractions optional.
  * Agents convert natural language ("tomorrow 9am") to this themselves.
  */
-export const IsoDateTime = z.iso.datetime({ offset: true, local: true });
+export const IsoDateTime = z.iso
+  .datetime({ offset: true, local: true })
+  // zod requires seconds when there is a `Z`/offset; also accept minute precision (`2026-10-30T09:00Z`).
+  .or(z.iso.datetime({ offset: true, precision: -1 }));
 export type IsoDateTime = z.infer<typeof IsoDateTime>;
 
 /** Body of `POST /reminders` (MCP `remind_me`). */

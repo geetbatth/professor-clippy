@@ -89,14 +89,27 @@ describe('NewMessageInput', () => {
 describe('NewReminderInput', () => {
   const base = { body: 'Call the vet', sender: 'claude-code' };
 
-  it.each(['2026-10-30T15:00:00Z', '2026-10-30T15:00:00+01:00', '2026-10-30T15:00:00.250Z', '2026-10-30T15:00'])(
-    'accepts ISO 8601 when=%s',
-    (when) => {
-      expect(NewReminderInput.parse({ ...base, when }).when).toBe(when);
-    },
-  );
+  it.each([
+    '2026-10-30T15:00:00Z',
+    '2026-10-30T15:00:00+01:00',
+    '2026-10-30T15:00:00.250Z',
+    '2026-10-30T15:00',
+    '2026-10-30T09:00Z',
+    '2026-10-30T09:00-07:00',
+    '2026-10-30T09:00+05:30',
+  ])('accepts ISO 8601 when=%s', (when) => {
+    expect(NewReminderInput.parse({ ...base, when }).when).toBe(when);
+  });
 
-  it.each(['tomorrow at 9', '2026-10-30', '2026-13-01T09:00:00Z', ''])('rejects when=%s', (when) => {
+  it.each([
+    'tomorrow at 9',
+    '2026-10-30',
+    '2026-13-01T09:00:00Z',
+    '',
+    '2026-10-30T09Z',
+    '2026-10-30T25:00Z',
+    '2026-10-30T09:00+0700',
+  ])('rejects when=%s', (when) => {
     expect(NewReminderInput.safeParse({ ...base, when }).success).toBe(false);
   });
 
