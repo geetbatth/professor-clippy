@@ -9,8 +9,12 @@ import { startServices, type Services } from '../src/main/startup';
 import { Store } from '../src/main/core/store';
 import { MISSED_NOTE } from '../src/main/telegram/format';
 import { fakeRunner, type ScriptedRun } from './brain/fixtures';
+import { FakeClock } from './core/fakeClock';
 import { FakeTelegram, fakeSecrets, guardFetch, waitFor } from './telegram/fakeTelegram';
 
+
+/** A Saturday noon clock: the weekday-only morning brief stays out of tests that count messages. */
+const quietBrief = () => ({ clock: new FakeClock(new Date(2026, 9, 31, 12).getTime()) });
 
 describe('startServices', () => {
   let dir: string;
@@ -21,6 +25,7 @@ describe('startServices', () => {
   afterEach(async () => {
     services?.phoneGate.stop();
     services?.watcher.stop();
+    services?.brief.stop();
     services?.relay.stop();
     await services?.telegram.stop();
     services?.brain.dispose();
@@ -47,6 +52,7 @@ describe('startServices', () => {
     services = await startServices({
       dataDir: dir,
       settingsFile: join(dir, 'settings.json'),
+      brief: quietBrief(),
       brain: { emit: () => {} },
       makeTransport: () => transport,
       relayLog: () => {},
@@ -73,6 +79,7 @@ describe('startServices', () => {
     services = await startServices({
       dataDir: dir,
       settingsFile: join(dir, 'settings.json'),
+      brief: quietBrief(),
       brain: { emit: () => {}, runner: fake.runner, cwd: 'C:/home', env: { PATH: 'x' } },
     });
     const { core } = services;
@@ -117,6 +124,7 @@ describe('startServices', () => {
       services = await startServices({
         dataDir: dir,
         settingsFile: join(dir, 'settings.json'),
+        brief: quietBrief(),
         brain: { emit: () => {} },
         secrets: fakeSecrets,
         telegram: { baseUrl: fake.baseUrl, log: () => {} },
@@ -164,6 +172,7 @@ describe('startServices', () => {
       services = await startServices({
         dataDir: dir,
         settingsFile: join(dir, 'settings.json'),
+        brief: quietBrief(),
         brain: { emit: () => {} },
         secrets: fakeSecrets,
         telegram: { baseUrl: fake.baseUrl, log: () => {} },
@@ -234,6 +243,7 @@ describe('startServices', () => {
       services = await startServices({
         dataDir: dir,
         settingsFile: join(dir, 'settings.json'),
+        brief: quietBrief(),
         brain: { emit: () => {} },
         secrets: fakeSecrets,
         telegram: { baseUrl: fake.baseUrl, log: () => {} },
@@ -293,7 +303,7 @@ describe('startServices', () => {
   });
 
   it('without an idle source, away-only notes interrupt like any other', async () => {
-    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brain: { emit: () => {} } });
+    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: quietBrief(), brain: { emit: () => {} } });
     const res = await fetch(`http://127.0.0.1:${services.core.port}/messages`, {
       method: 'POST',
       headers: { authorization: `Bearer ${services.core.token}`, 'content-type': 'application/json' },
@@ -303,7 +313,7 @@ describe('startServices', () => {
   });
 
   it('nudges when a watched agent finishes, through the API a hook posts to', async () => {
-    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brain: { emit: () => {} } });
+    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: quietBrief(), brain: { emit: () => {} } });
     const { core } = services;
     const post = (path: string, body: unknown) =>
       fetch(`http://127.0.0.1:${core.port}${path}`, {
@@ -323,6 +333,7 @@ describe('startServices', () => {
     services = await startServices({
       dataDir: dir,
       settingsFile: join(dir, 'settings.json'),
+      brief: quietBrief(),
       brain: { emit: () => {} },
       makeTransport: () => {
         transports++;
@@ -335,5 +346,19 @@ describe('startServices', () => {
     expect(services.relay.active).toBe(true);
     expect(transports).toBe(1);
     expect(services.brain.buildArgs(undefined)).toContain(join(dir, 'brain', 'brain-settings.json'));
+  });
+
+  it('leaves the morning brief when it is due, rearms it when its settings change, and stops it with the app', async () => {
+    const clock = new FakeClock(new Date(2026, 9, 30, 10, 30).getTime()); // a Friday, 90 minutes after 09:00
+    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: { clock }, brain: { emit: () => {} } });
+    const briefs = () => services!.core.store.listMessages({}).filter((m) => m.sender === 'clippy' && m.title === '☀️ Morning brief');
+    expect(briefs()).toHaveLength(1);
+    expect(clock.pending).toBe(1);
+    await services.settings.update({ briefEnabled: false });
+    expect(clock.pending).toBe(0);
+    await services.settings.update({ briefEnabled: true, briefTime: '18:00' });
+    expect(clock.nextAt).toBe(new Date(2026, 9, 30, 11, 30).getTime()); // armed in hour-long steps, not sent early
+    services.brief.stop();
+    expect(clock.pending).toBe(0);
   });
 });

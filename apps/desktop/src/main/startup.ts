@@ -9,13 +9,15 @@
  *    handed over here, reading the orders from the core once that exists;
  * 3. then **synchronously**, with no `await` in between: the brain, the phone gate, the watcher, the relay and
  *    Telegram, which subscribe to the bus (the gate first: the two channels mirror on the gate's
- *    `message:mirror`, not on `message:new`); Telegram is then handed the catch-up messages. An agent
+ *    `message:mirror`, not on `message:new`); Telegram is then handed the catch-up messages, and
+ *    the morning brief starts (a late start sends it at once, to listening channels). An agent
  *    (often the MCP server that just launched the app) can post as soon as `/health`
  *    answers; its request is only handled on a later turn of the event loop, by which time
  *    both channels are listening.
  *
  * Electron-free, so the ordering is testable.
  */
+import { BriefScheduler, type BriefSchedulerOptions } from './brief';
 import { Bus } from './core/bus';
 import { startCore as defaultStartCore, type Core, type StartCoreOptions } from './core/core';
 import { Brain, type BrainOptions } from './brain/brain';
@@ -54,6 +56,8 @@ export interface StartServicesOptions {
   idleSeconds?: () => number;
   /** Phone gate tick (test seam). */
   phoneGate?: Pick<PhoneGateOptions, 'clock' | 'tickMs'>;
+  /** Morning brief clock (test seam). */
+  brief?: Pick<BriefSchedulerOptions, 'clock'>;
   /** Telegram test seams (fake Bot API server, short timings). */
   telegram?: Omit<TelegramManagerOptions, 'store' | 'bus' | 'asks' | 'brain' | 'settings'>;
 }
@@ -64,6 +68,7 @@ export interface Services {
   brain: Brain;
   phoneGate: PhoneGate;
   watcher: Watcher;
+  brief: BriefScheduler;
   relay: RelayManager;
   telegram: TelegramManager;
 }
@@ -147,9 +152,16 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
   });
   telegram.apply();
   telegram.replay(early);
-  settings.onChange((next) => {
+  // The morning brief is a note from Clippy too, and if it is due now (a late start) it is sent
+  // here, once the relay and Telegram are listening for what the gate mirrors.
+  const brief = new BriefScheduler({ ...options.brief, store: core.store, settings: () => settings.get() });
+  brief.start();
+  settings.onChange((next, prev) => {
     relay.apply(next);
     telegram.apply();
+    if (next.briefEnabled !== prev.briefEnabled || next.briefTime !== prev.briefTime || next.briefWeekdaysOnly !== prev.briefWeekdaysOnly) {
+      brief.reschedule();
+    }
   });
-  return { core, settings, brain, phoneGate, watcher, relay, telegram };
+  return { core, settings, brain, phoneGate, watcher, brief, relay, telegram };
 }

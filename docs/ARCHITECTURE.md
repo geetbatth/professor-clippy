@@ -146,6 +146,22 @@ from `sender: 'clippy'`, so a nudge cannot set off another watch); each is claim
 That note is loud on the desk (alert level) and is mirrored to the phone by the phone gate like any
 other note. Clippy's brain (`BRAIN_SENDER`) and `clippy` notes never trigger a watch.
 
+## Morning brief
+
+Once a day (settings `briefEnabled`, `briefTime` `HH:MM` local, default 09:00, `briefWeekdaysOnly`)
+`BriefScheduler` (`main/brief.ts`, started at the end of `startServices`, `reschedule()` on a brief
+settings change, `onResume()` from the power monitor's resume, stopped on quit) creates a note
+`{ sender: 'clippy', title: '☀️ Morning brief' }`, loud on the desk and sent to the phone by the
+phone gate when away like any Clippy note. The pure `composeBrief` writes the body: today's
+reminders (`• HH:MM body`), "Waiting on you" (pending asks), "Unread" (notes) and "Overnight" (notes
+and questions since the last brief, or the last 16 h, grouped by project; the hook's
+`agent-finished` notes count as "agent finished N×" even when stored `done`; chat, `clippy` and
+`clippy-brain` messages never count). With nothing to say it is one "Clear day" line. One timer,
+capped at an hour and re-armed (like the reminder scheduler); kv `briefLastDate` (local date) means
+at most one brief a day, `briefLastAt` starts the next overnight window. A start or wake up to 2 h
+after the time still sends it; later skips the day. Changing the settings arms the new time but
+never sends on the spot.
+
 ## Storage
 
 **Driver: Node's built-in `node:sqlite` (`DatabaseSync`).** No native module, so there is no `better-sqlite3` and no `@electron/rebuild` step.

@@ -40,6 +40,12 @@ const fields = {
   phoneWhen: z.enum(['away', 'always']),
   /** Clippy may volunteer advice without being asked. */
   unsolicitedAdvice: z.boolean(),
+  /** Clippy leaves a "Morning brief" note (today's reminders, what waits on you, what the agents did overnight). */
+  briefEnabled: z.boolean(),
+  /** Local time of the morning brief, 24-hour `HH:MM`. */
+  briefTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM, 24-hour'),
+  /** No morning brief on Saturdays and Sundays. */
+  briefWeekdaysOnly: z.boolean(),
   /** Default `ask_user` wait, seconds. */
   askTimeoutDefaultS: z.number().int().positive(),
   /**
@@ -95,6 +101,9 @@ export const Settings = z.object({
   popUpFor: fields.popUpFor.default('important'),
   phoneWhen: fields.phoneWhen.default('away'),
   unsolicitedAdvice: fields.unsolicitedAdvice.default(false),
+  briefEnabled: fields.briefEnabled.default(true),
+  briefTime: fields.briefTime.default('09:00'),
+  briefWeekdaysOnly: fields.briefWeekdaysOnly.default(true),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.default(600),
   tellHotkey: fields.tellHotkey.default('Control+Alt+Space'),
   hideOnFullscreen: fields.hideOnFullscreen.default(true),
@@ -127,6 +136,9 @@ export const SettingsPatch = z.object({
   popUpFor: fields.popUpFor.optional(),
   phoneWhen: fields.phoneWhen.optional(),
   unsolicitedAdvice: fields.unsolicitedAdvice.optional(),
+  briefEnabled: fields.briefEnabled.optional(),
+  briefTime: fields.briefTime.optional(),
+  briefWeekdaysOnly: fields.briefWeekdaysOnly.optional(),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.optional(),
   tellHotkey: fields.tellHotkey.optional(),
   hideOnFullscreen: fields.hideOnFullscreen.optional(),

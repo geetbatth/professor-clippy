@@ -49,6 +49,10 @@ at once), and you can answer, or just chat with him, from your phone.
   he leaves a note "⏰ Nudge: deploy" with what set it off. It fires once. They are listed under
   Settings → "Waiting for" (× cancels one). The nudge is a loud note from Clippy, so it reaches
   your phone when you are away like any other.
+- **A morning brief** (Settings → Morning brief; 09:00 on weekdays by default) is one loud note
+  from Clippy: today's reminders, the questions waiting on you, your unread notes, and what the
+  agents did overnight per project. A quiet day gets a single "Clear day" line. If the PC was off at
+  the time, it comes when you are back, up to two hours late.
 - **WhatsApp** goes through Meta's WhatsApp Cloud API and a small Cloudflare Worker you deploy
   yourself. Nothing on your PC listens on the network: the app's local API binds to 127.0.0.1
   with a bearer token, and the PC connects out to the Worker.

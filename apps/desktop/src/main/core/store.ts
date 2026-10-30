@@ -344,6 +344,14 @@ export class Store {
     return this.#db.prepare(sql).all(params).map(toMessage);
   }
 
+  /** Every message created at or after `since` (epoch ms), newest first. */
+  listMessagesSince(since: number): Message[] {
+    return this.#db
+      .prepare('SELECT * FROM messages WHERE created_at >= ? ORDER BY created_at DESC, seq DESC')
+      .all(since)
+      .map(toMessage);
+  }
+
   /** Unanswered asks, newest first. */
   listPendingAsks(): Message[] {
     return this.#db

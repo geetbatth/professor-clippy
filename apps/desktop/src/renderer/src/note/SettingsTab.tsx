@@ -16,6 +16,8 @@ const TOGGLES: readonly { key: Toggle; label: string; hint: string }[] = [
   { key: 'hookEnabled', label: 'Claude Code hook', hint: 'Leave a note when an agent finishes or needs permission.' },
   { key: 'soundEnabled', label: 'Sounds', hint: 'Dings, boings and knocks on the glass.' },
   { key: 'unsolicitedAdvice', label: 'Unsolicited advice', hint: 'Wisdom, every 30–90 minutes, whether you like it or not.' },
+  { key: 'briefEnabled', label: 'Morning brief', hint: 'A note from me each morning: your reminders, what waits on you, what the agents did overnight.' },
+  { key: 'briefWeekdaysOnly', label: 'Weekdays only', hint: 'Even a professor rests at the weekend. Applies to the morning brief.' },
   { key: 'hideOnFullscreen', label: 'Hide during fullscreen apps', hint: 'Games, films and presentations stay Clippy-free.' },
   { key: 'autoStart', label: 'Start with Windows', hint: 'Clippy turns up for work when you do.' },
 ];
@@ -133,6 +135,25 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
                 <option value="important">Questions, reminders &amp; urgent</option>
                 <option value="everything">Everything</option>
               </select>
+            </label>
+          )}
+          {key === 'briefEnabled' && (
+            <label className="setting">
+              <span className="setting-text">
+                <span className="setting-label">Brief time</span>
+                <span className="setting-hint">If the PC is off then, it comes when you are back, within two hours.</span>
+              </span>
+              <input
+                type="time"
+                className="field-input setting-select"
+                value={settings.briefTime}
+                aria-label="Time of the morning brief"
+                disabled={!settings.briefEnabled}
+                onChange={(e) => {
+                  // An empty value is a half-typed time; the browser only reports a whole HH:MM.
+                  if (e.target.value) void update({ briefTime: e.target.value });
+                }}
+              />
             </label>
           )}
           {key === 'hookEnabled' && (

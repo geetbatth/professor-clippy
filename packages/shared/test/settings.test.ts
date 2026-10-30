@@ -10,6 +10,9 @@ describe('Settings', () => {
       popUpFor: 'important',
       phoneWhen: 'away',
       unsolicitedAdvice: false,
+      briefEnabled: true,
+      briefTime: '09:00',
+      briefWeekdaysOnly: true,
       askTimeoutDefaultS: 600,
       tellHotkey: 'Control+Alt+Space',
       hideOnFullscreen: true,
@@ -135,5 +138,23 @@ describe('applySettingsPatch', () => {
 
   it('ignores undefined values', () => {
     expect(applySettingsPatch(current, { autoStart: undefined })).toEqual(current);
+  });
+});
+
+describe('Settings: morning brief', () => {
+  it('accepts a 24-hour HH:MM time and refuses anything else', () => {
+    for (const ok of ['00:00', '09:05', '23:59']) expect(Settings.parse({ briefTime: ok }).briefTime).toBe(ok);
+    for (const bad of ['9:00', '24:00', '12:60', '9am', '', '09:00:00']) {
+      expect(Settings.safeParse({ briefTime: bad }).success).toBe(false);
+      expect(SettingsPatch.safeParse({ briefTime: bad }).success).toBe(false);
+    }
+  });
+
+  it('patches the three brief settings', () => {
+    expect(SettingsPatch.parse({ briefEnabled: false, briefTime: '07:30', briefWeekdaysOnly: false })).toEqual({
+      briefEnabled: false,
+      briefTime: '07:30',
+      briefWeekdaysOnly: false,
+    });
   });
 });
