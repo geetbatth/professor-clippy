@@ -45,6 +45,9 @@ function fakeBackend(): ClippyBackend {
     telegramUnpair: vi.fn(async () => ({ tokenSaved: true, state: 'connected' as const })),
     telegramSendTest: vi.fn(async () => ({ ok: true })),
     hotkeyStatus: vi.fn(async () => ({ accelerator: 'Alt+T', ok: true })),
+    listOrders: vi.fn(async () => []),
+    addOrder: vi.fn(async (text: string) => ({ id: 'O1', text, active: true, createdAt: 1 })),
+    cancelOrder: vi.fn(async () => {}),
   };
 }
 
@@ -76,6 +79,11 @@ describe('registerIpc', () => {
     await handlers.get(IpcInvoke.telegramSendTest)!(e);
     expect(backend.telegramSendTest).toHaveBeenCalledOnce();
     await expect(handlers.get(IpcInvoke.hotkeyStatus)!(e)).resolves.toEqual({ accelerator: 'Alt+T', ok: true });
+    await handlers.get(IpcInvoke.listOrders)!(e);
+    expect(backend.listOrders).toHaveBeenCalledOnce();
+    await expect(handlers.get(IpcInvoke.addOrder)!(e, 'say yes')).resolves.toMatchObject({ text: 'say yes' });
+    await handlers.get(IpcInvoke.cancelOrder)!(e, 'O1');
+    expect(backend.cancelOrder).toHaveBeenCalledWith('O1');
   });
 
   it('rejects bad arguments before they reach the backend', () => {
@@ -91,6 +99,9 @@ describe('registerIpc', () => {
     expect(() => handlers.get(IpcInvoke.connectClaude)!(e, 'uninstall')).toThrow();
     expect(() => handlers.get(IpcInvoke.setTelegramToken)!(e, 42)).toThrow();
     expect(() => handlers.get(IpcInvoke.hotkeyStatus)!(e, 'extra')).toThrow();
+    expect(() => handlers.get(IpcInvoke.addOrder)!(e, '')).toThrow();
+    expect(() => handlers.get(IpcInvoke.addOrder)!(e, 'x'.repeat(501))).toThrow();
+    expect(() => handlers.get(IpcInvoke.cancelOrder)!(e)).toThrow();
     expect(backend.snooze).not.toHaveBeenCalled();
     expect(backend.markDone).not.toHaveBeenCalled();
   });

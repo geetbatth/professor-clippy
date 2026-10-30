@@ -70,6 +70,8 @@ export const Message = z.object({
    * arrived, it was stored straight into history, silently, and not mirrored.
    */
   quietIfActive: z.boolean().optional(),
+  /** For an `ask` answered automatically: the standing order that answered it. */
+  orderId: z.string().optional(),
 });
 export type Message = z.infer<typeof Message>;
 
@@ -148,6 +150,25 @@ export const AskResult = z.object({
   answeredVia: AnsweredVia.optional(),
 });
 export type AskResult = z.infer<typeof AskResult>;
+
+/**
+ * A standing order: an instruction the user gave Clippy to answer agents' questions of a
+ * certain kind for them ("When an agent asks which branch to use, answer: staging").
+ */
+export const StandingOrder = z.object({
+  /** ULID. */
+  id: z.ulid(),
+  /** The instruction, in the user's words. */
+  text: z.string(),
+  /** False once cancelled. */
+  active: z.boolean(),
+  createdAt: Timestamp,
+});
+export type StandingOrder = z.infer<typeof StandingOrder>;
+
+/** Body of `POST /orders` (MCP `add_standing_order`, Settings). */
+export const NewStandingOrderInput = z.object({ text: z.string().min(1).max(500) });
+export type NewStandingOrderInput = z.infer<typeof NewStandingOrderInput>;
 
 /** Filter for listing messages (`GET /messages` query, IPC `listMessages`). `q` is a full-text (FTS) search. */
 export const MessageFilter = z.object({

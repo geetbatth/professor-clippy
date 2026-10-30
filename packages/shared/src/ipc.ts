@@ -9,7 +9,7 @@
  * This module is type-only apart from the channel-name constants, so it is safe
  * to import from sandboxed preload and renderer code.
  */
-import type { AskResult, Message, MessageFilter } from './schemas';
+import type { AskResult, Message, MessageFilter, StandingOrder } from './schemas';
 import type { Settings, SettingsPatch } from './settings';
 
 /** Brain activity, for Clippy's thinking animation. */
@@ -117,6 +117,12 @@ export interface ClippyBackend {
   telegramSendTest(): Promise<TelegramTestResult>;
   /** Whether the "Tell Clippy" global hotkey registered. */
   hotkeyStatus(): Promise<HotkeyStatus>;
+  /** Active standing orders, oldest first. */
+  listOrders(): Promise<StandingOrder[]>;
+  /** Add a standing order (1 to 500 characters). */
+  addOrder(text: string): Promise<StandingOrder>;
+  /** Cancel a standing order. */
+  cancelOrder(id: string): Promise<void>;
 }
 
 /** `ipcMain.handle` / `ipcRenderer.invoke` channel for each backend method. */
@@ -136,6 +142,9 @@ export const IpcInvoke = {
   telegramUnpair: 'clippy:telegramUnpair',
   telegramSendTest: 'clippy:telegramSendTest',
   hotkeyStatus: 'clippy:hotkeyStatus',
+  listOrders: 'clippy:listOrders',
+  addOrder: 'clippy:addOrder',
+  cancelOrder: 'clippy:cancelOrder',
 } as const satisfies { [K in keyof ClippyBackend]: `clippy:${K}` };
 
 /** Push-event channels (main → renderer via `webContents.send`). */

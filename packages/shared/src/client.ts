@@ -10,6 +10,7 @@ import {
   AskResult,
   Message,
   Reminder,
+  StandingOrder,
   type AnsweredVia,
   type MessageFilter,
   type NewAskInput,
@@ -165,6 +166,21 @@ export class ClippyClient {
   /** `GET /asks/pending`: unanswered asks. */
   listPendingAsks(): Promise<Message[]> {
     return this.#request(Routes.listPendingAsks, { schema: z.array(Message) });
+  }
+
+  /** `GET /orders`: active standing orders, oldest first. */
+  listOrders(): Promise<StandingOrder[]> {
+    return this.#request(Routes.listOrders, { schema: z.array(StandingOrder) });
+  }
+
+  /** `POST /orders`: add a standing order. */
+  addOrder(text: string): Promise<StandingOrder> {
+    return this.#request(Routes.addOrder, { body: { text }, schema: StandingOrder });
+  }
+
+  /** `DELETE /orders/:id`: cancel a standing order. */
+  async cancelOrder(id: string): Promise<void> {
+    await this.#request(Routes.cancelOrder, { id });
   }
 
   async #request<T = undefined>(

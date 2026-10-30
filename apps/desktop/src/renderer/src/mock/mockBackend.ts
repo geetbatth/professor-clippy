@@ -5,7 +5,7 @@
  */
 import { ulid } from 'ulid';
 import type { ClippyEvent, ClippyEventMap, ClippyWindowApi, TelegramStatus } from '@clippy/shared/ipc';
-import type { AskResult, Message, MessageFilter } from '@clippy/shared/schemas';
+import type { AskResult, Message, MessageFilter, StandingOrder } from '@clippy/shared/schemas';
 import { applySettingsPatch, DEFAULT_SETTINGS, SettingsPatch, type Settings } from '@clippy/shared/settings';
 import { MOCK_REPLIES, sampleMessages } from './sampleData';
 
@@ -68,6 +68,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
       ...(settings.telegramChatName !== undefined && { chatName: settings.telegramChatName }),
     };
   };
+  const orders = new Map<string, StandingOrder>();
   let previewed = false;
   let replyIndex = 0;
   const listeners = new Map<ClippyEvent, Set<(payload: never) => void>>();
@@ -202,6 +203,20 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     },
     async hotkeyStatus() {
       return { accelerator: settings.tellHotkey, ok: true };
+    },
+    async listOrders() {
+      return [...orders.values()].filter((o) => o.active).map((o) => ({ ...o }));
+    },
+    async addOrder(text) {
+      const t = now();
+      const order: StandingOrder = { id: ulid(t), text, active: true, createdAt: t };
+      orders.set(order.id, order);
+      return { ...order };
+    },
+    async cancelOrder(id) {
+      const order = orders.get(id);
+      if (!order) throw new Error(`No standing order ${id}`);
+      orders.set(id, { ...order, active: false });
     },
     telegramStart(code, chat = { id: 123456789, firstName: 'You' }) {
       if (!telegramToken || settings.telegramChatId !== undefined || code.toUpperCase() !== pairingCode) return false;

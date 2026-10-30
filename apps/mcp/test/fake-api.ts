@@ -7,7 +7,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import type { AnsweredVia, AskResult, Message, Reminder } from '@clippy/shared';
+import type { AnsweredVia, AskResult, Message, Reminder, StandingOrder } from '@clippy/shared';
 
 export const TOKEN = 'f'.repeat(64);
 
@@ -26,6 +26,7 @@ export async function startFakeApi(appDataDir?: string) {
   const requests: RecordedRequest[] = [];
   const messages: Message[] = [];
   const reminders: Reminder[] = [];
+  const orders: StandingOrder[] = [];
   const waiters = new Map<string, Array<() => void>>();
 
   const askResult = (m: Message): AskResult =>
@@ -117,6 +118,19 @@ export async function startFakeApi(appDataDir?: string) {
         r.active = false;
         return send(204);
       }
+      case 'GET /orders':
+        return send(200, orders.filter((o) => o.active));
+      case 'POST /orders': {
+        const o: StandingOrder = { id: nextId(), text: body.text, active: true, createdAt: Date.now() };
+        orders.push(o);
+        return send(201, o);
+      }
+      case 'DELETE /orders/:id': {
+        const o = orders.find((x) => x.id === id);
+        if (!o) return send(404, { error: 'no such order' });
+        o.active = false;
+        return send(204);
+      }
       case 'POST /asks': {
         const m: Message = {
           id: nextId(),
@@ -182,6 +196,7 @@ export async function startFakeApi(appDataDir?: string) {
     requests,
     messages,
     reminders,
+    orders,
     answer,
     close: () =>
       new Promise<void>((resolve) => {

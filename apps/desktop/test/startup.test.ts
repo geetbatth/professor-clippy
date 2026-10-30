@@ -8,6 +8,7 @@ import type { RelayTransport } from '../src/main/relay/relayClient';
 import { startServices, type Services } from '../src/main/startup';
 import { Store } from '../src/main/core/store';
 import { MISSED_NOTE } from '../src/main/telegram/format';
+import { fakeRunner, type ScriptedRun } from './brain/fixtures';
 import { FakeTelegram, fakeSecrets, guardFetch, waitFor } from './telegram/fakeTelegram';
 
 
@@ -63,6 +64,42 @@ describe('startServices', () => {
     expect(sends.map((s) => s.text)).toEqual(['📝 first!\n\n— agent']);
     expect(services.core.store.getMessage(firstNoteId!)?.waId).toBe('wamid.first');
     expect(services.relay.active).toBe(true);
+  });
+
+  it('answers an ask from a standing order with the brain runner and hooks-off settings, and runs nothing without orders', async () => {
+    const script: ScriptedRun[] = [];
+    const fake = fakeRunner(script);
+    services = await startServices({
+      dataDir: dir,
+      settingsFile: join(dir, 'settings.json'),
+      brain: { emit: () => {}, runner: fake.runner, cwd: 'C:/home', env: { PATH: 'x' } },
+    });
+    const { core } = services;
+    const post = async (question: string) => {
+      const res = await fetch(`http://127.0.0.1:${core.port}/asks`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${core.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ question, sender: 'claude-code' }),
+      });
+      return (await res.json()) as Message;
+    };
+
+    // No orders: a normal ask, and the CLI is never started.
+    expect(await post('Which branch?')).toMatchObject({ state: 'unread' });
+    expect(fake.calls).toEqual([]);
+
+    // The order is read from the running core at the time of the ask.
+    const order = core.store.insertOrder('When an agent asks which branch to use, answer: staging');
+    const reply = JSON.stringify({ type: 'result', is_error: false, result: JSON.stringify({ order: order.id, answer: 'staging' }) });
+    script.push({ stdout: reply });
+    const answered = await post('Which branch should I deploy?');
+    expect(answered).toMatchObject({ state: 'done', answer: 'staging', answeredVia: 'clippy', orderId: order.id });
+    expect(fake.calls).toHaveLength(1);
+    const call = fake.calls[0]!;
+    expect(call.stdin).toContain('Which branch should I deploy?');
+    expect(call.stdin).toContain(order.id);
+    expect(call.cwd).toBe('C:/home');
+    expect(call.args[call.args.indexOf('--settings') + 1]).toBe(join(dir, 'brain', 'brain-settings.json'));
   });
 
   it('has Telegram listening before the first API request, and sends what the startup catch-up fired', async () => {

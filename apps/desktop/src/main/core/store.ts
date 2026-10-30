@@ -1,6 +1,6 @@
 /**
  * SQLite persistence (built-in `node:sqlite`): messages (+ FTS5 history search),
- * reminders and a small key/value table.
+ * reminders, standing orders and a small key/value table.
  *
  * Message writes emit `message:new` / `message:updated` on the bus, so every
  * caller (local API, IPC backend, scheduler, relay) produces the same events.
@@ -14,6 +14,7 @@ import type {
   MessageKind,
   MessageState,
   Reminder,
+  StandingOrder,
 } from '@clippy/shared';
 import { monotonicFactory } from 'ulid';
 import type { Bus } from './bus';
@@ -35,6 +36,11 @@ export interface NewMessageRecord {
   waId?: string;
   /** Telegram message id of the copy in the paired chat. */
   tgMsgId?: number;
+  /** For an `ask` that was answered the moment it was posted (by a standing order). */
+  answer?: string;
+  answeredVia?: AnsweredVia;
+  /** The standing order that answered this ask. */
+  orderId?: string;
   /** Initial state; default `'unread'` (chat lines are stored straight into history as `'done'`). */
   state?: MessageState;
   /** For `kind: 'reminder'`: the Reminder that produced it (internal link, not part of the shared Message). */
@@ -145,6 +151,16 @@ const MIGRATIONS: readonly string[] = [
   `
   ALTER TABLE messages ADD COLUMN quiet_if_active INTEGER;
   `,
+  // 5: standing orders, and the order that auto-answered an ask.
+  `
+  CREATE TABLE standing_orders (
+    id TEXT PRIMARY KEY,
+    text TEXT NOT NULL,
+    active INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  ALTER TABLE messages ADD COLUMN order_id TEXT;
+  `,
 ];
 
 type Row = Record<string, SQLOutputValue>;
@@ -214,8 +230,8 @@ export class Store {
     const state = record.state ?? 'unread';
     this.#db
       .prepare(
-        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, done_at, wa_id, tg_msg_id, options, role, missed, reminder_id, quiet_if_active)
-         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, $state, $createdAt, $doneAt, $waId, $tgMsgId, $options, $role, $missed, $reminderId, $quietIfActive)`,
+        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, done_at, wa_id, tg_msg_id, options, answer, answered_via, role, missed, reminder_id, quiet_if_active, order_id)
+         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, $state, $createdAt, $doneAt, $waId, $tgMsgId, $options, $answer, $answeredVia, $role, $missed, $reminderId, $quietIfActive, $orderId)`,
       )
       .run({
         id,
@@ -231,10 +247,13 @@ export class Store {
         waId: record.waId ?? null,
         tgMsgId: record.tgMsgId ?? null,
         options: record.options ? JSON.stringify(record.options) : null,
+        answer: record.answer ?? null,
+        answeredVia: record.answeredVia ?? null,
         role: record.role ?? null,
         missed: record.missed === undefined ? null : record.missed ? 1 : 0,
         quietIfActive: record.quietIfActive ? 1 : null,
         reminderId: record.reminderId ?? null,
+        orderId: record.orderId ?? null,
       });
     const message = this.getMessage(id)!;
     this.#emit('message:new', message);
@@ -438,6 +457,30 @@ export class Store {
     return this.getReminder(id);
   }
 
+  // ---- standing orders --------------------------------------------------------
+
+  insertOrder(text: string): StandingOrder {
+    const id = this.newId();
+    this.#db
+      .prepare('INSERT INTO standing_orders (id, text, active, created_at) VALUES (?, ?, 1, ?)')
+      .run(id, text, this.#clock.now());
+    return this.#getOrder(id)!;
+  }
+
+  /** Active standing orders, oldest first. */
+  listActiveOrders(): StandingOrder[] {
+    return this.#db
+      .prepare('SELECT * FROM standing_orders WHERE active = 1 ORDER BY created_at, id')
+      .all()
+      .map(toOrder);
+  }
+
+  /** Cancel an order (it stays stored, inactive). Returns undefined for an unknown id. */
+  cancelOrder(id: string): StandingOrder | undefined {
+    this.#db.prepare('UPDATE standing_orders SET active = 0 WHERE id = ?').run(id);
+    return this.#getOrder(id);
+  }
+
   // ---- kv -------------------------------------------------------------------
 
   getKv(key: string): string | undefined {
@@ -456,6 +499,11 @@ export class Store {
   }
 
   // ---- internals ------------------------------------------------------------
+
+  #getOrder(id: string): StandingOrder | undefined {
+    const row = this.#db.prepare('SELECT * FROM standing_orders WHERE id = ?').get(id);
+    return row && toOrder(row);
+  }
 
   #emit<E extends 'message:new' | 'message:updated'>(event: E, message: Message): void {
     const bus = this.#bus;
@@ -511,7 +559,12 @@ function toMessage(row: Row): Message {
   if (row.role !== null) message.role = String(row.role) as ChatRole;
   if (row.missed !== null) message.missed = row.missed === 1;
   if (row.quiet_if_active === 1) message.quietIfActive = true;
+  if (row.order_id !== null && row.order_id !== undefined) message.orderId = String(row.order_id);
   return message;
+}
+
+function toOrder(row: Row): StandingOrder {
+  return { id: String(row.id), text: String(row.text), active: row.active === 1, createdAt: Number(row.created_at) };
 }
 
 function toReminder(row: Row): Reminder {

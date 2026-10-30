@@ -93,5 +93,14 @@ export function createBackend({ store, asks, brain, settings, claudeWiring, tele
     async hotkeyStatus() {
       return hotkey();
     },
+    async listOrders() {
+      return store.listActiveOrders();
+    },
+    async addOrder(text) {
+      return store.insertOrder(text);
+    },
+    async cancelOrder(id) {
+      if (store.cancelOrder(id) === undefined) throw new NotFoundError(`No standing order ${id}`);
+    },
   };
 }

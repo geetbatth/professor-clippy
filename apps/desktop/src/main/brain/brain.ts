@@ -35,6 +35,9 @@ export const BRAIN_CLIPPY_TOOLS = [
   'recent_activity',
   'snooze_note',
   'dismiss_note',
+  'add_standing_order',
+  'list_standing_orders',
+  'cancel_standing_order',
 ] as const;
 /** clippy MCP tools the brain must never see (removed from its context, not just denied). */
 export const BRAIN_BLOCKED_CLIPPY_TOOLS = ['ask_user', 'check_reply'] as const;

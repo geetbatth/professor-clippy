@@ -245,7 +245,15 @@ describe('pending asks', () => {
 
 describe('brain-only note tools', () => {
   const BRAIN = { CLIPPY_SENDER: 'clippy-brain' };
-  const BRAIN_TOOLS = ['dismiss_note', 'list_notes', 'recent_activity', 'snooze_note'];
+  const BRAIN_TOOLS = [
+    'add_standing_order',
+    'cancel_standing_order',
+    'dismiss_note',
+    'list_notes',
+    'list_standing_orders',
+    'recent_activity',
+    'snooze_note',
+  ];
   const seed = (api: FakeApi, extra: Partial<Message>): Message => {
     const m: Message = {
       id: `01JB2Z3K4M5N6P7Q8R9S0${String(api.messages.length + 90).padStart(5, '0')}`,
@@ -261,7 +269,7 @@ describe('brain-only note tools', () => {
     return m;
   };
 
-  it('lists the four tools for the brain and hides them from agents', async () => {
+  it('lists the brain-only tools for the brain and hides them from agents', async () => {
     await setup({ env: BRAIN });
     const names = (await client!.listTools()).tools.map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining(BRAIN_TOOLS));
@@ -350,6 +358,39 @@ describe('brain-only note tools', () => {
     expect(recent.map((n: { id: string }) => n.id)).toEqual([b.id]);
     const limited = JSON.parse(texts(await call('recent_activity', { since: new Date(now - 72 * 3_600_000).toISOString(), limit: 2 }))[0]!);
     expect(limited).toHaveLength(2);
+  });
+});
+
+describe('brain-only standing-order tools', () => {
+  const BRAIN = { CLIPPY_SENDER: 'clippy-brain' };
+
+  it('add_standing_order saves the order, list_standing_orders shows it, cancel_standing_order drops it', async () => {
+    const { api } = await setup({ env: BRAIN });
+    expect(texts(await call('list_standing_orders'))[0]).toBe('No standing orders.');
+
+    const text = 'When an agent asks which branch to use, answer: staging';
+    const added = await call('add_standing_order', { text });
+    expect(added.isError).toBeFalsy();
+    expect(api.requests.find((q) => q.method === 'POST' && q.path === '/orders')?.body).toEqual({ text });
+    expect(api.orders).toHaveLength(1);
+    expect(texts(added)[0]).toContain(api.orders[0]!.id);
+
+    const listed = JSON.parse(texts(await call('list_standing_orders'))[0]!);
+    expect(listed).toEqual([{ id: api.orders[0]!.id, text, created: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) }]);
+
+    const cancelled = await call('cancel_standing_order', { id: api.orders[0]!.id });
+    expect(cancelled.isError).toBeFalsy();
+    expect(api.orders[0]!.active).toBe(false);
+    expect(texts(await call('list_standing_orders'))[0]).toBe('No standing orders.');
+  });
+
+  it('refuses an empty or over-long order, and an unknown id is a tool error', async () => {
+    await setup({ env: BRAIN });
+    expect((await call('add_standing_order', { text: '' })).isError).toBe(true);
+    expect((await call('add_standing_order', { text: 'x'.repeat(501) })).isError).toBe(true);
+    const r = await call('cancel_standing_order', { id: 'missing' });
+    expect(r.isError).toBe(true);
+    expect(texts(r)[0]).toMatch(/404/);
   });
 });
 

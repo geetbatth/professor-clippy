@@ -34,6 +34,15 @@ describe('mock backend', () => {
     expect(await b.hotkeyStatus()).toEqual({ accelerator: '', ok: true });
   });
 
+  it('keeps standing orders: add, list, cancel', async () => {
+    const b = createMockBackend();
+    const order = await b.addOrder('say yes');
+    expect(await b.listOrders()).toEqual([expect.objectContaining({ id: order.id, text: 'say yes', active: true })]);
+    await b.cancelOrder(order.id);
+    expect(await b.listOrders()).toEqual([]);
+    await expect(b.cancelOrder(order.id + 'x')).rejects.toThrow(/No standing order/);
+  });
+
   it('lists newest first', async () => {
     const unread = await createMockBackend().listMessages({ state: 'unread' });
     const times = unread.map((m) => m.createdAt);

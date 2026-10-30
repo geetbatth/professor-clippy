@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClippyApiError, ClippyClient, ClippyNotRunningError } from '../src/client';
-import type { AskResult, Message, Reminder } from '../src/schemas';
+import type { AskResult, Message, Reminder, StandingOrder } from '../src/schemas';
 
 const TOKEN = 'a'.repeat(64);
 const ASK_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2W';
@@ -30,6 +30,8 @@ const message = (over: Partial<Message> = {}): Message => ({
   ...over,
 });
 
+const ORDER_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2Y';
+const order: StandingOrder = { id: ORDER_ID, text: 'say staging', active: true, createdAt: 1000 };
 const reminder: Reminder = { id: REM_ID, body: 'stretch', sender: 'test', dueAt: 5000, active: true, createdAt: 1000 };
 
 /** Tiny fake of the desktop app's local API. `answerAfterPolls` makes the ask answered on the Nth getAsk. */
@@ -72,6 +74,12 @@ function fakeApi() {
       case 'GET /reminders':
         return send(200, [reminder]);
       case `DELETE /reminders/${REM_ID}`:
+        return send(204);
+      case 'GET /orders':
+        return send(200, [order]);
+      case 'POST /orders':
+        return send(201, { ...order, text: body.text });
+      case `DELETE /orders/${ORDER_ID}`:
         return send(204);
       case 'POST /asks':
         return send(201, message({ kind: 'ask', body: body.question, options: body.options }));
@@ -166,6 +174,15 @@ describe('ClippyClient requests', () => {
     await expect(client.listReminders()).resolves.toEqual([reminder]);
     await expect(client.cancelReminder(REM_ID)).resolves.toBeUndefined();
     expect(last()).toMatchObject({ method: 'DELETE', path: `/reminders/${REM_ID}` });
+  });
+
+  it('lists, adds and cancels standing orders', async () => {
+    await expect(client.listOrders()).resolves.toEqual([order]);
+    expect(last()).toMatchObject({ method: 'GET', path: '/orders' });
+    await expect(client.addOrder('always say yes')).resolves.toMatchObject({ id: ORDER_ID, text: 'always say yes' });
+    expect(last()).toMatchObject({ method: 'POST', path: '/orders', body: { text: 'always say yes' } });
+    await expect(client.cancelOrder(ORDER_ID)).resolves.toBeUndefined();
+    expect(last()).toMatchObject({ method: 'DELETE', path: `/orders/${ORDER_ID}` });
   });
 
   it('creates asks, lists pending asks and answers them', async () => {

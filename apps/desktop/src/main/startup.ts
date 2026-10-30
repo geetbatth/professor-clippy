@@ -5,7 +5,8 @@
  *    before anything is listening);
  * 2. `startCore` (its API is live, and the port file written, when this resolves). Its
  *    scheduler catch-up (reminders missed while the app was off) fires inside it, so the
- *    messages it creates are collected from the bus meanwhile;
+ *    messages it creates are collected from the bus meanwhile. Its standing-order matcher is
+ *    handed over here, reading the orders from the core once that exists;
  * 3. then **synchronously**, with no `await` in between: the brain, the phone gate, the relay and
  *    Telegram, which subscribe to the bus (the gate first: the two channels mirror on the gate's
  *    `message:mirror`, not on `message:new`); Telegram is then handed the catch-up messages. An agent
@@ -20,6 +21,7 @@ import { startCore as defaultStartCore, type Core, type StartCoreOptions } from 
 import { Brain, type BrainOptions } from './brain/brain';
 import { writeBrainFiles, type McpConfigInput } from './brain/mcpConfig';
 import type { Message } from '@clippy/shared';
+import { createOrderMatcher } from './orders';
 import { PhoneGate, type PhoneGateOptions } from './phoneGate';
 import { RelayManager, type RelayManagerOptions } from './relay';
 import { SettingsStore, type SecretBox } from './settings';
@@ -73,17 +75,33 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
   const early: Message[] = [];
   const stopCollecting = bus.on('message:new', (m) => early.push(m));
   const idleSeconds = options.idleSeconds;
+  // Standing orders answer an agent's question before the user sees it. The matcher runs in the
+  // brain's setup (same CLI runner, folder and environment, hooks off); the orders come from the
+  // core, which does not exist yet when the API goes live.
+  const matcher = createOrderMatcher({
+    ...(options.brain.runner && { runner: options.brain.runner }),
+    ...(options.brain.env && { env: options.brain.env }),
+    ...(options.brain.cwd !== undefined && { cwd: options.brain.cwd }),
+    settingsPath: brainFiles.settingsPath,
+  });
+  let started: Core | undefined;
   let core: Core;
   try {
     core = await (options.startCore ?? defaultStartCore)({
       dataDir: options.dataDir,
       bus,
+      matchOrder: async (input) => {
+        const orders = started?.store.listActiveOrders() ?? [];
+        return orders.length === 0 ? undefined : matcher(input.question, input.options, orders);
+      },
       ...(idleSeconds && { isUserActive: () => idleSeconds() < settings.get().awayThresholdS }),
       ...(options.version !== undefined && { version: options.version }),
     });
   } finally {
     stopCollecting();
   }
+
+  started = core;
 
   // ---- no await from here on: the API is live ----
   const brain = new Brain({

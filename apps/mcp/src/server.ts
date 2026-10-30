@@ -361,6 +361,49 @@ export function createClippyServer(options: ClippyServerOptions = {}): McpServer
         return ok(`Dismissed note ${id}.`);
       },
     );
+
+    server.registerTool(
+      'add_standing_order',
+      {
+        title: 'Add a standing order',
+        description:
+          'Save a standing order: an instruction for answering a kind of question that AI agents ask the user, which Professor Clippy ' +
+          'then answers for them without bothering the user. Use this when the user says something like if an agent asks about X, say Y. ' +
+          'Phrase it as: When an agent asks about X, answer: Y.',
+        inputSchema: { text: z.string().min(1).max(500).describe('The order, e.g. "When an agent asks which branch to use, answer: staging".') },
+      },
+      async ({ text }) => {
+        const order = await withClient((c) => c.addOrder(text));
+        return ok(`Saved standing order ${order.id}.`);
+      },
+    );
+
+    server.registerTool(
+      'list_standing_orders',
+      {
+        title: 'List standing orders',
+        description: "List the user's active standing orders (the instructions Professor Clippy uses to answer agents' questions for them).",
+        inputSchema: {},
+      },
+      async () => {
+        const orders = await withClient((c) => c.listOrders());
+        if (orders.length === 0) return ok('No standing orders.');
+        return ok(JSON.stringify(orders.map((o) => ({ id: o.id, text: o.text, created: iso(o.createdAt) })), null, 2));
+      },
+    );
+
+    server.registerTool(
+      'cancel_standing_order',
+      {
+        title: 'Cancel a standing order',
+        description: 'Cancel one of the user\'s standing orders when they ask you to. Get the id from list_standing_orders.',
+        inputSchema: { id: z.string().min(1).describe('Order id from list_standing_orders.') },
+      },
+      async ({ id }) => {
+        await withClient((c) => c.cancelOrder(id));
+        return ok(`Cancelled standing order ${id}.`);
+      },
+    );
   });
 
   return server;

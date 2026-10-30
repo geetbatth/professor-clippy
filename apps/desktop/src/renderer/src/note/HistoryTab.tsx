@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { ClippyWindowApi } from '@clippy/shared/ipc';
-import type { Message } from '@clippy/shared/schemas';
+import type { Message, StandingOrder } from '@clippy/shared/schemas';
 import { useNow } from '../hooks/useNow';
 import { CardMeta } from './CardMeta';
+import { orderLabel } from './orderLabel';
 import './cards.css';
 import './HistoryTab.css';
 
@@ -14,6 +15,7 @@ export function HistoryTab({ api }: { api: ClippyWindowApi }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<Message[] | undefined>();
   const [error, setError] = useState<string>();
+  const [orders, setOrders] = useState<StandingOrder[]>([]);
   const now = useNow(60_000);
 
   useEffect(() => {
@@ -25,7 +27,13 @@ export function HistoryTab({ api }: { api: ClippyWindowApi }) {
           ? api.searchHistory(query)
           : api.listMessages({ state: 'done' }).then((list) => list.filter((m) => m.kind !== 'chat').slice(0, RECENT_LIMIT));
         load.then(
-          (list) => live && (setResults(list), setError(undefined)),
+          (list) => {
+            if (!live) return;
+            setResults(list);
+            setError(undefined);
+            // The wording of the orders that answered some of these asks (active ones only).
+            if (list.some((m) => m.orderId)) api.listOrders().then((o) => live && setOrders(o), () => {});
+          },
           (err: unknown) => live && setError(err instanceof Error ? err.message : String(err)),
         );
       },
@@ -61,6 +69,7 @@ export function HistoryTab({ api }: { api: ClippyWindowApi }) {
                 {m.answeredVia && <span className="history-via"> via {m.answeredVia}</span>}
               </p>
             )}
+            {m.orderId && <p className="history-via">{orderLabel(m.orderId, orders)}</p>}
           </article>
         ))}
       </div>

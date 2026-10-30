@@ -6,6 +6,7 @@ import { ASK_WAIT_MAX_MINUTES, ASK_WAIT_MIN_MINUTES, askWaitMinutes, parseAskWai
 import { AWAY_MAX_MINUTES, awayMinutes, parseAwayMinutes } from './awayThreshold';
 import { ConnectClaude } from './ConnectClaude';
 import { relayBadge, relayPatch } from './firstRun';
+import { RulesSection } from './RulesSection';
 import { TelegramBadge, TelegramSetup } from './TelegramSetup';
 import './SettingsTab.css';
 
@@ -19,7 +20,7 @@ const TOGGLES: readonly { key: Toggle; label: string; hint: string }[] = [
   { key: 'autoStart', label: 'Start with Windows', hint: 'Clippy turns up for work when you do.' },
 ];
 
-/** Every `Settings` option: toggles, the default ask wait, WhatsApp, Telegram, and Claude Code wiring. */
+/** Every `Settings` option: toggles, the default ask wait, standing orders, WhatsApp, Telegram, and Claude Code wiring. */
 export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: SettingsState }) {
   const { settings, update, error } = state;
   const [workerUrl, setWorkerUrl] = useState('');
@@ -237,6 +238,8 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
           Whole minutes between {ASK_WAIT_MIN_MINUTES} and {ASK_WAIT_MAX_MINUTES}, please.
         </p>
       )}
+
+      <RulesSection api={api} />
 
       <fieldset className="setting-group">
         <legend>

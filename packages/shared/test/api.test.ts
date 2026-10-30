@@ -17,6 +17,9 @@ describe('Routes', () => {
       'GET /asks/pending',
       'GET /asks/:id',
       'POST /asks/:id/answer',
+      'GET /orders',
+      'POST /orders',
+      'DELETE /orders/:id',
     ]);
   });
 });

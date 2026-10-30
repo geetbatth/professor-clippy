@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Message, Reminder } from '@clippy/shared';
+import { Message, Reminder, StandingOrder } from '@clippy/shared';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Bus, type CoreEventMap } from '../../src/main/core/bus';
@@ -257,12 +257,12 @@ describe('Store on disk', () => {
   it('migrates once and persists data and the FTS index across reopen', () => {
     const path = join(dir, 'clippy.db');
     const first = new Store({ path });
-    expect(first.schemaVersion).toBe(4);
+    expect(first.schemaVersion).toBe(5);
     const m = first.createMessage({ kind: 'note', body: 'persist me please', sender: 's' });
     first.close();
 
     const second = new Store({ path });
-    expect(second.schemaVersion).toBe(4);
+    expect(second.schemaVersion).toBe(5);
     expect(second.getMessage(m.id)).toEqual(m);
     expect(second.listMessages({ q: 'persist' }).map((x) => x.id)).toEqual([m.id]);
     second.close();
@@ -284,7 +284,7 @@ describe('Store on disk', () => {
       PRAGMA user_version = 1;`);
     v1.close();
     const store = new Store({ path });
-    expect(store.schemaVersion).toBe(4);
+    expect(store.schemaVersion).toBe(5);
     expect(store.getMessage('01ARZ3NDEKTSV4RRFFQ69G5FAV')?.body).toBe('old');
     store.createMessage({ kind: 'reminder', body: 'new', sender: 's', reminderId: 'R' });
     expect(store.findLatestReminderMessage('R')?.body).toBe('new');
@@ -313,6 +313,60 @@ describe('Store on disk', () => {
     const quiet = store.createMessage({ kind: 'note', body: 'agent finished', sender: 'claude-code', quietIfActive: true, state: 'done' });
     expect(quiet).toMatchObject({ quietIfActive: true, state: 'done' });
     expect(store.createMessage({ kind: 'note', body: 'normal', sender: 's' })).not.toHaveProperty('quietIfActive');
+    store.close();
+  });
+
+  it('stores, lists oldest first, and cancels standing orders (version 5)', () => {
+    const clock = new FakeClock(T0);
+    const store = new Store({ path: join(dir, 'orders.db'), clock });
+    const first = store.insertOrder('When an agent asks which branch, answer: staging');
+    clock.advance(1000);
+    const second = store.insertOrder('When an agent asks to run the tests, answer: yes');
+    expect(first).toMatchObject({ text: 'When an agent asks which branch, answer: staging', active: true, createdAt: T0 });
+    expect(StandingOrder.parse(first)).toEqual(first);
+    expect(store.listActiveOrders().map((o) => o.id)).toEqual([first.id, second.id]);
+
+    expect(store.cancelOrder(first.id)).toMatchObject({ id: first.id, active: false });
+    expect(store.listActiveOrders().map((o) => o.id)).toEqual([second.id]);
+    expect(store.cancelOrder('01JB2Z3K4M5N6P7Q8R9S0T1V2Z')).toBeUndefined();
+    store.close();
+  });
+
+  it('stores an ask that an order answered', () => {
+    const clock = new FakeClock(T0);
+    const store = new Store({ path: join(dir, 'auto.db'), clock });
+    const order = store.insertOrder('say yes');
+    const m = store.createMessage({
+      kind: 'ask',
+      body: 'Run the tests?',
+      sender: 'claude-code',
+      state: 'done',
+      answer: 'yes',
+      answeredVia: 'clippy',
+      orderId: order.id,
+    });
+    expect(m).toMatchObject({ state: 'done', answer: 'yes', answeredVia: 'clippy', orderId: order.id, doneAt: T0 });
+    expect(store.getMessage(m.id)).toEqual(m);
+    expect(store.listPendingAsks()).toEqual([]);
+    expect(store.createMessage({ kind: 'ask', body: 'q', sender: 's' })).not.toHaveProperty('orderId');
+    store.close();
+  });
+
+  it('upgrades a version-4 database (adds standing orders) without losing data', () => {
+    const path = join(dir, 'v4.db');
+    const old = new Store({ path });
+    const m = old.createMessage({ kind: 'ask', body: 'Ship it?', sender: 's' });
+    old.close();
+    // Rewind to what a version-4 database looks like: no orders table, no order_id column.
+    const db = new DatabaseSync(path);
+    db.exec('DROP TABLE standing_orders; ALTER TABLE messages DROP COLUMN order_id; PRAGMA user_version = 4;');
+    db.close();
+
+    const store = new Store({ path });
+    expect(store.schemaVersion).toBe(5);
+    expect(store.getMessage(m.id)).toEqual(m);
+    expect(store.insertOrder('say yes').text).toBe('say yes');
+    expect(store.getMessage(m.id)).not.toHaveProperty('orderId');
     store.close();
   });
 });

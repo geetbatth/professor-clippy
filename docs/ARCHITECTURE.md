@@ -8,7 +8,7 @@ npm workspaces monorepo (Node 24, npm 11, TypeScript strict, ESM, Vitest).
 | --- | --- | --- |
 | `packages/shared` | `@clippy/shared` | Every shared contract: zod schemas and types, settings, local API routes, data-dir paths, `ClippyClient`, Electron IPC contract, Worker relay protocol. TypeScript source only (no build step). |
 | `apps/desktop` | `@clippy/desktop` | Electron + electron-vite + React. Hosts the local API (127.0.0.1), SQLite store, scheduler and Clippy's brain. The character (`src/renderer/src/clippy/`) is a set of painted robot sprites driven by a pure mood state machine (`mood.ts`): `poses.ts` maps moods to sprites and aligns them on one stage, CSS does the motion, and clicks pass through his transparent pixels (alpha masks built when the sprites are preloaded). |
-| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Four extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. |
+| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Seven extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. |
 | `apps/hook` | `@clippy/hook` | Claude Code hook; posts a note when an agent finishes or needs permission. Built like `apps/mcp`. |
 | `apps/worker` | `@clippy/worker` | Cloudflare Worker plus one SQLite-backed Durable Object (`ClippyDO`, binding `CLIPPY`) relaying WhatsApp Cloud API traffic. |
 | `scripts/` | | Repo scripts: the Claude Code wiring (`install-claude-wiring.ts`, also bundled into the app for "Connect Claude Code"), SQLite smoke test, run-in-Electron helper. |
@@ -108,6 +108,24 @@ Settings. `main/index.ts` re-registers it when the setting changes. On press, ma
 focuses the window (the only place Clippy takes focus; he is otherwise `showInactive`), expands
 it and sends `window:tell`; the renderer switches to Notes and focuses the box. `window:blur`
 gives focus back on Escape. Auto-collapse is held off while the box has focus or text.
+
+## Standing orders
+
+A standing order (`StandingOrder`, table `standing_orders`, schema version 5; routes `GET/POST
+/orders`, `DELETE /orders/:id`; IPC `listOrders` / `addOrder` / `cancelOrder`) is a sentence the user
+gave Clippy ("When an agent asks about X, answer: Y"), saved by the brain's `add_standing_order` tool
+or typed into Settings (`RulesSection`). `POST /asks` awaits `ApiDeps.matchOrder` before storing the
+ask; a match goes to `Asks.create(input, { orderId, answer })`, which stores the ask already
+`done`, `answeredVia: 'clippy'` with `Message.orderId` (column `order_id`), so it never pops up,
+isn't mirrored to a phone (both channels skip answered asks) and the agent's long-poll answers
+at once. No match, a rejection, or more than 20 s (`MATCH_ORDER_TIMEOUT_MS`) posts a normal ask.
+`startServices` builds the matcher (`main/orders.ts`) with the brain's runner, folder and
+hooks-off `brain-settings.json`, and gives `startCore` a closure that reads the active orders from
+the core once it exists (no orders: nothing is run). The matcher is one `claude -p --model haiku
+--tools ''` run (no MCP, no session, `--output-format json`); `parseOrderReply` trusts only a known
+order id, and with options only an answer that is one of them (the option's own casing). The empty
+`--tools ''` argument survives both spawn paths (an args array, and `cmdQuote` -> `""` for
+`claude.cmd`).
 
 ## Storage
 

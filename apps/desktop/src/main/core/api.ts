@@ -20,6 +20,7 @@ import {
   NewAskInput,
   NewMessageInput,
   NewReminderInput,
+  NewStandingOrderInput,
   Routes,
   SnoozeBody,
   type Health,
@@ -36,6 +37,8 @@ import type { Store } from './store';
 const MAX_BODY_BYTES = 1024 * 1024;
 /** How long `close()` waits for in-flight requests before dropping connections. */
 const CLOSE_GRACE_MS = 1000;
+/** Longest a new ask waits for a standing order to answer it before it is posted as usual. */
+export const MATCH_ORDER_TIMEOUT_MS = 20_000;
 
 export interface ApiDeps {
   store: Store;
@@ -50,6 +53,13 @@ export interface ApiDeps {
    * away-only note (`quietIfActive`) goes. Absent: treated as away (every note interrupts).
    */
   isUserActive?: () => boolean;
+  /**
+   * Finds a standing order that answers a new ask. A match answers the ask on the spot; no match,
+   * a rejection or taking longer than `matchOrderTimeoutMs` posts it as a normal question.
+   */
+  matchOrder?: (input: NewAskInput) => Promise<{ orderId: string; answer: string } | undefined>;
+  /** Default {@link MATCH_ORDER_TIMEOUT_MS} (a test seam). */
+  matchOrderTimeoutMs?: number;
 }
 
 export interface StartApiOptions extends ApiDeps {
@@ -106,7 +116,13 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     [Routes.createReminder, async ({ req }) => created(scheduler.create(await body(req, NewReminderInput)))],
     [Routes.listReminders, () => ok(scheduler.list())],
     [Routes.cancelReminder, ({ id }) => (scheduler.cancel(id), { status: 204 })],
-    [Routes.createAsk, async ({ req }) => created(asks.create(await body(req, NewAskInput)))],
+    [
+      Routes.createAsk,
+      async ({ req }) => {
+        const input = await body(req, NewAskInput);
+        return created(asks.create(input, await matchStandingOrder(input)));
+      },
+    ],
     [Routes.listPendingAsks, () => ok(asks.listPending())],
     [Routes.getAsk, async ({ id, url, signal }) => ok(await asks.wait(id, parseWait(url.searchParams.get('wait')) * 1000, signal))],
     [
@@ -116,6 +132,9 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         return ok(asks.answer(id, answer, via));
       },
     ],
+    [Routes.listOrders, () => ok(store.listActiveOrders())],
+    [Routes.addOrder, async ({ req }) => created(store.insertOrder((await body(req, NewStandingOrderInput)).text))],
+    [Routes.cancelOrder, ({ id }) => (found(store.cancelOrder(id), 'order', id), { status: 204 })],
   ]);
 
   return (req, res) => {
@@ -133,6 +152,22 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       send(res, reply);
     })();
   };
+
+  /** A standing order's answer to a new ask, if one is found in time. Never rejects. */
+  async function matchStandingOrder(input: NewAskInput): Promise<{ orderId: string; answer: string } | undefined> {
+    if (!deps.matchOrder) return undefined;
+    let timer: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<undefined>((resolve) => {
+      timer = setTimeout(resolve, deps.matchOrderTimeoutMs ?? MATCH_ORDER_TIMEOUT_MS, undefined);
+    });
+    try {
+      return await Promise.race([deps.matchOrder(input), timedOut]);
+    } catch {
+      return undefined; // no order is better than no ask
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   async function dispatch(req: IncomingMessage, res: ServerResponse): Promise<Reply> {
     if (!authorized(req.headers.authorization)) return { status: 401, body: { error: 'Unauthorized' } };

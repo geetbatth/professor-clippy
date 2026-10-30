@@ -32,9 +32,17 @@ at once), and you can answer, or just chat with him, from your phone.
   answer agents' questions for you; it cannot edit files or run commands. Of the `clippy` tools
   it gets all but `ask_user` and `check_reply` (a brain turn waiting for your answer would hold
   up every chat turn behind it), so when it needs something from you it simply asks in its reply.
-  It also has four tools no agent sees: `list_notes`, `recent_activity`, `snooze_note` and
-  `dismiss_note`. Tell him "not now, bring it back after lunch" and he snoozes the newest unread
-  note; ask "what happened while I was at lunch?" or "what's waiting on me?" and he summarises.
+  It also has seven tools no agent sees: `list_notes`, `recent_activity`, `snooze_note`,
+  `dismiss_note` and the standing-order tools below. Tell him "not now, bring it back after
+  lunch" and he snoozes the newest unread note; ask "what happened while I was at lunch?" or
+  "what's waiting on me?" and he summarises.
+- **Standing orders** answer agents' questions for you. Tell him "whenever an agent asks which
+  branch to use, say staging" (or add one under Settings → "Standing orders"; × cancels it) and
+  from then on a question that an order clearly covers is answered the moment it arrives, with no
+  pop-up: it goes straight into History as "Answered by standing order: ...". A one-shot Claude
+  Code run (Haiku, no tools) judges whether an order covers the question; if none does, or it
+  takes longer than 20 seconds, the question reaches you as usual. For a question with options,
+  the answer must be one of them.
 - **WhatsApp** goes through Meta's WhatsApp Cloud API and a small Cloudflare Worker you deploy
   yourself. Nothing on your PC listens on the network: the app's local API binds to 127.0.0.1
   with a bearer token, and the PC connects out to the Worker.

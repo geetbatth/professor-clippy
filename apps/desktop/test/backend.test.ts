@@ -107,6 +107,18 @@ describe('createBackend', () => {
     expect(await b.setSettings({ soundEnabled: false })).not.toHaveProperty('telegramBotTokenEnc');
   });
 
+  it('adds, lists and cancels standing orders', async () => {
+    const first = await backend.addOrder('When an agent asks which branch, answer: staging');
+    await backend.addOrder('When an agent asks to run the tests, answer: yes');
+    expect((await backend.listOrders()).map((o) => o.text)).toEqual([
+      'When an agent asks which branch, answer: staging',
+      'When an agent asks to run the tests, answer: yes',
+    ]);
+    await backend.cancelOrder(first.id);
+    expect((await backend.listOrders()).map((o) => o.text)).toEqual(['When an agent asks to run the tests, answer: yes']);
+    await expect(backend.cancelOrder('01ARZ3NDEKTSV4RRFFQ69G5FAV')).rejects.toBeInstanceOf(NotFoundError);
+  });
+
   it('reports the Tell Clippy hotkey status', async () => {
     expect(await backend.hotkeyStatus()).toEqual({ accelerator: 'Alt+T', ok: false, error: 'taken' });
   });
