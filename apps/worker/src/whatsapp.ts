@@ -19,6 +19,9 @@ export const WA_TEXT_MAX = 4096;
 /** Meta error code for "free-form message outside the 24 h window". */
 const RE_ENGAGEMENT_ERROR = 131047;
 
+/** Abort a Graph call that hangs longer than this. */
+export const GRAPH_TIMEOUT_MS = 10_000;
+
 export type SendMode = 'freeform' | 'template';
 
 /** Free-form inside 24 h of the user's last inbound message, template otherwise (or if they never wrote). */
@@ -88,6 +91,23 @@ export class MetaApiError extends Error {
   }
 }
 
+/**
+ * Meta error codes that mean "try again later" even when the HTTP status is 4xx:
+ * 1/2 (unknown/temporary API error), 4/80007/130429 (rate limits), 131016 (service unavailable).
+ */
+const TRANSIENT_META_CODES = new Set([1, 2, 4, 80007, 130429, 131016]);
+
+/**
+ * True if a failed send is worth retrying: network errors and timeouts (anything that
+ * is not a Graph answer), HTTP 429 and 5xx, and Meta's transient error codes. Any other
+ * 4xx is permanent (bad token, bad template, bad number...).
+ */
+export function isTransientSendError(err: unknown): boolean {
+  if (!(err instanceof MetaApiError)) return true;
+  if (err.status === 429 || err.status >= 500) return true;
+  return err.code !== undefined && TRANSIENT_META_CODES.has(err.code);
+}
+
 export interface WhatsAppConfig {
   META_TOKEN: string;
   PHONE_NUMBER_ID: string;
@@ -100,6 +120,7 @@ async function postMessage(cfg: WhatsAppConfig, payload: Record<string, unknown>
     method: 'POST',
     headers: { authorization: `Bearer ${cfg.META_TOKEN}`, 'content-type': 'application/json' },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
   });
   const json = (await res.json().catch(() => ({}))) as {
     messages?: { id?: unknown }[];

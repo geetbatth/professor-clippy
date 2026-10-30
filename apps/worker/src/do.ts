@@ -4,7 +4,7 @@
  * - `reminders`: synced reminders, fired by the DO alarm while the PC may be off,
  * - `kv`: `lastInboundAt` (start of the 24 h window),
  * - `sent`: wamid → kind of every message we sent (kept 30 days),
- * - `seen`: inbound wamids already queued (kept 7 days), so Meta retries are not redelivered.
+ * - `seen`: inbound wamids already handled (kept 7 days), so Meta retries are not redelivered.
  * Every connected PC socket (hibernation API) gets each new frame; on connect all
  * unacked frames are replayed in order.
  */
@@ -20,11 +20,19 @@ import {
 } from '@clippy/shared/relay';
 import type { Env } from './index';
 import { nextOccurrence } from './recurrence';
-import type { InboundText } from './webhook';
-import { sendWhatsApp } from './whatsapp';
+import type { InboundMessage } from './webhook';
+import { isTransientSendError, sendWhatsApp } from './whatsapp';
 
 /** Prefix on reminder notifications sent to WhatsApp. */
 export const REMINDER_PREFIX = '⏰ ';
+
+/**
+ * Delay before each retry of a reminder whose WhatsApp send failed transiently
+ * (1, 4, 10, 15 min: 5 attempts over ~30 min). After the last one the firing is
+ * recorded without a `waId`.
+ */
+export const REMINDER_RETRY_DELAYS_MS = [1, 4, 10, 15].map((m) => m * 60_000);
+export const REMINDER_MAX_ATTEMPTS = REMINDER_RETRY_DELAYS_MS.length + 1;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SEEN_TTL_MS = 7 * DAY_MS;
@@ -33,9 +41,21 @@ const SENT_TTL_MS = 30 * DAY_MS;
 interface ReminderRow extends Record<string, SqlStorageValue> {
   id: string;
   body: string;
+  /** The occurrence being delivered (or the next one). */
   due_at: number;
   rrule: string | null;
+  /** IANA zone the RRULE runs in; null = UTC. */
+  tz: string | null;
+  /** RRULE anchor: the `dueAt` of the PUT that defined the schedule. */
   dtstart: number;
+  /** Failed send attempts for the occurrence at `due_at`. */
+  attempts: number;
+  /** When to retry the send, while retrying; else null. */
+  retry_at: number | null;
+}
+
+function message(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 export class ClippyDO extends DurableObject<Env> {
@@ -55,7 +75,10 @@ export class ClippyDO extends DurableObject<Env> {
         body TEXT NOT NULL,
         due_at INTEGER NOT NULL,
         rrule TEXT,
-        dtstart INTEGER NOT NULL
+        tz TEXT,
+        dtstart INTEGER NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        retry_at INTEGER
       );
       CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS sent (wa_id TEXT PRIMARY KEY, kind TEXT NOT NULL, at INTEGER NOT NULL);
@@ -80,8 +103,8 @@ export class ClippyDO extends DurableObject<Env> {
 
   // ---------------------------------------------------------------- inbound
 
-  /** Queue the user's WhatsApp texts for the PC and move the 24 h window. */
-  ingestInbound(items: InboundText[]): void {
+  /** Move the 24 h window for every user message; queue the text ones for the PC. */
+  ingestInbound(items: InboundMessage[]): void {
     const now = Date.now();
     this.sql.exec('DELETE FROM seen WHERE at < ?', now - SEEN_TTL_MS);
     for (const item of items) {
@@ -91,7 +114,7 @@ export class ClippyDO extends DurableObject<Env> {
         item.ts,
       );
       const fresh = this.sql.exec('INSERT OR IGNORE INTO seen (wa_id, at) VALUES (?, ?)', item.id, now).rowsWritten;
-      if (fresh === 0) continue; // Meta redelivered a webhook we already queued
+      if (fresh === 0 || item.text === undefined) continue; // Meta retry, or not a text message
       const frame: RelayInbound = {
         type: 'inbound',
         id: item.id,
@@ -110,7 +133,7 @@ export class ClippyDO extends DurableObject<Env> {
     try {
       return await this.deliver(req.text, req.kind);
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: message(err) };
     }
   }
 
@@ -124,16 +147,34 @@ export class ClippyDO extends DurableObject<Env> {
 
   // ---------------------------------------------------------------- reminders
 
-  /** Create or replace a reminder. `dueAt` also becomes the RRULE's DTSTART anchor. */
+  private reminder(id: string): ReminderRow | undefined {
+    return this.sql.exec<ReminderRow>('SELECT * FROM reminders WHERE id = ?', id).toArray()[0];
+  }
+
+  /**
+   * Create or replace a reminder; `dueAt` becomes the RRULE anchor. Exception: a
+   * re-PUT of an existing recurring reminder with the same rule and tz and a `dueAt`
+   * already in the past is the PC re-syncing an occurrence the Worker has handled
+   * (or is handling), so only the body is updated and the Worker's schedule is kept.
+   */
   async putReminder(id: string, put: RelayReminderPut): Promise<void> {
-    this.sql.exec(
-      'INSERT OR REPLACE INTO reminders (id, body, due_at, rrule, dtstart) VALUES (?, ?, ?, ?, ?)',
-      id,
-      put.body,
-      put.dueAt,
-      put.rrule ?? null,
-      put.dueAt,
-    );
+    const existing = this.reminder(id);
+    const rrule = put.rrule ?? null;
+    const tz = put.tz ?? null;
+    if (existing && rrule !== null && existing.rrule === rrule && existing.tz === tz && put.dueAt <= Date.now()) {
+      this.sql.exec('UPDATE reminders SET body = ? WHERE id = ?', put.body, id);
+    } else {
+      this.sql.exec(
+        `INSERT OR REPLACE INTO reminders (id, body, due_at, rrule, tz, dtstart, attempts, retry_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, NULL)`,
+        id,
+        put.body,
+        put.dueAt,
+        rrule,
+        tz,
+        put.dueAt,
+      );
+    }
     await this.rearm();
   }
 
@@ -144,56 +185,97 @@ export class ClippyDO extends DurableObject<Env> {
 
   override async alarm(): Promise<void> {
     const now = Date.now();
-    const due = this.sql
-      .exec<ReminderRow>('SELECT * FROM reminders WHERE due_at <= ? ORDER BY due_at', now)
-      .toArray();
-    for (const r of due) {
-      let waId: string | undefined;
-      try {
-        waId = (await this.deliver(REMINDER_PREFIX + r.body, 'reminder')).waId;
-      } catch (err) {
-        // Still record the firing: the PC shows it, and one bad send must not block the rest.
-        console.error(`reminder ${r.id}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      const firedAt = Date.now();
-      // A PUT/DELETE may have run while we awaited Meta; only advance the row we fired.
-      const current = this.sql
-        .exec<ReminderRow>('SELECT * FROM reminders WHERE id = ?', r.id)
-        .toArray()[0];
-      if (current && current.due_at === r.due_at && current.rrule === r.rrule) {
-        const next = r.rrule ? safeNext(r, now) : undefined; // skips occurrences missed while overdue
-        if (next === undefined) this.sql.exec('DELETE FROM reminders WHERE id = ?', r.id);
-        else this.sql.exec('UPDATE reminders SET due_at = ? WHERE id = ?', next, r.id);
-      }
-      const nextDueAt = this.sql
-        .exec<{ due_at: number }>('SELECT due_at FROM reminders WHERE id = ?', r.id)
-        .toArray()[0]?.due_at;
-      const frame: RelayReminderFired = {
-        type: 'reminder-fired',
-        id: r.id,
-        firedAt,
-        ...(waId !== undefined ? { waId } : {}),
-        ...(nextDueAt !== undefined ? { nextDueAt } : {}),
-      };
-      this.enqueue(frame);
+    try {
+      const due = this.sql
+        .exec<ReminderRow>('SELECT * FROM reminders WHERE coalesce(retry_at, due_at) <= ? ORDER BY due_at', now)
+        .toArray();
+      for (const r of due) await this.fire(r, now);
+    } finally {
+      await this.rearm();
     }
-    await this.rearm();
   }
 
-  /** Alarm at the earliest due reminder, or none. */
+  /** True if `r` is still the stored row (no PUT/DELETE ran while we awaited Meta). */
+  private unchanged(r: ReminderRow): boolean {
+    const c = this.reminder(r.id);
+    return (
+      c !== undefined &&
+      c.due_at === r.due_at &&
+      c.rrule === r.rrule &&
+      c.tz === r.tz &&
+      c.dtstart === r.dtstart &&
+      c.attempts === r.attempts
+    );
+  }
+
+  /** Send one due reminder, then advance it or schedule a retry. */
+  private async fire(r: ReminderRow, now: number): Promise<void> {
+    let waId: string | undefined;
+    try {
+      waId = (await this.deliver(REMINDER_PREFIX + r.body, 'reminder')).waId;
+    } catch (err) {
+      const attempts = r.attempts + 1;
+      if (isTransientSendError(err) && attempts < REMINDER_MAX_ATTEMPTS) {
+        const delay = REMINDER_RETRY_DELAYS_MS[attempts - 1]!;
+        if (this.unchanged(r)) {
+          this.sql.exec(
+            'UPDATE reminders SET attempts = ?, retry_at = ? WHERE id = ?',
+            attempts,
+            Date.now() + delay,
+            r.id,
+          );
+        }
+        console.warn(
+          `reminder ${r.id}: send attempt ${attempts}/${REMINDER_MAX_ATTEMPTS} failed, retrying in ${delay / 60_000} min: ${message(err)}`,
+        );
+        return;
+      }
+      // Permanent error or out of retries: record the firing without a waId so the PC still shows it.
+      console.error(`reminder ${r.id}: giving up after ${attempts} attempt(s): ${message(err)}`);
+    }
+    const firedAt = Date.now();
+    if (this.unchanged(r)) {
+      const next = r.rrule ? this.safeNext(r, now) : undefined; // skips occurrences missed while overdue
+      if (next === undefined) this.sql.exec('DELETE FROM reminders WHERE id = ?', r.id);
+      else this.sql.exec('UPDATE reminders SET due_at = ?, attempts = 0, retry_at = NULL WHERE id = ?', next, r.id);
+    }
+    const nextDueAt = this.reminder(r.id)?.due_at;
+    const frame: RelayReminderFired = {
+      type: 'reminder-fired',
+      id: `${r.id}:${firedAt}`,
+      reminderId: r.id,
+      firedAt,
+      ...(waId !== undefined ? { waId } : {}),
+      ...(nextDueAt !== undefined ? { nextDueAt } : {}),
+    };
+    this.enqueue(frame);
+  }
+
+  /** Next occurrence after `after`, or undefined (finish the reminder) if the stored rule no longer works. */
+  private safeNext(r: ReminderRow, after: number): number | undefined {
+    try {
+      return nextOccurrence(r.rrule ?? '', r.dtstart, after, r.tz ?? undefined);
+    } catch (err) {
+      console.error(`reminder ${r.id}: ${message(err)}`);
+      return undefined;
+    }
+  }
+
+  /** Alarm at the earliest due reminder or pending retry, or none. */
   private async rearm(): Promise<void> {
-    const row = this.sql.exec<{ next: number | null }>('SELECT min(due_at) AS next FROM reminders').one();
+    const row = this.sql
+      .exec<{ next: number | null }>('SELECT min(coalesce(retry_at, due_at)) AS next FROM reminders')
+      .one();
     if (row.next === null) await this.ctx.storage.deleteAlarm();
     else await this.ctx.storage.setAlarm(row.next);
   }
 
   // ---------------------------------------------------------------- PC socket
 
-  /** Store a frame until acked (one per id: a newer reminder firing replaces the older) and push it. */
+  /** Store a frame until acked (ids are unique per delivery) and push it to every PC socket. */
   private enqueue(frame: WorkerToPc): void {
     const json = JSON.stringify(frame);
-    const verb = frame.type === 'reminder-fired' ? 'INSERT OR REPLACE' : 'INSERT OR IGNORE';
-    this.sql.exec(`${verb} INTO outbox (id, frame) VALUES (?, ?)`, frame.id, json);
+    this.sql.exec('INSERT OR IGNORE INTO outbox (id, frame) VALUES (?, ?)', frame.id, json);
     for (const ws of this.ctx.getWebSockets()) {
       try {
         ws.send(json);
@@ -216,11 +298,11 @@ export class ClippyDO extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  override async webSocketMessage(_ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    if (typeof message !== 'string') return;
+  override async webSocketMessage(_ws: WebSocket, msg: string | ArrayBuffer): Promise<void> {
+    if (typeof msg !== 'string') return;
     let data: unknown;
     try {
-      data = JSON.parse(message);
+      data = JSON.parse(msg);
     } catch {
       return;
     }
@@ -235,15 +317,5 @@ export class ClippyDO extends DurableObject<Env> {
     } catch {
       // Already closed.
     }
-  }
-}
-
-/** Next occurrence, or undefined (finish the reminder) if the stored rule no longer parses. */
-function safeNext(r: ReminderRow, after: number): number | undefined {
-  try {
-    return nextOccurrence(r.rrule ?? '', r.dtstart, after);
-  } catch (err) {
-    console.error(`reminder ${r.id}: ${err instanceof Error ? err.message : String(err)}`);
-    return undefined;
   }
 }

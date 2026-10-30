@@ -14,9 +14,9 @@ The protocol with the desktop app lives in `packages/shared/src/relay.ts`.
 | Route | Auth | What it does |
 | --- | --- | --- |
 | `GET /webhook` | `hub.verify_token` | Meta's verify handshake. Echoes `hub.challenge` when `hub.mode=subscribe` and the token equals `VERIFY_TOKEN`, else 403. |
-| `POST /webhook` | `X-Hub-Signature-256` | HMAC-SHA256 of the raw body with `APP_SECRET`, compared in constant time (403 on mismatch). Text messages from `MY_NUMBER` are queued for the PC and move the 24 h window. Anything else is ignored. A valid signature always gets 200. |
+| `POST /webhook` | `X-Hub-Signature-256` | HMAC-SHA256 of the raw body with `APP_SECRET`, compared in constant time (403 on mismatch). Every message from `MY_NUMBER` (any type) moves the 24 h window; only text messages are queued for the PC. Other senders and status updates are ignored. A valid signature always gets 200. |
 | `POST /send` | Bearer `PC_SECRET` | `{text, kind, urgent?}` → `{waId, mode}`. 400 on a bad body, 502 `{error}` if Meta refuses. |
-| `PUT /reminders/:id` | Bearer `PC_SECRET` | `{body, dueAt, rrule?}` → 204. Creates or replaces the reminder. 400 on a bad body or RRULE. |
+| `PUT /reminders/:id` | Bearer `PC_SECRET` | `{body, dueAt, rrule?, tz?}` → 204. Creates or replaces the reminder (see the re-sync rule below). 400 on a bad body, RRULE or `tz`. |
 | `DELETE /reminders/:id` | Bearer `PC_SECRET` | → 204. Deleting an unknown id is not an error. |
 | `GET /ws` | Bearer `PC_SECRET` | WebSocket upgrade (426 without `Upgrade: websocket`). |
 | `GET /health` | none | `{ok:true}` |
@@ -25,6 +25,7 @@ A missing or wrong bearer gets 401. Unknown paths get 404.
 
 ### Sending
 
+- Graph calls time out after 10 s.
 - Every message goes to `MY_NUMBER` from `PHONE_NUMBER_ID` through `POST https://graph.facebook.com/<GRAPH_API_VERSION>/<PHONE_NUMBER_ID>/messages`. The version (`v24.0`) is the single constant `GRAPH_API_VERSION` in `src/whatsapp.ts`.
 - **Free-form text** is used when your last inbound WhatsApp message was less than 24 h ago. Newlines are kept. Text is cut at Meta's 4096-character limit, ending with `…more on desktop`.
 - **Otherwise the `clippy_note` template** is used, with `{{1}}` set to the note text. Meta rejects template parameters that contain newlines, tabs or more than 4 spaces in a row (error 132018), so the text is changed first:
@@ -38,26 +39,29 @@ A missing or wrong bearer gets 401. Unknown paths get 404.
 
 ### Reminders
 
-- The Durable Object's alarm is always set to the earliest `dueAt`.
+- The Durable Object's alarm is always set to the earliest `dueAt` (or pending send retry). The alarm is re-armed even if processing throws.
 - When the alarm fires, every due reminder is sent to WhatsApp as `⏰ <body>` (with the same free-form or template choice as above), and a `reminder-fired` item is queued for the PC.
 - One-off reminders are then deleted. Recurring ones move to their next occurrence after now, so occurrences missed while overdue are skipped and fire only once.
-- If the WhatsApp send fails, the firing is still recorded (without `waId`) and the error is logged.
+- **Send failures:** a transient failure (network error or 10 s timeout, HTTP 429 or 5xx, or Meta codes 1, 2, 4, 80007, 130429, 131016) keeps the reminder and retries it after 1, 4, 10 and 15 minutes: 5 attempts over about 30 minutes. After the last attempt, or at once on any other 4xx (bad token, template or number), the firing is recorded without `waId` and the error is logged.
+- If a PUT or DELETE for the same reminder lands while its send is in flight, the alarm does not advance or delete the new row.
+- **Re-sync rule:** a PUT for an existing recurring reminder with the same `rrule` and `tz` and a `dueAt` that is already past only updates the body; the Worker keeps its own (already advanced) schedule, so the PC re-syncing a stale `dueAt` never causes a duplicate firing. Any other PUT replaces the reminder and makes `dueAt` the new anchor.
 
-RRULEs are handled by the `rrule` package, which bundles for Workers:
+RRULEs are handled by the `rrule` package, which bundles for Workers. The semantics match the desktop scheduler:
 
-- `DTSTART` is the `dueAt` from the latest `PUT`. A `DTSTART` line inside the string is ignored, so `COUNT` counts from the last PUT.
-- All times are **UTC**: `BYHOUR`/`BYMINUTE` are UTC, and without them the time of day comes from `dueAt`. `TZID` is not supported.
-- `FREQ` is required. `RRULE:` prefixes are accepted. `INTERVAL`, `BYDAY`, `BYHOUR`, `BYMINUTE`, `COUNT`, `UNTIL` and the rest of RFC 5545 work as `rrule` implements them.
+- `DTSTART` is the `dueAt` that set the schedule. A `DTSTART` line (and any `TZID`) inside the string is ignored, so `COUNT` counts from that PUT.
+- The rule runs on **floating local wall time** in the reminder's `tz` (IANA, for example `America/Los_Angeles`; UTC when absent). `dueAt` is converted to its wall time in `tz`, `rrule` iterates on that, and each result is converted back to an instant. So `BYHOUR=9` means 09:00 local, and a weekday 09:00 rule stays at 09:00 across DST.
+- A wall time skipped by spring-forward moves forward by the gap; an ambiguous fall-back time takes the earlier instant. The next occurrence is always strictly after now, including inside the repeated hour.
+- Allowed `FREQ`: `HOURLY`, `DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY`. `SECONDLY`, `MINUTELY` and `BYSECOND` are rejected with 400, as are a non-positive `INTERVAL` or `COUNT`. `RRULE:` prefixes are accepted; `BYDAY`, `BYHOUR`, `BYMINUTE`, `UNTIL` and the rest work as `rrule` implements them.
 
 ### Durable Object storage (SQLite)
 
 | Table | Holds |
 | --- | --- |
-| `outbox` | Worker→PC frames not yet acked, in delivery order. There is at most one `reminder-fired` per reminder id (a newer firing replaces the older one). |
-| `reminders` | `id, body, due_at, rrule, dtstart` |
+| `outbox` | Worker→PC frames not yet acked, in delivery order. Each reminder firing is its own frame, with id `<reminderId>:<firedAt>`. |
+| `reminders` | `id, body, due_at, rrule, tz, dtstart, attempts, retry_at` |
 | `kv` | `lastInboundAt` (epoch ms of your latest inbound WhatsApp message) |
 | `sent` | wamid → kind of every message sent, pruned after 30 days |
-| `seen` | inbound wamids already queued, pruned after 7 days, so Meta's webhook retries are not delivered twice |
+| `seen` | inbound wamids already handled, pruned after 7 days, so Meta's webhook retries are not delivered twice |
 
 ## Secrets
 

@@ -60,14 +60,16 @@ export interface GraphCall {
  * `wamid.<n>` back (or the response from `respond`). Any other fetch throws, so no
  * test can reach the network.
  */
-export function mockGraph(respond?: (call: GraphCall, n: number) => Response | undefined): GraphCall[] {
+export function mockGraph(
+  respond?: (call: GraphCall, n: number) => Response | undefined | Promise<Response | undefined>,
+): GraphCall[] {
   const calls: GraphCall[] = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const req = new Request(input, init);
     if (new URL(req.url).hostname !== 'graph.facebook.com') throw new Error(`unexpected fetch ${req.url}`);
     const call = { url: req.url, auth: req.headers.get('authorization'), body: (await req.json()) as Record<string, unknown> };
     calls.push(call);
-    return respond?.(call, calls.length) ?? Response.json({ messages: [{ id: `wamid.${calls.length}` }] });
+    return (await respond?.(call, calls.length)) ?? Response.json({ messages: [{ id: `wamid.${calls.length}` }] });
   });
   return calls;
 }

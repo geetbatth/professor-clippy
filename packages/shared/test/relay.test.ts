@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isValidTimeZone,
   PcToWorker,
   RelayReminderPut,
   RelayRoutes,
@@ -37,14 +38,25 @@ describe('REST bodies', () => {
     expect(RelayReminderPut.parse(put)).toEqual(put);
     expect(RelayReminderPut.safeParse({ body: 'b' }).success).toBe(false);
   });
+
+  it('accepts an IANA tz on a reminder put and rejects unknown zones', () => {
+    const put = { body: 'b', dueAt: 5, rrule: 'FREQ=DAILY', tz: 'America/Los_Angeles' };
+    expect(RelayReminderPut.parse(put)).toEqual(put);
+    expect(RelayReminderPut.parse({ ...put, tz: 'UTC' }).tz).toBe('UTC');
+    expect(RelayReminderPut.safeParse({ ...put, tz: 'Mars/Olympus_Mons' }).success).toBe(false);
+    expect(RelayReminderPut.safeParse({ ...put, tz: '' }).success).toBe(false);
+    expect(isValidTimeZone('Europe/London')).toBe(true);
+    expect(isValidTimeZone('Not/AZone')).toBe(false);
+  });
 });
 
 describe('WebSocket frames', () => {
   it('discriminates Worker-to-PC frames by type', () => {
     const inbound = { type: 'inbound', id: 'd1', text: 'yes', contextWaId: 'wamid.9', ts: 1 };
     expect(WorkerToPc.parse(inbound)).toEqual(inbound);
-    const fired = { type: 'reminder-fired', id: 'r1', firedAt: 2, waId: 'wamid.2', nextDueAt: 3 };
+    const fired = { type: 'reminder-fired', id: 'r1:2', reminderId: 'r1', firedAt: 2, waId: 'wamid.2', nextDueAt: 3 };
     expect(WorkerToPc.parse(fired)).toEqual(fired);
+    expect(WorkerToPc.safeParse({ ...fired, reminderId: undefined }).success).toBe(false);
     expect(WorkerToPc.safeParse({ type: 'ack', ids: [] }).success).toBe(false);
     expect(WorkerToPc.safeParse({ type: 'inbound', id: 'd1', ts: 1 }).success).toBe(false);
   });

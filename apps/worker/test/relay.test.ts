@@ -3,10 +3,12 @@ import { WorkerToPc } from '@clippy/shared/relay';
 import { runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { env, exports } from 'cloudflare:workers';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ClippyDO } from '../src/do';
+import { type ClippyDO, REMINDER_MAX_ATTEMPTS, REMINDER_RETRY_DELAYS_MS } from '../src/do';
+import { nextOccurrence } from '../src/recurrence';
 import { type WaMessage, mockGraph, sentText, signBody, webhookPayload } from './helpers';
 
 const BASE = 'https://relay.test';
+const LA = 'America/Los_Angeles';
 const AUTH = { authorization: `Bearer ${env.PC_SECRET}` };
 const relay = () => env.CLIPPY.getByName('relay');
 
@@ -54,6 +56,17 @@ function makeDue(id: string, dueAt = Date.now() - 1_000): Promise<void> {
   return inDO((_i, s) => {
     s.storage.sql.exec('UPDATE reminders SET due_at = ?, dtstart = ? WHERE id = ?', dueAt, dueAt, id);
   });
+}
+
+/** Pretend a pending send retry is now due. */
+function makeRetryDue(id: string): Promise<void> {
+  return inDO((_i, s) => {
+    s.storage.sql.exec('UPDATE reminders SET retry_at = ? WHERE id = ?', Date.now() - 1_000, id);
+  });
+}
+
+function reminderRow(id: string): Promise<Record<string, SqlStorageValue> | undefined> {
+  return inDO((_i, s) => s.storage.sql.exec('SELECT * FROM reminders WHERE id = ?', id).toArray()[0]);
 }
 
 interface PcSocket {
@@ -129,6 +142,16 @@ describe('POST /webhook', () => {
       { type: 'inbound', id: 'wamid.3', text: 'yes', contextWaId: 'wamid.ask', ts },
     ]);
     expect(await inDO((i) => i.lastInboundAt())).toBe(ts);
+  });
+
+  it('moves the 24 h window for non-text messages but queues only text', async () => {
+    const ts = Math.floor(Date.now() / 1000);
+    const res = await postWebhook(
+      webhookPayload([{ from: env.MY_NUMBER, id: 'wamid.img', timestamp: String(ts), type: 'image' }]),
+    );
+    expect(res.status).toBe(200);
+    expect(await inDO((i) => i.lastInboundAt())).toBe(ts * 1000);
+    expect(await pending()).toEqual([]);
   });
 
   it('answers 200 to signed status-only or non-JSON bodies', async () => {
@@ -303,6 +326,47 @@ describe('reminders', () => {
     expect(await alarmAt()).toBeNull();
   });
 
+
+  it('PUT 400s FREQ=MINUTELY/SECONDLY, BYSECOND and an unknown tz', async () => {
+    const t = Date.now() + HOUR;
+    for (const [rrule, msg] of [
+      ['FREQ=MINUTELY', 'Invalid RRULE: FREQ=MINUTELY is not supported'],
+      ['FREQ=SECONDLY', 'Invalid RRULE: FREQ=SECONDLY is not supported'],
+      ['FREQ=HOURLY;BYSECOND=5', 'Invalid RRULE: BYSECOND is not supported'],
+    ] as const) {
+      const res = await pcCall('/reminders/r1', 'PUT', { body: 'x', dueAt: t, rrule });
+      expect(res.status, rrule).toBe(400);
+      expect(await res.json()).toEqual({ error: msg });
+    }
+    const badTz = await pcCall('/reminders/r1', 'PUT', { body: 'x', dueAt: t, rrule: 'FREQ=DAILY', tz: 'Mars/Base' });
+    expect(badTz.status).toBe(400);
+    expect(JSON.stringify(await badTz.json())).toContain('Unknown IANA time zone');
+    expect(await alarmAt()).toBeNull();
+  });
+
+  it('PUT stores tz and a re-PUT with a past dueAt keeps the Worker-advanced schedule', async () => {
+    mockGraph();
+    const rule = { rrule: 'FREQ=DAILY', tz: LA };
+    await pcCall('/reminders/d', 'PUT', { body: 'Stretch', dueAt: Date.now() + HOUR, ...rule });
+    const due = Date.now() - 60_000;
+    await makeDue('d', due);
+    await runDurableObjectAlarm(relay());
+    const advanced = nextOccurrence('FREQ=DAILY', due, due, LA)!;
+    expect(await reminderRow('d')).toMatchObject({ due_at: advanced, tz: LA, dtstart: due });
+
+    // The PC (offline during the firing) re-syncs its stale, past dueAt: no duplicate firing.
+    expect((await pcCall('/reminders/d', 'PUT', { body: 'Stretch!', dueAt: due, ...rule })).status).toBe(204);
+    expect(await reminderRow('d')).toMatchObject({ body: 'Stretch!', due_at: advanced, dtstart: due });
+    expect(await alarmAt()).toBe(advanced);
+
+    // A changed rule, or a future dueAt, is an edit and replaces the schedule.
+    const future = Date.now() + 3 * HOUR;
+    await pcCall('/reminders/d', 'PUT', { body: 'Stretch!', dueAt: future, ...rule });
+    expect(await reminderRow('d')).toMatchObject({ due_at: future, dtstart: future });
+    await pcCall('/reminders/d', 'PUT', { body: 'Stretch!', dueAt: due, rrule: 'FREQ=WEEKLY', tz: LA });
+    expect(await reminderRow('d')).toMatchObject({ due_at: due, rrule: 'FREQ=WEEKLY' });
+  });
+
   it('alarm fires a due one-off: "⏰ " to WhatsApp, reminder-fired queued and pushed, reminder deleted', async () => {
     const graph = mockGraph();
     const pc = await connectPc();
@@ -314,7 +378,10 @@ describe('reminders', () => {
     expect(graph).toHaveLength(1);
     expect(sentText(graph[0]!.body)).toBe('⏰ Stand-up · in 5'); // template (no inbound yet), sanitised
     const fired = await pending();
-    expect(fired).toEqual([{ type: 'reminder-fired', id: 'r1', firedAt: expect.any(Number), waId: 'wamid.1' }]);
+    expect(fired).toEqual([
+      { type: 'reminder-fired', id: expect.stringMatching(/^r1:\d+$/), reminderId: 'r1', firedAt: expect.any(Number), waId: 'wamid.1' },
+    ]);
+    expect(fired[0]!.id).toBe(`r1:${(fired[0] as { firedAt: number }).firedAt}`);
     await vi.waitFor(() => expect(pc.frames).toEqual(fired));
     const ids = await inDO((_i, s) => s.storage.sql.exec('SELECT id FROM reminders').toArray());
     expect(ids).toEqual([{ id: 'r2' }]);
@@ -334,14 +401,20 @@ describe('reminders', () => {
     const next = due + 24 * HOUR;
     const fired = (await pending()).filter((f) => f.type === 'reminder-fired');
     expect(fired).toEqual([
-      { type: 'reminder-fired', id: 'daily', firedAt: expect.any(Number), waId: 'wamid.1', nextDueAt: next },
+      {
+        type: 'reminder-fired',
+        id: expect.stringMatching(/^daily:/),
+        reminderId: 'daily',
+        firedAt: expect.any(Number),
+        waId: 'wamid.1',
+        nextDueAt: next,
+      },
     ]);
-    const row = await inDO((_i, s) => s.storage.sql.exec('SELECT due_at FROM reminders WHERE id = ?', 'daily').one());
-    expect(row.due_at).toBe(next);
+    expect((await reminderRow('daily'))!.due_at).toBe(next);
     expect(await alarmAt()).toBe(next);
   });
 
-  it('keeps one undelivered reminder-fired per reminder (the latest firing)', async () => {
+  it('keeps every firing until acked; acking an older firing leaves the newer one', async () => {
     mockGraph();
     await pcCall('/reminders/daily', 'PUT', { body: 'Water plants', dueAt: Date.now() + HOUR, rrule: 'FREQ=DAILY' });
     await makeDue('daily', Date.now() - 2 * 24 * HOUR);
@@ -349,18 +422,130 @@ describe('reminders', () => {
     await makeDue('daily', Date.now() - 1_000);
     await runDurableObjectAlarm(relay());
     const fired = await pending();
-    expect(fired).toHaveLength(1);
-    expect(fired[0]).toMatchObject({ type: 'reminder-fired', id: 'daily', waId: 'wamid.2' });
+    expect(fired.map((f) => [f.type, (f as { reminderId: string }).reminderId, (f as { waId: string }).waId])).toEqual([
+      ['reminder-fired', 'daily', 'wamid.1'],
+      ['reminder-fired', 'daily', 'wamid.2'],
+    ]);
+    expect(fired[0]!.id).not.toBe(fired[1]!.id);
+    const pc = await connectPc();
+    await vi.waitFor(() => expect(pc.frames).toHaveLength(2));
+    pc.ack([fired[0]!.id]); // a late ack for the older firing
+    await vi.waitFor(async () => expect((await pending()).map((f) => f.id)).toEqual([fired[1]!.id]));
   });
 
-  it('still records the firing (without waId) when WhatsApp refuses', async () => {
+  it('retries a transient send failure with backoff, then fires once it succeeds', async () => {
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const graph = mockGraph((_c, n) =>
+      n === 1 ? Response.json({ error: { message: 'Service unavailable', code: 2 } }, { status: 503 }) : undefined,
+    );
+    await pcCall('/reminders/r1', 'PUT', { body: 'x', dueAt: Date.now() + HOUR });
+    await makeDue('r1');
+    const before = Date.now();
+    await runDurableObjectAlarm(relay());
+
+    expect(await pending()).toEqual([]); // nothing reported while retrying
+    const row = (await reminderRow('r1'))!;
+    expect(row.attempts).toBe(1);
+    expect(row.retry_at).toBeGreaterThanOrEqual(before + REMINDER_RETRY_DELAYS_MS[0]!);
+    expect(await alarmAt()).toBe(row.retry_at);
+    expect(warned).toHaveBeenCalledWith(
+      'reminder r1: send attempt 1/5 failed, retrying in 1 min: WhatsApp send failed: Service unavailable',
+    );
+
+    await makeRetryDue('r1');
+    await runDurableObjectAlarm(relay());
+    expect(graph).toHaveLength(2);
+    expect(await pending()).toEqual([expect.objectContaining({ reminderId: 'r1', waId: 'wamid.2' })]);
+    expect(await reminderRow('r1')).toBeUndefined();
+    expect(await alarmAt()).toBeNull();
+  });
+
+  it('gives up after 5 transient failures (~30 min) and records the firing without waId', async () => {
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
-    mockGraph(() => Response.json({ error: { message: 'down', code: 1 } }, { status: 500 }));
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Network connection lost.'));
+    await pcCall('/reminders/r1', 'PUT', { body: 'x', dueAt: Date.now() + HOUR, rrule: 'FREQ=DAILY' });
+    const due = Date.now() - 1_000;
+    await makeDue('r1', due);
+    await runDurableObjectAlarm(relay());
+    for (let i = 1; i < REMINDER_MAX_ATTEMPTS; i++) {
+      expect(await pending()).toEqual([]);
+      expect((await reminderRow('r1'))!.attempts).toBe(i);
+      await makeRetryDue('r1');
+      await runDurableObjectAlarm(relay());
+    }
+    expect(REMINDER_MAX_ATTEMPTS).toBe(5);
+    expect(REMINDER_RETRY_DELAYS_MS.reduce((a, b) => a + b, 0)).toBe(30 * 60_000);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(5);
+    expect(warned).toHaveBeenCalledTimes(4);
+    expect(logged).toHaveBeenCalledWith('reminder r1: giving up after 5 attempt(s): Network connection lost.');
+    expect(await pending()).toEqual([
+      { type: 'reminder-fired', id: expect.any(String), reminderId: 'r1', firedAt: expect.any(Number), nextDueAt: due + 24 * HOUR },
+    ]);
+    expect(await reminderRow('r1')).toMatchObject({ due_at: due + 24 * HOUR, attempts: 0, retry_at: null });
+  });
+
+  it('does not retry a permanent 4xx: records the firing without waId at once', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const graph = mockGraph(() =>
+      Response.json({ error: { message: 'Template name does not exist', code: 132001 } }, { status: 404 }),
+    );
     await pcCall('/reminders/r1', 'PUT', { body: 'x', dueAt: Date.now() + HOUR });
     await makeDue('r1');
     await runDurableObjectAlarm(relay());
-    expect(await pending()).toEqual([{ type: 'reminder-fired', id: 'r1', firedAt: expect.any(Number) }]);
-    expect(logged).toHaveBeenCalledWith('reminder r1: WhatsApp send failed: down');
+    expect(graph).toHaveLength(1);
+    expect(await pending()).toEqual([
+      { type: 'reminder-fired', id: expect.any(String), reminderId: 'r1', firedAt: expect.any(Number) },
+    ]);
+    expect(logged).toHaveBeenCalledWith(
+      'reminder r1: giving up after 1 attempt(s): WhatsApp send failed: Template name does not exist',
+    );
     expect(await alarmAt()).toBeNull();
+  });
+
+  it('does not advance a reminder that was replaced (PUT) or deleted while the send was in flight', async () => {
+    const newDue = Date.now() + 5 * HOUR;
+    mockGraph(async (_c, n) => {
+      if (n === 1) await pcCall('/reminders/r1', 'PUT', { body: 'moved', dueAt: newDue });
+      if (n === 2) await pcCall('/reminders/r2', 'DELETE');
+      return undefined;
+    });
+    await pcCall('/reminders/r1', 'PUT', { body: 'x', dueAt: Date.now() + HOUR });
+    await makeDue('r1');
+    await runDurableObjectAlarm(relay());
+    expect(await reminderRow('r1')).toMatchObject({ body: 'moved', due_at: newDue, dtstart: newDue });
+    expect(await pending()).toEqual([expect.objectContaining({ reminderId: 'r1', waId: 'wamid.1', nextDueAt: newDue })]);
+    expect(await alarmAt()).toBe(newDue);
+
+    await pcCall('/reminders/r2', 'PUT', { body: 'y', dueAt: Date.now() + HOUR, rrule: 'FREQ=DAILY' });
+    await makeDue('r2');
+    await runDurableObjectAlarm(relay());
+    expect(await reminderRow('r2')).toBeUndefined(); // the DELETE wins; nothing re-created
+    const fired = (await pending()).find((f) => (f as { reminderId?: string }).reminderId === 'r2');
+    expect(fired).toMatchObject({ waId: 'wamid.2' });
+    expect(fired).not.toHaveProperty('nextDueAt');
+  });
+
+  it('finishes a reminder whose stored rule no longer parses (and still reports the firing)', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockGraph();
+    const due = Date.now() - 1_000;
+    await inDO(async (_i, s) => {
+      s.storage.sql.exec(
+        'INSERT INTO reminders (id, body, due_at, rrule, tz, dtstart) VALUES (?, ?, ?, ?, NULL, ?)',
+        'bad',
+        'legacy',
+        due,
+        'FREQ=MINUTELY',
+        due,
+      );
+      await s.storage.setAlarm(Date.now() + HOUR); // future, so only runDurableObjectAlarm runs it
+    });
+    await runDurableObjectAlarm(relay());
+    expect(logged).toHaveBeenCalledWith('reminder bad: Invalid RRULE: FREQ=MINUTELY is not supported');
+    expect(await reminderRow('bad')).toBeUndefined();
+    expect(await pending()).toEqual([
+      { type: 'reminder-fired', id: expect.any(String), reminderId: 'bad', firedAt: expect.any(Number), waId: 'wamid.1' },
+    ]);
   });
 });

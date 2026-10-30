@@ -6,9 +6,9 @@
  */
 import { RelayReminderPut, RelayRoutes, RelaySendRequest } from '@clippy/shared/relay';
 import type { ClippyDO } from './do';
-import { parseRule } from './recurrence';
+import { parseRuleOptions } from './recurrence';
 import { isAuthorizedPc, secretEquals, verifyMetaSignature } from './security';
-import { extractInboundTexts } from './webhook';
+import { extractInbound } from './webhook';
 
 export { ClippyDO } from './do';
 
@@ -74,7 +74,7 @@ async function receiveWebhook(request: Request, env: Env): Promise<Response> {
   } catch {
     return new Response('OK');
   }
-  const items = extractInboundTexts(payload, env.MY_NUMBER ?? '', Date.now());
+  const items = extractInbound(payload, env.MY_NUMBER ?? '', Date.now());
   if (items.length > 0) await env.CLIPPY.getByName(DO_NAME).ingestInbound(items);
   return new Response('OK');
 }
@@ -117,7 +117,7 @@ async function pcRoute(request: Request, url: URL, env: Env): Promise<Response |
       if (!body.success) return error(400, body.error.message);
       if (body.data.rrule !== undefined) {
         try {
-          parseRule(body.data.rrule, body.data.dueAt);
+          parseRuleOptions(body.data.rrule);
         } catch (err) {
           return error(400, err instanceof Error ? err.message : String(err));
         }

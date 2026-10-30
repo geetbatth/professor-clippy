@@ -8,6 +8,7 @@ import {
   buildMessagePayload,
   chooseMode,
   freeformText,
+  isTransientSendError,
   sanitizeTemplateText,
   sendWhatsApp,
 } from '../src/whatsapp';
@@ -98,6 +99,21 @@ describe('freeformText', () => {
   });
 });
 
+describe('isTransientSendError', () => {
+  it('retries network errors, 429, 5xx and Meta throttling codes; not other 4xx', () => {
+    expect(isTransientSendError(new TypeError('Network connection lost.'))).toBe(true);
+    expect(isTransientSendError(new DOMException('timed out', 'TimeoutError'))).toBe(true);
+    expect(isTransientSendError(new MetaApiError(429, undefined, 'x'))).toBe(true);
+    expect(isTransientSendError(new MetaApiError(500, 1, 'x'))).toBe(true);
+    expect(isTransientSendError(new MetaApiError(503, undefined, 'x'))).toBe(true);
+    expect(isTransientSendError(new MetaApiError(400, 130429, 'rate limit'))).toBe(true);
+    expect(isTransientSendError(new MetaApiError(400, 131016, 'service unavailable'))).toBe(true);
+    expect(isTransientSendError(new MetaApiError(400, 132001, 'template does not exist'))).toBe(false);
+    expect(isTransientSendError(new MetaApiError(401, 190, 'token expired'))).toBe(false);
+    expect(isTransientSendError(new MetaApiError(400, undefined, 'x'))).toBe(false);
+  });
+});
+
 describe('sendWhatsApp (mocked Graph API)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -123,6 +139,7 @@ describe('sendWhatsApp (mocked Graph API)', () => {
     expect(calls[0]!.init.method).toBe('POST');
     expect(new Headers(calls[0]!.init.headers).get('authorization')).toBe('Bearer tok');
     expect(calls[0]!.body.type).toBe('text');
+    expect(calls[0]!.init.signal).toBeInstanceOf(AbortSignal); // AbortSignal.timeout(10 s)
   });
 
   it('sends a template outside the window', async () => {
