@@ -5,7 +5,7 @@
  */
 import { homedir } from 'node:os';
 import { app, BrowserWindow, globalShortcut, nativeTheme, powerMonitor } from 'electron';
-import { appDataDir, settingsPath, type ClippyEvent, type ClippyEventMap, type HotkeyStatus, type Settings } from '@clippy/shared';
+import { appDataDir, resolveTheme, settingsPath, type ClippyEvent, type ClippyEventMap, type HotkeyStatus, type Settings } from '@clippy/shared';
 import { createBackend, forRenderer } from './backend';
 import { findNode, resolveMcpServerPath } from './brain/mcpConfig';
 import { resolveClaude } from './brain/runner';
@@ -129,7 +129,13 @@ async function main(): Promise<void> {
   });
   const win = clippy.win;
   // Pad pages popped out onto the desktop: their windows follow the store (page:changed).
-  const pageWindows: PageWindows = createPageWindows({ pages: core.pages, bus, quitting: () => quitting });
+  const pageWindows: PageWindows = createPageWindows({
+    pages: core.pages,
+    bus,
+    quitting: () => quitting,
+    // Painted before the renderer has its settings, so a dark theme never flashes classic yellow.
+    theme: () => resolveTheme(settings.get(), nativeTheme.shouldUseDarkColors),
+  });
   // Kept past the note's window closing: on quit every window closes at once, and a page window's
   // last save (or its "(your version)" copy) must still reach the store. Removed once stopped.
   const rendererIpc = registerIpc(backend, win, { allowSender: (sender) => pageWindows.owns(sender), disposeOnClose: false });

@@ -5,7 +5,8 @@
  *   is un-popped, archived or deleted loses it. So "📌 Pin out", the window's "×" and archiving all
  *   just change the page, and the windows catch up from `page:changed` / `page:deleted`.
  * - Each window is frameless and transparent (the renderer draws the sticky), resizable, not
- *   always-on-top and kept off the taskbar. It loads the renderer with `?page=<id>`. Windows gives
+ *   always-on-top and kept off the taskbar. It loads the renderer with `?page=<id>`, and
+ *   `&theme=<id>` (the theme to paint now) so it never shows classic yellow before settings load. Windows gives
  *   a transparent window no border to resize it by, so the sticky's corner grip resizes it from
  *   here (`pageWindow:resize*`), following the cursor like Clippy's own drag.
  * - Where a window is (`popBounds`) is saved 500 ms after it stops moving or resizing, and it
@@ -14,7 +15,7 @@
  *   quits, or Windows shuts down or signs out, windows close but stay popped, so they come back.
  */
 import { BrowserWindow, ipcMain, screen, type IpcMainEvent, type WebContents } from 'electron';
-import type { Page, PageBounds, PageFilter } from '@clippy/shared';
+import type { Page, PageBounds, PageFilter, ThemeId } from '@clippy/shared';
 import type { Bus } from '../core/bus';
 import { defaultPreloadPath, loadRenderer, type RendererSource } from './createClippyWindow';
 import type { DisplayArea } from './geometry';
@@ -33,6 +34,8 @@ export interface PageWindowsOptions extends RendererSource {
   bus: Bus;
   /** True while the app quits: windows closing then stay popped. */
   quitting(): boolean;
+  /** The theme to paint right now (`resolveTheme` of the settings and Windows' mode), read as each window opens. */
+  theme?: () => ThemeId;
   /** Defaults to the preload next to the main bundle. */
   preloadPath?: string;
   /** Diagnostics. Defaults to console.warn. */
@@ -191,7 +194,7 @@ export function createPageWindows(opts: PageWindowsOptions): PageWindows {
       if (open.get(page.id) === entry) open.delete(page.id);
     });
 
-    loadRenderer(win, { rendererUrl: opts.rendererUrl, rendererFile: opts.rendererFile, query: { ...opts.query, page: page.id } });
+    loadRenderer(win, { rendererUrl: opts.rendererUrl, rendererFile: opts.rendererFile, query: { ...opts.query, ...(opts.theme && { theme: opts.theme() }), page: page.id } });
   }
 
   function close(id: string): void {

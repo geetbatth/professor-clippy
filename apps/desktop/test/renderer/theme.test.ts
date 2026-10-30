@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { PAGE_COLORS, THEMES } from '@clippy/shared/theme';
-import { themeAttrs } from '../../src/renderer/src/theme';
+import { themeAttrs, themeFromSearch } from '../../src/renderer/src/theme';
 
 /** The tokens later screens rely on: every theme must define each of them. */
 const REQUIRED_TOKENS = [
@@ -48,6 +48,19 @@ describe('themeAttrs', () => {
     expect(themeAttrs('chalkboard')).toEqual({ theme: 'chalkboard', dark: 'true' });
     expect(themeAttrs('classic')).toEqual({ theme: 'classic', dark: 'false' });
     expect(themeAttrs('mint')).toEqual({ theme: 'mint', dark: 'false' });
+  });
+});
+
+describe('themeFromSearch', () => {
+  it('reads the theme main resolved for a page window from ?theme=, dark or not from the theme itself', () => {
+    expect(themeFromSearch('?page=P1&theme=night')).toEqual({ theme: 'night', dark: 'true' });
+    expect(themeFromSearch('?theme=mint&page=P1')).toEqual({ theme: 'mint', dark: 'false' });
+  });
+
+  it('gives nothing without a theme, or with one that does not exist', () => {
+    expect(themeFromSearch('?page=P1')).toBeUndefined();
+    expect(themeFromSearch('?page=P1&theme=neon')).toBeUndefined();
+    expect(themeFromSearch('')).toBeUndefined();
   });
 });
 

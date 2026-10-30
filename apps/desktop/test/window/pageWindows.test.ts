@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Page, PageBounds } from '@clippy/shared';
+import type { Page, PageBounds, ThemeId } from '@clippy/shared';
 import { Bus } from '../../src/main/core/bus';
 import { PAGE_HEADER_HEIGHT, PageWindowChannels } from '../../src/main/window/windowApi';
 
@@ -90,7 +90,7 @@ function makePage(over: Partial<Page> = {}): Page {
   };
 }
 
-function setup(stored: Page[] = []) {
+function setup(stored: Page[] = [], extra: { theme?: () => ThemeId } = {}) {
   const bus = new Bus();
   let quitting = false;
   const pages = {
@@ -101,7 +101,7 @@ function setup(stored: Page[] = []) {
       return page;
     }),
   };
-  const windows = createPageWindows({ pages, bus, quitting: () => quitting, log: () => {} });
+  const windows = createPageWindows({ pages, bus, quitting: () => quitting, log: () => {}, ...extra });
   return { bus, pages, windows, quit: () => (quitting = true) };
 }
 
@@ -137,6 +137,16 @@ describe('createPageWindows', () => {
     bus.emit('page:changed', makePage({ title: 'Renamed' }));
     expect(h.state.windows).toHaveLength(1);
     expect(win.setTitle).toHaveBeenCalledWith('Renamed');
+  });
+
+  it('passes the theme to paint as ?theme=, read when each window opens, so it never shows classic first', () => {
+    let theme: ThemeId = 'night';
+    const { bus } = setup([], { theme: () => theme });
+    bus.emit('page:changed', makePage({ id: 'A' }));
+    theme = 'mint';
+    bus.emit('page:changed', makePage({ id: 'B' }));
+    expect(h.state.windows[0]!.loadFile).toHaveBeenCalledWith(expect.any(String), { query: { theme: 'night', page: 'A' } });
+    expect(h.state.windows[1]!.loadFile).toHaveBeenCalledWith(expect.any(String), { query: { theme: 'mint', page: 'B' } });
   });
 
   it('cascades new windows and never opens one for a page that is not popped or is archived', () => {

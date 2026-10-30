@@ -4,6 +4,7 @@ import { App } from './App';
 import { preloadSprites } from './clippy/sprites';
 import { Gallery } from './dev/Gallery';
 import { resolveRuntime } from './runtime';
+import { themeFromSearch } from './theme';
 import { BackendMissing } from './views/BackendMissing';
 import { PageWindow } from './views/PageWindow';
 import './styles/theme.css';
@@ -12,6 +13,14 @@ import './styles/controls.css';
 
 // Fetch and decode every Clippy pose up front, so swapping poses never flickers.
 void preloadSprites();
+
+// A page window is told the theme to paint (`?theme=`): paint it before the first render, so a
+// dark theme never flashes classic yellow while settings load. `useTheme` takes over from there.
+const initialTheme = themeFromSearch(location.search);
+if (initialTheme) {
+  document.documentElement.dataset.theme = initialTheme.theme;
+  document.documentElement.dataset.dark = initialTheme.dark;
+}
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root missing');

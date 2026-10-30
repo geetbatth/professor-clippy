@@ -266,7 +266,9 @@ knob while off (on, it takes `--btn-ink`), the dark wiring-log panel, the "Clipp
 screen and the dev gallery. Settings → Look picks the three settings with paper chips
 (`ThemeSwatches`, `note/settings/LookSection.tsx`), saved and painted at once.
 
-`hooks/useTheme.ts` sets `data-theme` and `data-dark` on `<html>` (`themeAttrs`, `theme.ts`). Under
+`hooks/useTheme.ts` sets `data-theme` and `data-dark` on `<html>` (`themeAttrs`, `theme.ts`); before
+that, `main.tsx` paints any `?theme=` in the URL (`themeFromSearch`: a page window's, or the
+preview's). Under
 `data-dark="true"` Clippy's sprite gets a rim light, and native controls turn dark. Windows' mode
 comes from the `systemDark()` IPC method (`nativeTheme.shouldUseDarkColors`) and the `theme:system`
 event: `forwardSystemTheme` (`main/window/systemTheme.ts`) listens to `nativeTheme` `updated` once
@@ -416,7 +418,9 @@ archived).
 (which turns into "Un-pin"), the window's "×" and archiving only change the page. `restoreAll()`
 runs after the Clippy window is made and opens every popped page. Each is a frameless, transparent
 `BrowserWindow`, not always-on-top, `skipTaskbar`, min 180 × 120, loading the renderer with
-`?page=<id>` (`loadRenderer`, shared with `createClippyWindow`). Where it opens: `popBounds` through
+`?page=<id>&theme=<id>` (`loadRenderer`, shared with `createClippyWindow`; the theme is
+`resolveTheme(settings, nativeTheme.shouldUseDarkColors)` as it opens, which `main.tsx` paints
+before the first render, so a dark theme never flashes classic yellow). Where it opens: `popBounds` through
 `clampBounds` (`main/window/pageBounds.ts`, pure: displays primary first; a window at least 80 %
 visible stays put, taking the id of the display it overlaps most if its own is gone; one less
 visible is pulled in on its own display, or onto the primary work area if that display is gone,
