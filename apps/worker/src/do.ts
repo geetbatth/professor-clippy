@@ -46,7 +46,7 @@ interface ReminderRow extends Record<string, SqlStorageValue> {
   rrule: string | null;
   /** IANA zone the RRULE runs in; null = UTC. */
   tz: string | null;
-  /** RRULE anchor: the `dueAt` of the PUT that defined the schedule. */
+  /** RRULE anchor: the PUT's `startAt` (the PC's original start), else its `dueAt`. */
   dtstart: number;
   /** Failed send attempts for the occurrence at `due_at`. */
   attempts: number;
@@ -152,7 +152,8 @@ export class ClippyDO extends DurableObject<Env> {
   }
 
   /**
-   * Create or replace a reminder; `dueAt` becomes the RRULE anchor. Exception: a
+   * Create or replace a reminder; `startAt` (else `dueAt`) becomes the RRULE anchor, so COUNT
+   * counts from the same start as on the PC. Exception: a
    * re-PUT of an existing recurring reminder with the same rule and tz and a `dueAt`
    * already in the past is the PC re-syncing an occurrence the Worker has handled
    * (or is handling), so only the body is updated and the Worker's schedule is kept.
@@ -172,7 +173,7 @@ export class ClippyDO extends DurableObject<Env> {
         put.dueAt,
         rrule,
         tz,
-        put.dueAt,
+        rrule !== null ? (put.startAt ?? put.dueAt) : put.dueAt,
       );
     }
     await this.rearm();

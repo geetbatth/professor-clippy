@@ -61,8 +61,14 @@ export const RelayReminderPut = z.object({
   /** RFC 5545 RRULE for recurring reminders. */
   rrule: z.string().min(1).optional(),
   /**
+   * The recurring rule's anchor (DTSTART): the reminder's original start time on the PC,
+   * which can be before `dueAt`. COUNT (and INTERVAL alignment) count from here, as on the
+   * desktop. Omitted: `dueAt`. Ignored without `rrule`.
+   */
+  startAt: Timestamp.optional(),
+  /**
    * IANA time zone the RRULE is evaluated in (the PC's local zone). The rule runs on
-   * floating local wall time anchored at `dueAt`'s wall time, so "09:00" stays 09:00
+   * floating local wall time anchored at `startAt`'s (else `dueAt`'s) wall time, so "09:00" stays 09:00
    * local across DST. Omitted: UTC.
    */
   tz: z.string().min(1).refine(isValidTimeZone, 'Unknown IANA time zone').optional(),

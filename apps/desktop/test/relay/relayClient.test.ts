@@ -1,6 +1,13 @@
 import type { WorkerToPc } from '@clippy/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { backoffDelay, RelayClient, RelayHttpError, relayUrl } from '../../src/main/relay/relayClient';
+import {
+  backoffDelay,
+  RelayClient,
+  RelayHttpError,
+  relayUrl,
+  REQUEST_TIMEOUT_MS,
+  SEND_TIMEOUT_MS,
+} from '../../src/main/relay/relayClient';
 import { FakeWorker, waitFor } from './fakeWorker';
 
 const inbound = (id: string, text = 'hi'): WorkerToPc => ({ type: 'inbound', id, text, ts: 1 });
@@ -10,6 +17,55 @@ describe('relayUrl', () => {
     expect(relayUrl('https://clippy.example.workers.dev', '/send')).toBe('https://clippy.example.workers.dev/send');
     expect(relayUrl('https://clippy.example.workers.dev/', '/ws', 'ws')).toBe('wss://clippy.example.workers.dev/ws');
     expect(relayUrl('http://127.0.0.1:8787/base/', '/ws', 'ws')).toBe('ws://127.0.0.1:8787/base/ws');
+  });
+});
+
+/** A fetch that answers 2xx after `delayMs`, or rejects as soon as its signal aborts. */
+function slowFetch(delayMs: number, seen: { url: string; aborted: boolean }[] = []): typeof fetch {
+  return ((url: string, init: RequestInit) =>
+    new Promise<Response>((resolve, reject) => {
+      const entry = { url: String(url), aborted: false };
+      seen.push(entry);
+      const timer = setTimeout(() => {
+        const body = init.method === 'POST' ? JSON.stringify({ waId: 'wamid.slow', mode: 'template' }) : null;
+        resolve(new Response(body, { status: body ? 200 : 204 }));
+      }, delayMs);
+      init.signal?.addEventListener('abort', () => {
+        entry.aborted = true;
+        clearTimeout(timer);
+        reject(init.signal!.reason);
+      });
+    })) as typeof fetch;
+}
+
+describe('RelayClient timeouts', () => {
+  it("waits longer for /send than the Worker's ~20 s worst case (two 10 s Graph calls); other calls keep 15 s", () => {
+    expect(SEND_TIMEOUT_MS).toBeGreaterThanOrEqual(25_000);
+    expect(REQUEST_TIMEOUT_MS).toBe(15_000);
+  });
+
+  it('a slow /send is waited for with the send timeout; a slow PUT still times out', async () => {
+    const c = new RelayClient({
+      workerUrl: 'https://w.example',
+      workerSecret: 's',
+      fetch: slowFetch(150),
+      requestTimeoutMs: 50,
+      sendTimeoutMs: 1000,
+    });
+    expect(await c.send({ text: 'x', kind: 'note' })).toEqual({ waId: 'wamid.slow', mode: 'template' });
+    await expect(c.putReminder('R1', { body: 'b', dueAt: 5 })).rejects.toThrow(/timeout|aborted/i);
+  });
+
+  it("deleteReminder gives up as soon as the caller's signal aborts", async () => {
+    const seen: { url: string; aborted: boolean }[] = [];
+    const c = new RelayClient({ workerUrl: 'https://w.example', workerSecret: 's', fetch: slowFetch(10_000, seen) });
+    const ctl = new AbortController();
+    const t0 = Date.now();
+    const call = c.deleteReminder('R1', ctl.signal);
+    setTimeout(() => ctl.abort(), 20);
+    await expect(call).rejects.toThrow();
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(seen).toEqual([{ url: 'https://w.example/reminders/R1', aborted: true }]);
   });
 });
 

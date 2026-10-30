@@ -39,6 +39,13 @@ describe('REST bodies', () => {
     expect(RelayReminderPut.safeParse({ body: 'b' }).success).toBe(false);
   });
 
+  it('keeps an optional startAt (the rule anchor) on a reminder put', () => {
+    const put = { body: 'b', dueAt: 500, rrule: 'FREQ=DAILY;COUNT=3', startAt: 5 };
+    expect(RelayReminderPut.parse(put)).toEqual(put);
+    expect(RelayReminderPut.safeParse({ ...put, startAt: -1 }).success).toBe(false);
+    expect(RelayReminderPut.safeParse({ ...put, startAt: 1.5 }).success).toBe(false);
+  });
+
   it('accepts an IANA tz on a reminder put and rejects unknown zones', () => {
     const put = { body: 'b', dueAt: 5, rrule: 'FREQ=DAILY', tz: 'America/Los_Angeles' };
     expect(RelayReminderPut.parse(put)).toEqual(put);

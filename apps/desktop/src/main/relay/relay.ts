@@ -13,8 +13,14 @@
  *   relay (app start, or a changed Worker URL or secret; never on a socket reconnect). It
  *   PUTs every active future reminder the Worker has not acknowledged yet. The ids a Worker
  *   holds are tracked per Worker URL in kv, and an id goes in only after a 2xx PUT, so a
- *   rejected secret, exhausted retries or a quit mid-way are filled in next time, and
- *   nothing is ever PUT twice.
+ *   rejected secret, exhausted retries or a quit mid-way are filled in next time. A reminder
+ *   the Worker acknowledged is not PUT again by the gap-fill, but the same PUT can still reach
+ *   the Worker twice (a retry after a lost response or a timeout); that is harmless, because a
+ *   PUT is idempotent on the Worker (it replaces the row).
+ * - Withdrawal, {@link Relay.withdrawReminders}: when WhatsApp is disconnected or moved to
+ *   another Worker, `RelayManager` DELETEs every reminder the old Worker holds (best effort,
+ *   time-boxed). Ids whose DELETE fails stay recorded, so reconnecting to that Worker later
+ *   lets the gap-fill finish the job.
  * - Chat replies to WhatsApp messages are sent with kind `chat`. Desk chat isn't mirrored.
  * - Failed calls are retried with backoff (5 s → 10 min, 5 attempts) unless the Worker
  *   answered with a permanent 4xx, and only while still relevant.
@@ -39,6 +45,8 @@ export const RETRY_DELAYS_MS = [5_000, 30_000, 2 * 60_000, 10 * 60_000] as const
 /** kv key: recently handled inbound frame ids (dedupe across redeliveries and restarts). */
 export const SEEN_KV_KEY = 'relaySeenInbound';
 const SEEN_KEEP = 500;
+/** Total time a withdrawal (disconnect, or a move to another Worker) may take. */
+export const WITHDRAW_TIMEOUT_MS = 10_000;
 /** kv key prefix: ids of the reminders a Worker holds (`relaySyncedReminders:<worker URL>`). */
 export const SYNCED_KV_PREFIX = 'relaySyncedReminders:';
 
@@ -141,12 +149,14 @@ export class Relay {
 
   #putReminder(reminderId: string): void {
     this.#enqueue(`put reminder ${reminderId}`, async () => {
-      const r = this.#d.store.getReminder(reminderId);
+      const r = this.#d.store.getScheduledReminder(reminderId);
       if (!r?.active) return; // cancelled (or finished) before we got to it
       await this.#d.transport.putReminder(r.id, {
         body: r.body,
         dueAt: r.dueAt,
-        ...(r.rrule !== undefined && { rrule: r.rrule }),
+        // A recurring rule is anchored at the reminder's original start (the `when` it was
+        // created with), so the Worker counts COUNT from the same place as the desktop.
+        ...(r.rrule !== undefined && { rrule: r.rrule, startAt: r.startAt }),
         tz: (this.#d.timeZone ?? defaultTimeZone)(),
       });
       this.#markSynced(r.id, true);
@@ -164,7 +174,8 @@ export class Relay {
    * Gap-fill (the caller runs it when a relay starts; never on an ordinary reconnect). PUTs
    * every active reminder still due in the future that this Worker never acknowledged, and
    * DELETEs the ones it holds that were cancelled or finished meanwhile (the relay was off,
-   * or the DELETE failed). Idempotent: a reminder already synced is never sent again.
+   * or the DELETE failed). Running it again changes nothing: a reminder this Worker already
+   * acknowledged is not PUT again.
    */
   syncExistingReminders(): void {
     if (!this.#running) return;
@@ -176,6 +187,55 @@ export class Relay {
     for (const id of synced) {
       if (!this.#d.store.getReminder(id)?.active) this.#deleteReminder({ id });
     }
+  }
+
+  /**
+   * Best-effort DELETE of every reminder this Worker holds, for when WhatsApp is switched off
+   * or moved to another Worker (the Worker would otherwise go on sending them). Call it after
+   * {@link stop}. Every recorded id is DELETEd in parallel, and so is any id the call still in
+   * flight adds when it lands. Ids whose DELETE succeeds are forgotten; the rest stay
+   * recorded, so a later gap-fill against the same Worker retries them.
+   *
+   * Never takes longer than `timeoutMs` in total, and gives up at once when `signal` aborts
+   * (the app is quitting); a DELETE that answers after that changes nothing locally.
+   * Resolves with the ids still recorded as held (empty when `signal` aborted it).
+   */
+  async withdrawReminders(options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<string[]> {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), options.timeoutMs ?? WITHDRAW_TIMEOUT_MS);
+    timer.unref?.();
+    const onAbort = () => ctl.abort();
+    options.signal?.addEventListener('abort', onAbort);
+    if (options.signal?.aborted) ctl.abort();
+    const gaveUp = new Promise<void>((resolve) => ctl.signal.addEventListener('abort', () => resolve()));
+    const tried = new Set<string>();
+    const deleteHeld = () =>
+      Promise.allSettled(
+        this.#synced()
+          .filter((id) => !tried.has(id))
+          .map(async (id) => {
+            tried.add(id);
+            try {
+              await this.#d.transport.deleteReminder(id, ctl.signal);
+            } catch (err) {
+              if (!ctl.signal.aborted) this.#log(`relay: withdrawing reminder ${id} failed; kept for the next gap-fill`, err);
+              return;
+            }
+            if (!ctl.signal.aborted) this.#markSynced(id, false);
+          }),
+      );
+    // Delete what the Worker holds now and, once the call in flight (a PUT, say) has
+    // settled, anything it added; a slow call in flight doesn't hold up the rest.
+    const work = Promise.all([deleteHeld(), this.#chain.then(() => (ctl.signal.aborted ? undefined : deleteHeld()))]);
+    try {
+      await Promise.race([work, gaveUp]);
+      if (ctl.signal.aborted && !options.signal?.aborted) this.#log('relay: withdrawing reminders timed out');
+    } finally {
+      ctl.abort(); // late answers change nothing
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', onAbort);
+    }
+    return options.signal?.aborted ? [] : this.#synced();
   }
 
   get #syncedKey(): string | undefined {

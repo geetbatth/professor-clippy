@@ -2,8 +2,9 @@
  * RRULE handling via the `rrule` package (pure JS, bundles for Workers).
  *
  * Semantics (same as the desktop scheduler, apps/desktop core recurrence):
- * - DTSTART is the reminder's anchor: the `dueAt` it was last PUT with. A `DTSTART`
- *   (and any TZID) inside the string is ignored, so COUNT counts from that anchor.
+ * - DTSTART is the reminder's anchor: the `startAt` it was last PUT with (the PC's original
+ *   start), else that PUT's `dueAt`. A `DTSTART` (and any TZID) inside the string is
+ *   ignored, so COUNT counts from that anchor, as on the desktop.
  * - The rule runs on FLOATING wall time in the reminder's IANA zone `tz` (UTC when
  *   absent): `dueAt` is converted to its local wall time, `rrule` iterates on that
  *   (dressed as UTC), and each result is converted back to an instant. So

@@ -23,6 +23,14 @@ export const BACKOFF_MIN_MS = 1000;
 export const BACKOFF_MAX_MS = 60_000;
 export const PING_INTERVAL_MS = 30_000;
 export const REQUEST_TIMEOUT_MS = 15_000;
+/**
+ * `POST /send` waits longer than the other calls. The Worker's worst case is about 20 s: a
+ * Graph call that times out after 10 s, then (Meta said the 24 h window closed) one template
+ * retry with its own 10 s (`GRAPH_TIMEOUT_MS`, `sendWhatsApp` in apps/worker/src/whatsapp.ts).
+ * Giving up sooner makes the PC retry a send that is still going through, so the user gets the
+ * message twice and the first copy's `waId` (what quote-replies match) is lost.
+ */
+export const SEND_TIMEOUT_MS = 25_000;
 
 export type FrameHandler = (frame: WorkerToPc) => Promise<void>;
 
@@ -34,7 +42,8 @@ export interface RelayTransport {
   reconnect(): void;
   send(request: RelaySendRequest): Promise<RelaySendResponse>;
   putReminder(id: string, body: RelayReminderPut): Promise<void>;
-  deleteReminder(id: string): Promise<void>;
+  /** `signal` aborts the call early (a time-boxed withdrawal). */
+  deleteReminder(id: string, signal?: AbortSignal): Promise<void>;
 }
 
 /** A non-2xx answer from the Worker. 4xx other than 408/429 won't succeed on retry. */
@@ -60,6 +69,8 @@ export interface RelayClientOptions {
   backoffMaxMs?: number;
   pingIntervalMs?: number;
   requestTimeoutMs?: number;
+  /** Timeout for `POST /send` (default {@link SEND_TIMEOUT_MS}). */
+  sendTimeoutMs?: number;
   log?: (message: string, err?: unknown) => void;
 }
 
@@ -96,6 +107,7 @@ export class RelayClient implements RelayTransport {
       backoffMaxMs: BACKOFF_MAX_MS,
       pingIntervalMs: PING_INTERVAL_MS,
       requestTimeoutMs: REQUEST_TIMEOUT_MS,
+      sendTimeoutMs: SEND_TIMEOUT_MS,
       ...options,
     };
   }
@@ -132,7 +144,9 @@ export class RelayClient implements RelayTransport {
   // ---- REST -----------------------------------------------------------------
 
   async send(request: RelaySendRequest): Promise<RelaySendResponse> {
-    const res = await this.#request(RelayRoutes.send.method, RelayRoutes.send.path, request);
+    const res = await this.#request(RelayRoutes.send.method, RelayRoutes.send.path, request, {
+      timeoutMs: this.#o.sendTimeoutMs,
+    });
     return RelaySendResponse.parse(await res.json());
   }
 
@@ -140,11 +154,19 @@ export class RelayClient implements RelayTransport {
     await this.#request('PUT', RelayRoutes.putReminder.path.replace(':id', encodeURIComponent(id)), body);
   }
 
-  async deleteReminder(id: string): Promise<void> {
-    await this.#request('DELETE', RelayRoutes.deleteReminder.path.replace(':id', encodeURIComponent(id)));
+  async deleteReminder(id: string, signal?: AbortSignal): Promise<void> {
+    await this.#request('DELETE', RelayRoutes.deleteReminder.path.replace(':id', encodeURIComponent(id)), undefined, {
+      ...(signal && { signal }),
+    });
   }
 
-  async #request(method: string, path: string, body?: unknown): Promise<Response> {
+  async #request(
+    method: string,
+    path: string,
+    body?: unknown,
+    options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  ): Promise<Response> {
+    const timeout = AbortSignal.timeout(options.timeoutMs ?? this.#o.requestTimeoutMs);
     const res = await this.#o.fetch(relayUrl(this.#o.workerUrl, path), {
       method,
       headers: {
@@ -152,7 +174,7 @@ export class RelayClient implements RelayTransport {
         ...(body !== undefined && { 'content-type': 'application/json' }),
       },
       ...(body !== undefined && { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(this.#o.requestTimeoutMs),
+      signal: options.signal ? AbortSignal.any([timeout, options.signal]) : timeout,
     });
     if (!res.ok) {
       let detail = '';

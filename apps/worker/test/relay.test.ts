@@ -367,6 +367,33 @@ describe('reminders', () => {
     expect(await reminderRow('d')).toMatchObject({ due_at: due, rrule: 'FREQ=WEEKLY' });
   });
 
+  it("anchors the rule at startAt, so COUNT counts from the PC's original start", async () => {
+    mockGraph();
+    const DAY = 24 * HOUR;
+    // On the PC: started two days ago, 3 times daily (UTC, so no DST shift); the 3rd and
+    // last occurrence is due now.
+    const start = Date.now() - 2 * DAY - 60_000;
+    const last = start + 2 * DAY;
+    const rule = { rrule: 'FREQ=DAILY;COUNT=3' };
+    expect((await pcCall('/reminders/c', 'PUT', { body: 'Pill', dueAt: last, startAt: start, ...rule })).status).toBe(204);
+    expect(await reminderRow('c')).toMatchObject({ due_at: last, dtstart: start });
+    // A one-off ignores startAt; without startAt the anchor is dueAt (as before).
+    const onceDue = Date.now() + HOUR;
+    await pcCall('/reminders/o', 'PUT', { body: 'Once', dueAt: onceDue, startAt: start });
+    expect(await reminderRow('o')).toMatchObject({ dtstart: onceDue });
+    await pcCall('/reminders/n', 'PUT', { body: 'No anchor', dueAt: last, ...rule });
+    expect(await reminderRow('n')).toMatchObject({ dtstart: last });
+
+    // The 3rd occurrence fires and the reminder is finished, as on the PC (no 4th or 5th).
+    await runDurableObjectAlarm(relay());
+    const fired = (await pending()).filter((f) => f.type === 'reminder-fired');
+    expect(fired.map((f) => f.reminderId).sort()).toEqual(['c', 'n']);
+    expect(fired.find((f) => f.reminderId === 'c')).not.toHaveProperty('nextDueAt');
+    expect(await reminderRow('c')).toBeUndefined();
+    // Anchored at dueAt instead, COUNT=3 would still have two to go.
+    expect(fired.find((f) => f.reminderId === 'n')).toHaveProperty('nextDueAt');
+  });
+
   it('alarm fires a due one-off: "⏰ " to WhatsApp, reminder-fired queued and pushed, reminder deleted', async () => {
     const graph = mockGraph();
     const pc = await connectPc();

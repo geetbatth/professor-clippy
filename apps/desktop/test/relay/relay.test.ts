@@ -52,7 +52,7 @@ class FakeTransport implements RelayTransport {
     this.calls.push(['put', id, body]);
     this.#maybeFail();
   }
-  async deleteReminder(id: string) {
+  async deleteReminder(id: string, _signal?: AbortSignal) {
     this.calls.push(['delete', id]);
     this.#maybeFail();
   }
@@ -150,7 +150,7 @@ describe('Relay', () => {
       scheduler.cancel(once.id);
       await settle();
       expect(transport.calls).toEqual([
-        ['put', daily.id, { body: 'standup', dueAt: daily.dueAt, rrule: 'FREQ=DAILY', tz: 'America/Vancouver' }],
+        ['put', daily.id, { body: 'standup', dueAt: daily.dueAt, rrule: 'FREQ=DAILY', startAt: due, tz: 'America/Vancouver' }],
         ['put', once.id, { body: 'call mum', dueAt: once.dueAt, tz: 'America/Vancouver' }],
         ['delete', once.id],
       ]);
@@ -159,6 +159,18 @@ describe('Relay', () => {
       relay.start();
       await settle();
       expect(transport.calls).toHaveLength(3);
+    });
+
+    it("sends a recurring reminder's original start, so the Worker counts COUNT from the same anchor", async () => {
+      const { scheduler, transport, settle } = ctx;
+      // Started 26 h ago, 3 times daily: the 1st and 2nd are past, only the 3rd is still due.
+      const start = Math.floor((Date.now() - 26 * 3_600_000) / 60_000) * 60_000;
+      const r = scheduler.create({ body: 'pill', when: new Date(start).toISOString(), rrule: 'FREQ=DAILY;COUNT=3', sender: 'agent' });
+      await settle();
+      expect(r.dueAt).toBeGreaterThan(Date.now());
+      expect(transport.calls).toEqual([
+        ['put', r.id, { body: 'pill', dueAt: r.dueAt, rrule: 'FREQ=DAILY;COUNT=3', startAt: start, tz: 'America/Vancouver' }],
+      ]);
     });
 
     it('retries failed sends with backoff, gives up on permanent errors', async () => {
@@ -368,7 +380,7 @@ describe('RelayManager: reminder gap-fill', () => {
     manager.apply(W1); // set up: the gap-fill
     await settle();
     expect(transports[0]!.calls).toEqual([
-      ['put', daily.id, { body: 'standup', dueAt: daily.dueAt, rrule: 'FREQ=DAILY', tz: TZ }],
+      ['put', daily.id, { body: 'standup', dueAt: daily.dueAt, rrule: 'FREQ=DAILY', startAt: soon, tz: TZ }],
       ['put', once.id, { body: 'call mum', dueAt: once.dueAt, tz: TZ }],
     ]);
     expect(synced(W1.workerUrl)).toEqual([daily.id, once.id]);
@@ -441,7 +453,15 @@ describe('RelayManager: reminder gap-fill', () => {
   });
 
   it('fills the gaps of a Worker it comes back to, and a new Worker gets everything active', async () => {
-    const { store, scheduler, make, settle, reminderCalls, synced } = managerSetup();
+    let unreachable = true; // the first W1 transport can't reach the Worker for the withdrawal
+    const { store, scheduler, make, settle, reminderCalls, synced } = managerSetup((t) => {
+      if (!unreachable) return;
+      unreachable = false;
+      t.deleteReminder = async (id) => {
+        t.calls.push(['delete', id]);
+        throw new TypeError('fetch failed');
+      };
+    });
     const when = new Date(Date.now() + 3_600_000).toISOString();
     const manager = make();
     manager.apply(W1);
@@ -449,18 +469,23 @@ describe('RelayManager: reminder gap-fill', () => {
     await settle();
     expect(reminderCalls()).toEqual([`put ${a.id}`]);
 
-    manager.apply(DEFAULT_SETTINGS); // WhatsApp switched off
+    manager.apply(DEFAULT_SETTINGS); // WhatsApp switched off; withdrawing `a` fails
+    await manager.withdrawn();
+    expect(synced(W1.workerUrl)).toEqual([a.id]); // kept for the next gap-fill
     const b = scheduler.create({ body: 'b', when, sender: 'x' }); // made while off
     scheduler.cancel(a.id); // cancelled while off: W1 never heard
 
     manager.apply(W1); // back on, same Worker
     await settle();
-    expect(reminderCalls().slice(1)).toEqual([`put ${b.id}`, `delete ${a.id}`]);
+    expect(reminderCalls().slice(2)).toEqual([`put ${b.id}`, `delete ${a.id}`]);
     expect(synced(W1.workerUrl)).toEqual([b.id]);
 
-    manager.apply(W2); // moved to another Worker: it gets everything active
+    manager.apply(W2); // moved to another Worker: W1 gives `b` up, W2 gets everything active
     await settle();
-    expect(reminderCalls().slice(3)).toEqual([`put ${b.id}`]);
+    await manager.withdrawn();
+    expect(reminderCalls().slice(4)).toEqual([`delete ${b.id}`, `put ${b.id}`]);
+    expect(synced(W1.workerUrl)).toEqual([]);
+    expect(synced(W2.workerUrl)).toEqual([b.id]);
     manager.stop();
     store.close();
   });
@@ -482,6 +507,262 @@ describe('RelayManager: reminder gap-fill', () => {
     scheduler.cancel(gone.id);
     await settle();
     expect(synced(W1.workerUrl)).toEqual([daily.id]);
+    manager.stop();
+    store.close();
+  });
+});
+
+describe('RelayManager: withdrawing reminders when WhatsApp is disconnected or moved', () => {
+  const W1 = { ...DEFAULT_SETTINGS, workerUrl: 'https://relay-one.example.workers.dev', workerSecret: 's' };
+  const W2 = { ...DEFAULT_SETTINGS, workerUrl: 'https://relay-two.example.workers.dev', workerSecret: 's' };
+  const syncedKey = (url: string) => SYNCED_KV_PREFIX + normalizeWorkerUrl(url);
+
+  function managerSetup(options: { customise?: (t: FakeTransport, index: number) => void; withdrawTimeoutMs?: number } = {}) {
+    const bus = new Bus();
+    const store = new Store({ path: ':memory:', bus });
+    const scheduler = new Scheduler({ store, bus });
+    const transports: FakeTransport[] = [];
+    const logs: string[] = [];
+    const manager = new RelayManager({
+      store,
+      bus,
+      scheduler,
+      asks: new Asks({ store, bus }),
+      brain: { ask: async () => ({}) },
+      log: (m) => logs.push(m),
+      ...(options.withdrawTimeoutMs !== undefined && { withdrawTimeoutMs: options.withdrawTimeoutMs }),
+      makeTransport: () => {
+        const t = new FakeTransport();
+        options.customise?.(t, transports.length);
+        transports.push(t);
+        return t;
+      },
+    });
+    const settle = async () => {
+      for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 5));
+    };
+    /** PUT/DELETE calls on transport `i`, as `put <id>` / `delete <id>`. */
+    const calls = (i: number) => (transports[i]?.calls ?? []).filter((c) => c[0] !== 'send').map((c) => `${c[0]} ${c[1] as string}`);
+    const synced = (url: string) => JSON.parse(store.getKv(syncedKey(url)) ?? '[]') as string[];
+    const when = new Date(Date.now() + 3_600_000).toISOString();
+    return { store, scheduler, transports, manager, settle, calls, synced, logs, when };
+  }
+
+  /** Make `t.deleteReminder` hang until its signal aborts (or `release()` lets it succeed). */
+  function hangDeletes(t: FakeTransport) {
+    const signals: AbortSignal[] = [];
+    const waiting: (() => void)[] = [];
+    t.deleteReminder = (id, signal) => {
+      t.calls.push(['delete', id]);
+      if (signal) signals.push(signal);
+      return new Promise<void>((resolve, reject) => {
+        waiting.push(resolve);
+        signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    };
+    return { signals, release: () => waiting.splice(0).forEach((r) => r()) };
+  }
+
+  it('Disconnect DELETEs every reminder the Worker holds, then forgets them', async () => {
+    const { store, scheduler, transports, manager, settle, calls, synced, when } = managerSetup();
+    manager.apply(W1);
+    const daily = scheduler.create({ body: 'standup', when, rrule: 'FREQ=DAILY', sender: 'x' });
+    const once = scheduler.create({ body: 'call mum', when, sender: 'x' });
+    await settle();
+    expect(synced(W1.workerUrl)).toEqual([daily.id, once.id]);
+
+    manager.apply({ ...W1, workerUrl: undefined, workerSecret: undefined }); // Settings → Disconnect
+    expect(manager.active).toBe(false);
+    await manager.withdrawn();
+    expect(calls(0)).toEqual([`put ${daily.id}`, `put ${once.id}`, `delete ${daily.id}`, `delete ${once.id}`]);
+    expect(synced(W1.workerUrl)).toEqual([]);
+    expect(transports).toHaveLength(1); // nothing new started
+    expect(transports[0]!.stopped).toBe(1);
+
+    // Reminders made or cancelled while disconnected never reach the Worker.
+    const offline = scheduler.create({ body: 'offline', when, sender: 'x' });
+    scheduler.cancel(once.id);
+    await settle();
+    expect(calls(0)).toHaveLength(4);
+
+    // Reconnecting to the same Worker puts back what is active.
+    manager.apply(W1);
+    await settle();
+    expect(calls(1)).toEqual([`put ${daily.id}`, `put ${offline.id}`]);
+    manager.stop();
+    store.close();
+  });
+
+  it('clearing only the secret also withdraws (with the old secret)', async () => {
+    const { store, scheduler, manager, settle, calls, synced, when } = managerSetup();
+    manager.apply(W1);
+    const r = scheduler.create({ body: 'r', when, sender: 'x' });
+    await settle();
+    manager.apply({ ...W1, workerSecret: undefined });
+    await manager.withdrawn();
+    expect(calls(0)).toEqual([`put ${r.id}`, `delete ${r.id}`]);
+    expect(synced(W1.workerUrl)).toEqual([]);
+    manager.stop();
+    store.close();
+  });
+
+  it('a new secret for the same Worker withdraws nothing', async () => {
+    const { store, scheduler, manager, settle, calls, synced, when } = managerSetup();
+    manager.apply(W1);
+    const r = scheduler.create({ body: 'r', when, sender: 'x' });
+    await settle();
+    manager.apply({ ...W1, workerSecret: 's2' });
+    manager.apply({ ...W1, workerUrl: `${W1.workerUrl}/`, workerSecret: 's2' }); // same Worker, other spelling
+    await settle();
+    await manager.withdrawn();
+    expect([calls(0), calls(1), calls(2)]).toEqual([[`put ${r.id}`], [], []]);
+    expect(synced(W1.workerUrl)).toEqual([r.id]);
+    manager.stop();
+    store.close();
+  });
+
+  it('a Worker that refuses or is unreachable keeps the ids; the next gap-fill there removes them', async () => {
+    const { store, scheduler, manager, settle, calls, synced, logs, when } = managerSetup({
+      customise: (t, i) => {
+        if (i !== 0) return;
+        let n = 0;
+        t.deleteReminder = async (id) => {
+          t.calls.push(['delete', id]);
+          if (n++ === 0) throw new RelayHttpError(401, 'unauthorized');
+          throw new TypeError('fetch failed');
+        };
+      },
+    });
+    manager.apply(W1);
+    const a = scheduler.create({ body: 'a', when, sender: 'x' });
+    const b = scheduler.create({ body: 'b', when, sender: 'x' });
+    await settle();
+    manager.apply(DEFAULT_SETTINGS);
+    await manager.withdrawn();
+    expect(calls(0)).toEqual([`put ${a.id}`, `put ${b.id}`, `delete ${a.id}`, `delete ${b.id}`]);
+    expect(synced(W1.workerUrl)).toEqual([a.id, b.id]);
+    expect(logs.some((l) => l.includes('2 reminder(s) are still on'))).toBe(true);
+
+    scheduler.cancel(a.id); // cancelled while off
+    manager.apply(W1); // reconnect to that Worker: the gap-fill deletes the cancelled one
+    await settle();
+    expect(calls(1)).toEqual([`delete ${a.id}`]); // `b` is still active and still on W1
+    expect(synced(W1.workerUrl)).toEqual([b.id]);
+    manager.stop();
+    store.close();
+  });
+
+  it('gives up after the time box; a DELETE answering late changes nothing', async () => {
+    let hung!: ReturnType<typeof hangDeletes>;
+    const { store, scheduler, manager, settle, synced, when } = managerSetup({
+      withdrawTimeoutMs: 60,
+      customise: (t, i) => {
+        if (i === 0) hung = hangDeletes(t);
+      },
+    });
+    manager.apply(W1);
+    const r = scheduler.create({ body: 'r', when, sender: 'x' });
+    await settle();
+    const t0 = Date.now();
+    manager.apply(DEFAULT_SETTINGS);
+    await manager.withdrawn();
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(50);
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(hung.signals.map((s) => s.aborted)).toEqual([true]); // the request itself was cancelled
+    hung.release();
+    await settle();
+    expect(synced(W1.workerUrl)).toEqual([r.id]);
+    manager.stop();
+    store.close();
+  });
+
+  it('quitting abandons a withdrawal at once', async () => {
+    let hung!: ReturnType<typeof hangDeletes>;
+    const { store, scheduler, manager, settle, synced, when } = managerSetup({
+      customise: (t, i) => {
+        if (i === 0) hung = hangDeletes(t);
+      },
+    });
+    manager.apply(W1);
+    const r = scheduler.create({ body: 'r', when, sender: 'x' });
+    await settle();
+    manager.apply(DEFAULT_SETTINGS); // default 10 s time box
+    await settle();
+    const t0 = Date.now();
+    manager.stop(); // the app quits
+    await manager.withdrawn();
+    expect(Date.now() - t0).toBeLessThan(500);
+    expect(hung.signals.map((s) => s.aborted)).toEqual([true]);
+    expect(synced(W1.workerUrl)).toEqual([r.id]);
+    store.close();
+  });
+
+  it('a PUT in flight at Disconnect is withdrawn once it lands, without holding up the others', async () => {
+    let releasePut: (() => void) | undefined;
+    let hangPuts = false;
+    const { store, scheduler, manager, settle, calls, synced, when } = managerSetup({
+      customise: (t, i) => {
+        if (i !== 0) return;
+        const put = t.putReminder.bind(t);
+        t.putReminder = async (id, body) => {
+          await put(id, body);
+          if (hangPuts) await new Promise<void>((resolve) => (releasePut = resolve));
+        };
+      },
+    });
+    manager.apply(W1);
+    const a = scheduler.create({ body: 'a', when, sender: 'x' });
+    await settle();
+    hangPuts = true;
+    const r = scheduler.create({ body: 'r', when, sender: 'x' });
+    await settle(); // r's PUT is on its way
+    manager.apply(DEFAULT_SETTINGS);
+    await settle();
+    expect(calls(0)).toEqual([`put ${a.id}`, `put ${r.id}`, `delete ${a.id}`]); // `a` goes at once
+    expect(synced(W1.workerUrl)).toEqual([]);
+    releasePut!(); // the Worker acknowledges r
+    await manager.withdrawn();
+    expect(calls(0)).toEqual([`put ${a.id}`, `put ${r.id}`, `delete ${a.id}`, `delete ${r.id}`]);
+    expect(synced(W1.workerUrl)).toEqual([]);
+    manager.stop();
+    store.close();
+  });
+
+  it('coming back to a Worker mid-withdrawal waits for it before the gap-fill', async () => {
+    let hung!: ReturnType<typeof hangDeletes>;
+    const { store, scheduler, manager, settle, calls, synced, when } = managerSetup({
+      customise: (t, i) => {
+        if (i === 0) hung = hangDeletes(t);
+      },
+    });
+    manager.apply(W1);
+    const r = scheduler.create({ body: 'r', when, sender: 'x' });
+    await settle();
+    manager.apply(DEFAULT_SETTINGS);
+    manager.apply(W1); // changed their mind
+    await settle();
+    expect(calls(1)).toEqual([]); // no gap-fill yet
+    hung.release(); // the DELETE lands
+    await manager.withdrawn();
+    await settle();
+    expect(calls(1)).toEqual([`put ${r.id}`]); // so it is put back
+    expect(synced(W1.workerUrl)).toEqual([r.id]);
+    manager.stop();
+    store.close();
+  });
+
+  it('moving to another Worker withdraws from the old one while the new one syncs', async () => {
+    const { store, scheduler, manager, settle, calls, synced, when } = managerSetup();
+    manager.apply(W1);
+    const r = scheduler.create({ body: 'r', when, rrule: 'FREQ=WEEKLY', sender: 'x' });
+    await settle();
+    manager.apply(W2);
+    await manager.withdrawn();
+    await settle();
+    expect(calls(0)).toEqual([`put ${r.id}`, `delete ${r.id}`]);
+    expect(calls(1)).toEqual([`put ${r.id}`]);
+    expect(synced(W1.workerUrl)).toEqual([]);
+    expect(synced(W2.workerUrl)).toEqual([r.id]);
     manager.stop();
     store.close();
   });
