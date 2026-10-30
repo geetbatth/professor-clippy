@@ -200,4 +200,12 @@ describe('Watch', () => {
     expect(Message.parse(note)).not.toHaveProperty('event');
     expect(Message.safeParse({ ...note, event: 'nope' }).success).toBe(false);
   });
+
+  it('marks a phone approval ask, which no note posted through the API can claim to be', () => {
+    expect(Message.parse({ ...note, kind: 'ask', event: 'agent-permission-request' }).event).toBe('agent-permission-request');
+    expect(NewMessageInput.parse({ body: 'hi', sender: 'a', event: 'agent-needs-permission' }).event).toBe('agent-needs-permission');
+    expect(NewMessageInput.safeParse({ body: 'hi', sender: 'a', event: 'agent-permission-request' }).success).toBe(false);
+    // An ask posted through the API can't carry an event at all (it is stripped).
+    expect(NewAskInput.parse({ question: 'q', sender: 'a', event: 'agent-permission-request' })).toEqual({ question: 'q', sender: 'a' });
+  });
 });

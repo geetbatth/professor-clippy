@@ -7,10 +7,12 @@
  * install:
  *  1. `claude mcp add --scope user clippy -- node <apps/mcp/dist/index.js>` (the CLI
  *     writes that to ~/.claude.json; this script never edits that file itself).
- *  2. Merges `Stop` and `Notification` hooks running
+ *  2. Merges `Stop`, `Notification` and `PermissionRequest` hooks running
  *     `node <apps/hook/dist/index.js> --professor-clippy` into <config dir>/settings.json,
- *     keeping everything else (backed up first). The marker argument is how our
- *     entries are recognised; nothing else is ever modified or removed.
+ *     keeping everything else (backed up first). `PermissionRequest` (phone approvals)
+ *     matches every tool and has a 1800 s timeout, since it can wait for the user.
+ *     The marker argument is how our entries are recognised; nothing else is ever
+ *     modified or removed. An older install (fewer events, other fields) is repaired.
  *  3. Appends the Professor Clippy hint to <config dir>/CLAUDE.md once.
  * uninstall reverses all three. Both are idempotent. All files are read and
  * validated before the CLI runs or anything is written.
@@ -28,7 +30,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const MCP_SERVER_NAME = 'clippy';
-export const HOOK_EVENTS = ['Stop', 'Notification'] as const;
+export const HOOK_EVENTS = ['Stop', 'Notification', 'PermissionRequest'] as const;
+export type HookEvent = (typeof HOOK_EVENTS)[number];
+/**
+ * `timeout` of the `PermissionRequest` entry, seconds: the hook waits up to 1740 s for the user's
+ * answer, then withdraws it. Equal to `APPROVAL_HOOK_TIMEOUT_S` in @clippy/shared (a test checks;
+ * this file can't import it).
+ */
+export const PERMISSION_HOOK_TIMEOUT_S = 1800;
 export const CLAUDE_MD_HINT =
   'When the user asks you to leave a message, remind them, notify them, or check with them, use the Professor Clippy MCP tools (leave_message / remind_me / ask_user).';
 
@@ -89,7 +98,8 @@ export const defaultRunner: ClaudeRunner = (args, env) => {
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '', error: r.error };
 };
 
-type HookGroup = { matcher?: string; hooks?: Array<{ type?: string; command?: unknown }> } & Record<string, unknown>;
+type HookEntry = { type?: string; command?: unknown; timeout?: unknown } & Record<string, unknown>;
+type HookGroup = { matcher?: string; hooks?: HookEntry[] } & Record<string, unknown>;
 type SettingsJson = { hooks?: Record<string, HookGroup[]> } & Record<string, unknown>;
 
 /** Settings with our hooks removed from every event (groups, events and `hooks` that this empties are dropped). */
@@ -114,22 +124,33 @@ function withoutOurHooks(settings: SettingsJson): SettingsJson {
   return next;
 }
 
-/** True when each of our events has exactly one hook of ours and it is `wanted`. */
-function hasExactlyOurHooks(settings: SettingsJson, wanted: string): boolean {
+/** The hook group we add for `event`. */
+export function ourHookGroup(event: HookEvent, hookPath: string): HookGroup {
+  const hook = { type: 'command', command: hookCommand(hookPath) };
+  return event === 'PermissionRequest' ? { matcher: '*', hooks: [{ ...hook, timeout: PERMISSION_HOOK_TIMEOUT_S }] } : { hooks: [hook] };
+}
+
+/** Same matcher and one hook with the same type, command and timeout (key order aside). */
+function sameGroup(a: HookGroup, b: HookGroup): boolean {
+  const [ha, hb] = [a.hooks, b.hooks];
+  if (a.matcher !== b.matcher || !Array.isArray(ha) || !Array.isArray(hb) || ha.length !== 1 || hb.length !== 1) return false;
+  return ha[0]?.type === hb[0]?.type && ha[0]?.command === hb[0]?.command && ha[0]?.timeout === hb[0]?.timeout;
+}
+
+/** True when each of our events has exactly one hook of ours, in a group of its own that is exactly ours. */
+function hasExactlyOurHooks(settings: SettingsJson, hookPath: string): boolean {
   return HOOK_EVENTS.every((event) => {
-    const commands = (settings.hooks?.[event] ?? []).flatMap((g) => (Array.isArray(g?.hooks) ? g.hooks : []).map((h) => h?.command));
-    const ours = commands.filter(isOurHook);
-    return ours.length === 1 && ours[0] === wanted;
+    const groups = (settings.hooks?.[event] ?? []).filter((g) => Array.isArray(g?.hooks) && g.hooks.some((h) => isOurHook(h?.command)));
+    return groups.length === 1 && sameGroup(groups[0]!, ourHookGroup(event, hookPath));
   });
 }
 
 export function mergeHooks(settings: SettingsJson, hookPath: string): SettingsJson {
-  const wanted = hookCommand(hookPath);
-  if (hasExactlyOurHooks(settings, wanted)) return settings;
+  if (hasExactlyOurHooks(settings, hookPath)) return settings;
   const next = withoutOurHooks(settings);
   const hooks = { ...(next.hooks ?? {}) };
   for (const event of HOOK_EVENTS) {
-    hooks[event] = [...(hooks[event] ?? []), { hooks: [{ type: 'command', command: wanted }] }];
+    hooks[event] = [...(hooks[event] ?? []), ourHookGroup(event, hookPath)];
   }
   return { ...next, hooks };
 }
@@ -227,7 +248,7 @@ export function runWiring(options: WiringOptions): { configDir: string } {
   if (JSON.stringify(after) === JSON.stringify(before)) {
     log(`settings.json: ${install ? 'hooks already installed' : 'no Professor Clippy hooks'}`);
   } else {
-    log(`${prefix}${install ? 'add' : 'remove'} Stop + Notification hooks (${hookCommand(hookPath)}) in ${settingsPath}`);
+    log(`${prefix}${install ? 'add' : 'remove'} ${HOOK_EVENTS.join(' + ')} hooks (${hookCommand(hookPath)}) in ${settingsPath}`);
     if (!dry) {
       mkdirSync(configDir, { recursive: true });
       if (existsSync(settingsPath)) {

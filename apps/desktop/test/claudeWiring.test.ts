@@ -66,7 +66,7 @@ describe('runWiringJob', () => {
     const text = report.log.join('\n');
     expect(text).toContain('[dry-run] would run: claude mcp add --scope user clippy -- node');
     expect(text).toContain(paths.mcpPath.replace(/\\/g, '/'));
-    expect(text).toContain('[dry-run] would add Stop + Notification hooks');
+    expect(text).toContain('[dry-run] would add Stop + Notification + PermissionRequest hooks');
     expect(text).toContain('[dry-run] would append the Professor Clippy hint');
     expect(claude.calls).toEqual([]);
     expect(existsSync(join(home, '.claude'))).toBe(false);
@@ -78,7 +78,7 @@ describe('runWiringJob', () => {
     expect(ok).toMatchObject({ ok: true, warnings: [] });
     expect(lines).toEqual(ok.log);
     const settings = JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8'));
-    expect(Object.keys(settings.hooks).sort()).toEqual(['Notification', 'Stop']);
+    expect(Object.keys(settings.hooks).sort()).toEqual(['Notification', 'PermissionRequest', 'Stop']);
     expect(readFileSync(join(home, '.claude', 'CLAUDE.md'), 'utf8')).toContain(CLAUDE_MD_HINT);
 
     const other = join(dir, 'other');

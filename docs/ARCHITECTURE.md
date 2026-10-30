@@ -9,7 +9,7 @@ npm workspaces monorepo (Node 24, npm 11, TypeScript strict, ESM, Vitest).
 | `packages/shared` | `@clippy/shared` | Every shared contract: zod schemas and types, settings, local API routes, data-dir paths, `ClippyClient`, Electron IPC contract, Worker relay protocol. TypeScript source only (no build step). |
 | `apps/desktop` | `@clippy/desktop` | Electron + electron-vite + React. Hosts the local API (127.0.0.1), SQLite store, scheduler and Clippy's brain. The character (`src/renderer/src/clippy/`) is a set of painted robot sprites driven by a pure mood state machine (`mood.ts`): `poses.ts` maps moods to sprites and aligns them on one stage, CSS does the motion, and clicks pass through his transparent pixels (alpha masks built when the sprites are preloaded). |
 | `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Ten extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`, `watch_for`, `list_watches`, `cancel_watch`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. Three more (`list_open_apps`, `restart_app`, `restart_computer`) need env `CLIPPY_POWER_TOOLS=1`, also set only for the brain (see "Restarting apps and the PC"). |
-| `apps/hook` | `@clippy/hook` | Claude Code hook; posts a note when an agent finishes or needs permission. Built like `apps/mcp`. |
+| `apps/hook` | `@clippy/hook` | Claude Code hook; posts a note when an agent finishes or needs permission, and (away, opt-in) turns a `PermissionRequest` into a phone approval. Built like `apps/mcp`. |
 | `apps/worker` | `@clippy/worker` | Cloudflare Worker plus one SQLite-backed Durable Object (`ClippyDO`, binding `CLIPPY`) relaying WhatsApp Cloud API traffic. |
 | `scripts/` | | Repo scripts: the Claude Code wiring (`install-claude-wiring.ts`, also bundled into the app for "Connect Claude Code"), SQLite smoke test, run-in-Electron helper. |
 
@@ -210,6 +210,46 @@ from anywhere (Clippy included) runs `shutdown /a`.
 The MCP server registers `list_open_apps`, `restart_app` and `restart_computer` only when env
 `CLIPPY_POWER_TOOLS` is `1`, which `buildMcpConfig` sets for the brain alone; they are in
 `BRAIN_CLIPPY_TOOLS`. The brain still has no Bash or PowerShell.
+
+## Phone approvals
+
+Opt-in (setting `phoneApprovals`, default off, and `hookEnabled`), only while the user is away,
+answered only by the user. The installer adds a `PermissionRequest` hook entry (`matcher: "*"`,
+the usual Clippy command, `"timeout": 1800`). On that event the hook (`apps/hook/src/permission.ts`)
+posts `POST /approvals` `{ sessionId, cwd, project, tool, input, sender }`
+(`ClippyClient.requestApproval`). `Approvals` (`main/approvals/approvals.ts`, created in `startCore`
+as `core.approvals`) answers `{status: 'off'}` (setting or hook off), `{status: 'at-desk'}`
+(`isUserActive`, the same idle check as away-only notes) or `{status: 'waiting', id}` after
+`Asks.create` of an urgent ask from the agent's sender and project, options Allow / Deny,
+`event: 'agent-permission-request'`, and a body from the pure `approvalQuestion`
+(`approvals/question.ts`: a "🔐 <project> wants permission" line, then "Run: <command>", "Edit
+<file>", "Use <tool> (<server>)" plus compact JSON, ...; each part cut at 700 characters). Only
+the app sets that `event`: `NewAskInput` has no `event` and `NewMessageInput.event` is `NoteEvent`,
+which excludes it.
+
+The hook long-polls the ask (`ClippyClient.waitAsk`) for up to `APPROVAL_WAIT_S` (1740 s), then
+withdraws it (`POST /approvals/:id/withdraw`) and makes no decision. The pure `decisionFor` maps
+the answer: Allow / allow / yes / y / ok / approve (trimmed, any case) → `allow`; Deny / no →
+`deny` "The user denied this from their phone."; Expired / Withdrawn / Dismissed, or any answer
+`via: 'clippy'` → no decision; any other text → `deny` "The user replied from their phone instead
+of allowing it: <text>". No decision (exit 0, no stdout) is also what the app not running, any
+error, `off`, `at-desk` and `AskUserQuestion` give; Claude Code then shows its own prompt. The CLI
+wrapper's last-resort exit is re-armed for `PermissionRequest` to 1785 s.
+
+Only the user answers. An `Asks` guard refuses `via: 'clippy'` for an open approval (403, "Only you
+can approve an agent's permission request: …"), and `POST /asks/:id/answer` refuses every answer to
+one (`Approvals.isOpen`), whatever `via` it claims. Standing orders never see one: approvals are
+created in-process, not through `POST /asks`, where `matchOrder` runs. `matchWatches` ignores
+approval asks. `PhoneGate` mirrors one at once even if the user's idle time has since dropped under
+the threshold (it was only posted because they were away, and its agent is blocked); on the desk
+it is loud like any question. Telegram shows the heading in bold and the rest in `<pre>`.
+
+Clippy closes an approval itself, answering via `clippy` after first forgetting it (so its own
+guard lets that through): "Withdrawn" (the hook gave up), "Expired" after `APPROVAL_TTL_MS` (the
+wait plus 60 s) or for leftovers from before a restart (open approvals are kept in kv
+`approvalRequests`; `startServices` calls `core.approvals.expireLeftovers()` after the power ones),
+and "Dismissed" when the desk note is dismissed (state `done` with no answer). Each edits the
+Telegram copy like any answered ask.
 
 ## Storage
 

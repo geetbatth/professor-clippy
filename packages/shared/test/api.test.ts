@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { RestartAppBody, RestartPcBody, Routes, routePath } from '../src/api';
+import {
+  APPROVAL_HOOK_TIMEOUT_S,
+  APPROVAL_WAIT_S,
+  ApprovalRequestBody,
+  ApprovalResult,
+  RestartAppBody,
+  RestartPcBody,
+  Routes,
+  routePath,
+} from '../src/api';
 
 describe('Routes', () => {
   it('matches the local API contract exactly', () => {
@@ -26,7 +35,34 @@ describe('Routes', () => {
       'POST /power/restart-app',
       'POST /power/restart-pc',
       'GET /power/apps',
+      'POST /approvals',
+      'POST /approvals/:id/withdraw',
     ]);
+  });
+});
+
+describe('approvals', () => {
+  it('takes a tool, a sender and any JSON input; the rest is optional', () => {
+    const body = { sessionId: 's', cwd: 'C:/code/payments', project: 'payments', tool: 'Bash', input: { command: 'npm test' }, sender: 'claude-code' };
+    expect(ApprovalRequestBody.parse(body)).toEqual(body);
+    expect(ApprovalRequestBody.parse({ tool: 'Read', input: [1, 'x', null], sender: 'a' }).input).toEqual([1, 'x', null]);
+    expect(ApprovalRequestBody.parse({ tool: 'ExitPlanMode', sender: 'a' })).toEqual({ tool: 'ExitPlanMode', sender: 'a' });
+    for (const bad of [{ tool: '', sender: 'a' }, { tool: 'Bash' }, { tool: 'x'.repeat(201), sender: 'a' }, { tool: 'Bash', sender: 'a', project: '' }]) {
+      expect(ApprovalRequestBody.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it('answers off, at-desk, or waiting with the ask id', () => {
+    expect(ApprovalResult.parse({ status: 'off' })).toEqual({ status: 'off' });
+    expect(ApprovalResult.parse({ status: 'at-desk' })).toEqual({ status: 'at-desk' });
+    expect(ApprovalResult.parse({ status: 'waiting', id: 'x' })).toEqual({ status: 'waiting', id: 'x' });
+    expect(ApprovalResult.safeParse({ status: 'waiting' }).success).toBe(false);
+  });
+
+  it('the hook gives up before Claude Code cancels it', () => {
+    expect(APPROVAL_WAIT_S).toBe(1740);
+    expect(APPROVAL_HOOK_TIMEOUT_S).toBe(1800);
+    expect(APPROVAL_WAIT_S).toBeLessThan(APPROVAL_HOOK_TIMEOUT_S);
   });
 });
 

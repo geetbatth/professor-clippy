@@ -172,6 +172,21 @@ describe('local API (raw HTTP)', () => {
     await vi.waitFor(() => expect(core.asks.waiterCount).toBe(0));
   });
 
+  it('POST /approvals: 400 for a bad body, 200 off by default (startCore), 201 waiting when on; withdraw is 204', async () => {
+    expect((await call('POST', '/approvals', { tool: '', sender: 's' })).status).toBe(400);
+    expect((await call('POST', '/approvals', { tool: 'Bash', input: {} })).status).toBe(400);
+    expect(await call('POST', '/approvals', { tool: 'Bash', input: { command: 'ls' }, sender: 's' })).toEqual({ status: 200, json: { status: 'off' } });
+    await core.stop();
+    core = await startCore({ dataDir: dir, clock, approvalsEnabled: () => true });
+    base = `http://127.0.0.1:${core.port}`;
+    const waiting = await call('POST', '/approvals', { tool: 'Bash', input: { command: 'ls' }, sender: 's' });
+    expect(waiting).toEqual({ status: 201, json: { status: 'waiting', id: expect.any(String) } });
+    const id = (waiting.json as { id: string }).id;
+    expect(await call('POST', `/approvals/${id}/withdraw`)).toEqual({ status: 204, json: undefined });
+    expect((await call('GET', `/asks/${id}?wait=0`)).json).toMatchObject({ status: 'answered', answer: 'Withdrawn' });
+    expect((await call('POST', '/approvals/01ARZ3NDEKTSV4RRFFQ69G5FAV/withdraw')).status).toBe(204);
+  });
+
   it('DELETE /reminders/:id returns 204 with no body', async () => {
     const created = await call('POST', '/reminders', { body: 'x', sender: 's', when: '2026-11-01T09:00:00Z' });
     expect(created.status).toBe(201);

@@ -67,6 +67,13 @@ describe('matchWatches', () => {
     expect(matchWatches(watches, msg({ sender: BRAIN_SENDER, event: undefined } as never))).toEqual([]);
   });
 
+  it('never matches a phone approval (an agent waiting for permission is not done, nor news)', () => {
+    const watches = [watch({ event: 'any' }), watch({ event: 'any', project: 'clippy' }), watch({ event: 'finished' })];
+    expect(matchWatches(watches, msg({ kind: 'ask', event: 'agent-permission-request' }))).toEqual([]);
+    // The same agent's plain question still counts for "any".
+    expect(matchWatches(watches, { ...without(msg(), 'event'), kind: 'ask' })).toHaveLength(2);
+  });
+
   it('returns every watch that matches', () => {
     const a = watch({ id: 'a', project: 'clippy' });
     const b = watch({ id: 'b', project: 'payments' });

@@ -242,6 +242,13 @@ describe('PhoneGate', () => {
     expect(clock.pending).toBe(0);
   });
 
+  it('mirrors a phone approval at once, even at the PC and in away mode (its agent is blocked)', () => {
+    const approval = asks.create({ question: '🔐 p wants permission\nRun: npm test', options: ['Allow', 'Deny'], sender: 'claude-code', urgent: true, event: 'agent-permission-request' });
+    const plain = asks.create({ question: 'Which branch?', sender: 'claude-code', urgent: true });
+    expect(mirrored.map((m) => m.id)).toEqual([approval.id]);
+    expect(gate.heldIds).toEqual([plain.id]);
+  });
+
   it('stops listening and ticking after stop()', () => {
     gate.stop();
     expect(clock.pending).toBe(0);

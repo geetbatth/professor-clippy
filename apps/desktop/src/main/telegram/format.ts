@@ -3,12 +3,15 @@
  * agent escaped, so a body is shown verbatim and can never inject markup.
  *
  * Layout: an optional 🔴 (urgent), the kind's icon (📝 note, ⏰ reminder, ❓ ask), a bold
- * title if any, the body, then a small italic "— sender · project" line. Telegram allows
+ * title if any, the body, then a small italic "— sender · project" line. A phone approval's body
+ * is its heading line (bold) and then what the agent wants, in a code block (`<pre>`), so a
+ * command or JSON reads as code. Telegram allows
  * {@link TG_MAX} characters per message; longer text is cut (mirrors) or split (chat
  * replies), ending "…more on desktop". Lengths are measured on the HTML, which is never
  * shorter than the text Telegram counts, so the result always fits.
  */
 import type { AnsweredVia, Message } from '@clippy/shared';
+import { isApprovalAsk } from '../approvals/approvals';
 import type { InlineKeyboardButton } from './api';
 
 /** Telegram's limit for one message's text. */
@@ -120,13 +123,29 @@ export function answeredLine(m: Pick<Message, 'answer' | 'answeredVia'>): string
 export function formatForTelegram(m: Message, options: { answered?: boolean } = {}): string {
   let head = `${m.urgent ? '🔴 ' : ''}${icon(m)} `;
   if (m.title) head += `<b>${escapeClipped(m.title, TITLE_MAX)}</b>\n`;
+  let body = m.body;
   let tail = `\n\n${footerHtml(m)}`;
+  const approval = isApprovalAsk(m) ? splitApproval(m.body) : undefined;
+  if (approval) {
+    // fitHtml only ever cuts the body, so the <pre> stays closed however long the command is.
+    head += `<b>${escapeClipped(approval.heading, TITLE_MAX)}</b>\n<pre>`;
+    body = approval.detail;
+    tail = `</pre>${tail}`;
+  }
   if (m.kind === 'reminder' && m.missed) tail += `\n<i>${MISSED_NOTE}</i>`;
   if (m.kind === 'ask') {
     if (options.answered) tail += `\n\n${answeredLine(m)}`;
     else tail += m.options?.length ? '\n<i>Tap an answer, or reply to this message with your own.</i>' : '\n<i>Reply to this message to answer.</i>';
   }
-  return fitHtml(head, m.body, tail);
+  return fitHtml(head, body, tail);
+}
+
+/** A phone approval's question split into its heading line and the rest (undefined if it has no rest). */
+function splitApproval(body: string): { heading: string; detail: string } | undefined {
+  const nl = body.indexOf('\n');
+  if (nl < 0) return undefined;
+  const detail = body.slice(nl + 1);
+  return detail.trim() ? { heading: body.slice(0, nl), detail } : undefined;
 }
 
 /**

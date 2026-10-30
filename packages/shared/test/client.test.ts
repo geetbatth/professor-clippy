@@ -112,6 +112,10 @@ function fakeApi() {
         return send(202, { id: ASK_ID, status: 'awaiting-confirmation', question: 'Restart your PC?' });
       case 'GET /power/apps':
         return send(200, [{ name: 'chrome', pid: 42, title: 'Inbox' }]);
+      case 'POST /approvals':
+        return body.tool === 'Bash' ? send(201, { status: 'waiting', id: ASK_ID }) : send(200, { status: 'at-desk' });
+      case `POST /approvals/${ASK_ID}/withdraw`:
+        return send(204);
       case 'GET /broken':
         return send(200, { not: 'a message' });
       default:
@@ -252,6 +256,17 @@ describe('ClippyClient power requests', () => {
     expect(last().body).toEqual({ reason: 'updates' });
     await expect(client.listOpenApps()).resolves.toEqual([{ name: 'chrome', pid: 42, title: 'Inbox' }]);
     expect(last()).toMatchObject({ method: 'GET', path: '/power/apps' });
+  });
+});
+
+describe('ClippyClient approvals', () => {
+  it('requests an approval and withdraws it', async () => {
+    const input = { sessionId: 's', cwd: '/x/payments', project: 'payments', tool: 'Bash', input: { command: 'npm test' }, sender: 'claude-code' };
+    await expect(client.requestApproval(input)).resolves.toEqual({ status: 'waiting', id: ASK_ID });
+    expect(last()).toMatchObject({ method: 'POST', path: '/approvals', body: input });
+    await expect(client.requestApproval({ tool: 'Read', sender: 'a' })).resolves.toEqual({ status: 'at-desk' });
+    await expect(client.withdrawApproval(ASK_ID)).resolves.toBeUndefined();
+    expect(last()).toMatchObject({ method: 'POST', path: `/approvals/${ASK_ID}/withdraw` });
   });
 });
 

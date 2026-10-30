@@ -202,6 +202,21 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
                   <option value="always">Always</option>
                 </select>
               </label>
+              <label className="setting">
+                <span className="setting-text">
+                  <span className="setting-label">Approve agents' permission requests from your phone</span>
+                  <span className="setting-hint">
+                    Only when you're away (see the away time above). At the PC you get Claude Code's normal prompt. Needs the Claude Code hook.
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  className="switch"
+                  checked={settings.phoneApprovals}
+                  disabled={!settings.hookEnabled}
+                  onChange={(e) => void update({ phoneApprovals: e.target.checked })}
+                />
+              </label>
             </>
           )}
         </Fragment>

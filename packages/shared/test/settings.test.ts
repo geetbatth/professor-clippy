@@ -18,6 +18,7 @@ describe('Settings', () => {
       hideOnFullscreen: true,
       autoStart: true,
       allowPowerActions: false,
+      phoneApprovals: false,
       firstRunDone: false,
       quietDefaultsApplied: false,
     });
@@ -73,6 +74,16 @@ describe('Settings: allowPowerActions', () => {
     expect(Settings.safeParse({ allowPowerActions: 'yes' }).success).toBe(false);
     expect(SettingsPatch.parse({ allowPowerActions: true })).toEqual({ allowPowerActions: true });
     expect(applySettingsPatch(DEFAULT_SETTINGS, { allowPowerActions: true }).allowPowerActions).toBe(true);
+  });
+});
+
+describe('Settings: phoneApprovals', () => {
+  it('is off by default, patchable, and must be a boolean', () => {
+    expect(Settings.parse({}).phoneApprovals).toBe(false);
+    expect(Settings.parse({ phoneApprovals: true }).phoneApprovals).toBe(true);
+    expect(Settings.safeParse({ phoneApprovals: 'yes' }).success).toBe(false);
+    expect(SettingsPatch.parse({ phoneApprovals: true })).toEqual({ phoneApprovals: true });
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { phoneApprovals: true }).phoneApprovals).toBe(true);
   });
 });
 

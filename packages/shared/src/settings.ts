@@ -62,6 +62,12 @@ const fields = {
    * request is still a question the user must confirm with a tap; the brain can never confirm it.
    */
   allowPowerActions: z.boolean(),
+  /**
+   * While the user is away (`awayThresholdS`), an agent's "allow this tool use?" prompt goes to the
+   * desk note and the phone with Allow / Deny, and the user's tap answers the agent. Needs
+   * `hookEnabled` (the hook asks). At the PC, Claude Code's own prompt shows as usual.
+   */
+  phoneApprovals: z.boolean(),
   /** Base URL of the Cloudflare relay Worker (WhatsApp mirroring off when unset). */
   workerUrl: z.url(),
   /** Bearer secret for the relay Worker. */
@@ -114,6 +120,7 @@ export const Settings = z.object({
   hideOnFullscreen: fields.hideOnFullscreen.default(true),
   autoStart: fields.autoStart.default(true),
   allowPowerActions: fields.allowPowerActions.default(false),
+  phoneApprovals: fields.phoneApprovals.default(false),
   workerUrl: fields.workerUrl.optional(),
   workerSecret: fields.workerSecret.optional(),
   windowPos: fields.windowPos.optional(),
@@ -150,6 +157,7 @@ export const SettingsPatch = z.object({
   hideOnFullscreen: fields.hideOnFullscreen.optional(),
   autoStart: fields.autoStart.optional(),
   allowPowerActions: fields.allowPowerActions.optional(),
+  phoneApprovals: fields.phoneApprovals.optional(),
   workerUrl: fields.workerUrl.nullable().optional(),
   workerSecret: fields.workerSecret.nullable().optional(),
   windowPos: fields.windowPos.nullable().optional(),

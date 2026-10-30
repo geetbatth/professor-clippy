@@ -10,6 +10,9 @@
  *   to it. Missing/empty `wait` means 0 (answer immediately).
  * - `/power/*` only ever posts a question (202); a restart runs once the user confirms it on the
  *   desk or a phone. `POST /asks/:id/answer` refuses (403) to answer such a confirmation.
+ * - `POST /approvals` posts an agent's permission request for the phone (only when the user is
+ *   away), never waiting for the answer; the hook long-polls the ask. `POST /asks/:id/answer`
+ *   refuses (403) to answer an open one, too.
  */
 import { timingSafeEqual } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
@@ -17,6 +20,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import {
   AnswerAskBody,
+  ApprovalRequestBody,
   MATCH_ORDER_TIMEOUT_MS,
   MAX_LONG_POLL_S,
   MessageFilter,
@@ -33,6 +37,7 @@ import {
   type RouteDef,
 } from '@clippy/shared';
 import { z } from 'zod';
+import { ONLY_USER_APPROVES_MESSAGE, type Approvals } from '../approvals/approvals';
 import { ONLY_USER_CONFIRMS_MESSAGE, POWER_OFF_MESSAGE, type PowerActions } from '../power/actions';
 import type { Asks } from './asks';
 import { CoreError, ForbiddenError, NotFoundError, ValidationError } from './errors';
@@ -51,6 +56,8 @@ export interface ApiDeps {
   asks: Asks;
   /** Restart requests (`/power/*`). Absent: those routes answer 403 as if the setting were off. */
   power?: PowerActions;
+  /** Agents' permission requests for the phone (`/approvals`). Absent: every request is `off`. */
+  approvals?: Approvals;
   /** Bearer token every request must present. */
   token: string;
   /** Reported by `GET /health`. */
@@ -142,6 +149,8 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         // Only the user confirms a restart, and their taps arrive in-process (desk, Telegram,
         // WhatsApp). This API serves agents, so it never confirms one, whatever `via` it claims.
         if (deps.power?.isConfirmation(id)) throw new ForbiddenError(ONLY_USER_CONFIRMS_MESSAGE);
+        // Likewise an agent's permission request: no agent may approve another's (or its own).
+        if (deps.approvals?.isOpen(id)) throw new ForbiddenError(ONLY_USER_APPROVES_MESSAGE);
         return ok(asks.answer(id, answer, via));
       },
     ],
@@ -166,6 +175,16 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     ],
     [Routes.restartPc, async ({ req }) => ({ status: 202, body: await power().requestRestartPc((await body(req, RestartPcBody)).reason) })],
     [Routes.listApps, async () => ok(await power().listApps())],
+    [
+      Routes.requestApproval,
+      async ({ req }) => {
+        const input = await body(req, ApprovalRequestBody);
+        // Created in-process, never through createAsk above: no standing order can answer it.
+        const result = deps.approvals?.request(input) ?? { status: 'off' as const };
+        return { status: result.status === 'waiting' ? 201 : 200, body: result };
+      },
+    ],
+    [Routes.withdrawApproval, ({ id }) => (deps.approvals?.withdraw(id), { status: 204 })],
   ]);
 
   return (req, res) => {

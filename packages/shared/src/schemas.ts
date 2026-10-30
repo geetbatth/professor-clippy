@@ -24,9 +24,17 @@ export type MessageState = z.infer<typeof MessageState>;
 export const AnsweredVia = z.enum(['desk', 'whatsapp', 'telegram', 'clippy']);
 export type AnsweredVia = z.infer<typeof AnsweredVia>;
 
-/** What an agent's note is about, for notes the hook files: the agent finished, or it needs a permission. */
-export const AgentEvent = z.enum(['agent-finished', 'agent-needs-permission']);
+/**
+ * What a message from an agent is about: the hook's notes (the agent finished, or it needs a
+ * permission) and, on an ask only, `agent-permission-request`: an agent's permission request the
+ * user approves from the phone while away (`main/approvals`). Only the app itself stores that one.
+ */
+export const AgentEvent = z.enum(['agent-finished', 'agent-needs-permission', 'agent-permission-request']);
 export type AgentEvent = z.infer<typeof AgentEvent>;
+
+/** The events a note posted through the API may carry (never `agent-permission-request`). */
+export const NoteEvent = AgentEvent.exclude(['agent-permission-request']);
+export type NoteEvent = z.infer<typeof NoteEvent>;
 
 /** Who wrote a chat line (only meaningful for `kind: 'chat'`). */
 export const ChatRole = z.enum(['user', 'clippy']);
@@ -76,7 +84,7 @@ export const Message = z.object({
   quietIfActive: z.boolean().optional(),
   /** For an `ask` answered automatically: the standing order that answered it. */
   orderId: z.string().optional(),
-  /** For a note from the hook: what happened (what a watch listens for). */
+  /** For a note from the hook: what happened (what a watch listens for). For an ask: a phone approval. */
   event: AgentEvent.optional(),
 });
 export type Message = z.infer<typeof Message>;
@@ -113,7 +121,7 @@ export const NewMessageInput = z.object({
    */
   quietIfActive: z.boolean().optional(),
   /** What the note is about (the hook sets it); lets watches tell "agent finished" from the rest. Optional; older apps ignore it. */
-  event: AgentEvent.optional(),
+  event: NoteEvent.optional(),
 });
 export type NewMessageInput = z.infer<typeof NewMessageInput>;
 

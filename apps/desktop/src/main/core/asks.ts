@@ -4,7 +4,7 @@
  * answer (desk, WhatsApp or Clippy) wins, resolves every waiter, marks the
  * message done (decision 27) and emits `ask:answered`.
  */
-import type { AnsweredVia, AskResult, Message, NewAskInput } from '@clippy/shared';
+import type { AgentEvent, AnsweredVia, AskResult, Message, NewAskInput } from '@clippy/shared';
 import type { Bus } from './bus';
 import { systemClock, type Clock, type TimerHandle } from './clock';
 import { ConflictError, NotFoundError } from './errors';
@@ -18,7 +18,8 @@ export interface AsksOptions {
 
 /**
  * Checks an answer before it is stored; throws (e.g. a `ForbiddenError`) to refuse it. Power
- * actions use one so Clippy's brain (`via: 'clippy'`) can never confirm a restart.
+ * actions and phone approvals use one so Clippy's brain (`via: 'clippy'`) can never confirm a
+ * restart or approve an agent's permission request.
  */
 export type AnswerGuard = (ask: Message, via: AnsweredVia) => void;
 
@@ -43,8 +44,9 @@ export class Asks {
    * Post a question; returns the stored ask Message (emits `message:new`). With `auto`, a standing
    * order has already answered it: it is stored answered (`answeredVia: 'clippy'`) and done, so it
    * never pops up or goes to the phone, and an agent waiting on it gets the answer at once.
+   * `event` is for asks the app makes itself (phone approvals); `POST /asks` bodies never carry one.
    */
-  create(input: NewAskInput, auto?: { orderId: string; answer: string }): Message {
+  create(input: NewAskInput & { event?: AgentEvent }, auto?: { orderId: string; answer: string }): Message {
     return this.#store.createMessage({
       kind: 'ask',
       body: input.question,
@@ -52,6 +54,7 @@ export class Asks {
       urgent: input.urgent ?? false,
       ...(input.project !== undefined && { project: input.project }),
       ...(input.options !== undefined && { options: input.options }),
+      ...(input.event !== undefined && { event: input.event }),
       ...(auto && { state: 'done' as const, answer: auto.answer, answeredVia: 'clippy' as const, orderId: auto.orderId }),
     });
   }

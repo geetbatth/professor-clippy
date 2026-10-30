@@ -5,6 +5,7 @@
 import { mkdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { appDataDir, dbPath, portPath, tokenPath } from '@clippy/shared';
+import { Approvals } from '../approvals/approvals';
 import { PowerActions } from '../power/actions';
 import type { PowerExecutor } from '../power/executor';
 import { startApi, type ApiDeps, type ApiServer } from './api';
@@ -38,6 +39,8 @@ export interface StartCoreOptions {
   allowPowerActions?: () => boolean;
   /** What power actions run on. Default: one that refuses everything (tests never touch a real process). */
   powerExecutor?: PowerExecutor;
+  /** The `phoneApprovals` setting and the hook both on (agents' permission requests on the phone). Default: always off. */
+  approvalsEnabled?: () => boolean;
 }
 
 export interface Core {
@@ -47,6 +50,8 @@ export interface Core {
   asks: Asks;
   /** Restart requests the user confirms (see `power/actions.ts`). Its leftovers are expired by `startServices`. */
   power: PowerActions;
+  /** Agents' permission requests the user answers from the phone (see `approvals/approvals.ts`). Leftovers are expired by `startServices`. */
+  approvals: Approvals;
   api: ApiServer;
   /** Port the local API listens on (also written to the port file). */
   port: number;
@@ -77,6 +82,14 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
     ...(options.powerExecutor && { executor: options.powerExecutor }),
     log: (message, err) => console.error(`[clippy] ${message}`, err),
   });
+  const approvals = new Approvals({
+    store,
+    bus,
+    asks,
+    clock,
+    enabled: options.approvalsEnabled ?? (() => false),
+    ...(options.isUserActive && { isUserActive: options.isUserActive }),
+  });
 
   let api: ApiServer;
   try {
@@ -86,6 +99,7 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
       scheduler,
       asks,
       power,
+      approvals,
       token,
       version: options.version ?? 'dev',
       portFile: file(portPath),
@@ -96,6 +110,7 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
   } catch (err) {
     scheduler.stop();
     power.dispose();
+    approvals.dispose();
     store.close();
     throw err;
   }
@@ -107,6 +122,7 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
     scheduler,
     asks,
     power,
+    approvals,
     api,
     port: api.port,
     token,
@@ -114,6 +130,7 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
       stopping ??= (async () => {
         scheduler.stop();
         power.dispose();
+        approvals.dispose();
         asks.dispose();
         await api.close();
         store.close();

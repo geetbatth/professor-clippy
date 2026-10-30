@@ -1,6 +1,7 @@
 /**
  * Claude Code hook logic: turn a `Stop` or `Notification` hook event into a
- * note on Professor Clippy's sticky note.
+ * note on Professor Clippy's sticky note, and a `PermissionRequest` into a phone
+ * approval while the user is away (see `permission.ts`).
  */
 import { open, readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
@@ -13,6 +14,7 @@ import {
   settingsPath,
   type NewMessageInput,
 } from '@clippy/shared';
+import { HOOK_WAIT_S, hookOutput, requestDecision } from './permission';
 
 /** Sender shown on hook notes. */
 export const HOOK_SENDER = 'claude-code';
@@ -39,13 +41,42 @@ export type HookOutcome =
   | 'disabled'
   | 'duplicate'
   | 'ignored'
-  | 'not-running';
+  | 'not-running'
+  /** `PermissionRequest`: the user allowed or denied it (the decision was written). */
+  | 'allowed'
+  | 'denied'
+  /** `PermissionRequest`: no decision (nothing written); Claude Code shows its own prompt. */
+  | 'no-decision';
+
+/** How long the CLI wrapper lets one run take before it exits anyway, ms. */
+export const LAST_RESORT_MS = 4000;
+/** The same for a `PermissionRequest`, which waits for the user: past its wait, under its 1800 s timeout. */
+export const PERMISSION_LAST_RESORT_MS = (HOOK_WAIT_S + 45) * 1000;
 
 export interface HookDeps {
   now?: () => number;
   /** Environment to check for `CLIPPY_BRAIN` (default `process.env`). */
   env?: NodeJS.ProcessEnv;
   connect?: () => Promise<ClippyClient>;
+  /** Where a `PermissionRequest` decision is written (the CLI passes stdout). */
+  write?: (text: string) => void;
+  /** `PermissionRequest` wait, seconds (a test seam; see `permission.ts`). */
+  permissionWaitS?: number;
+}
+
+/** The `hook_event_name` of a raw hook input, if it has one. */
+export function hookEventName(raw: string): string | undefined {
+  try {
+    const input = JSON.parse(raw);
+    return input && typeof input === 'object' && typeof input.hook_event_name === 'string' ? input.hook_event_name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** How long the CLI wrapper may let a run with this input take before it exits anyway. */
+export function lastResortMs(raw: string): number {
+  return hookEventName(raw) === 'PermissionRequest' ? PERMISSION_LAST_RESORT_MS : LAST_RESORT_MS;
 }
 
 /**
@@ -162,6 +193,32 @@ async function stopNote(input: Record<string, any>, project: string): Promise<Ne
 }
 
 /**
+ * A `PermissionRequest`: write the user's decision, or nothing at all. Never rejects: any failure
+ * is "no decision", so Claude Code shows its normal prompt.
+ */
+async function permissionRequest(
+  input: Record<string, any>,
+  deps: HookDeps,
+  connect: () => Promise<ClippyClient>,
+  now: () => number,
+): Promise<HookOutcome> {
+  try {
+    const client = await connect();
+    const decision = await requestDecision(input, {
+      client,
+      sender: HOOK_SENDER,
+      now,
+      ...(deps.permissionWaitS !== undefined && { waitS: deps.permissionWaitS }),
+    });
+    if (!decision) return 'no-decision';
+    (deps.write ?? ((text: string) => process.stdout.write(text)))(hookOutput(decision));
+    return decision.behavior === 'allow' ? 'allowed' : 'denied';
+  } catch (error) {
+    return error instanceof ClippyNotRunningError ? 'not-running' : 'no-decision';
+  }
+}
+
+/**
  * Handle one hook invocation (`raw` = the JSON Claude Code wrote to stdin).
  * Rejects only on unexpected errors; the CLI wrapper swallows those.
  */
@@ -179,8 +236,9 @@ export async function runHook(raw: string, deps: HookDeps = {}): Promise<HookOut
   // Clippy's own brain runs Claude Code with CLIPPY_BRAIN=1: its turns are chat, not agent work.
   if ((deps.env ?? process.env).CLIPPY_BRAIN === '1') return 'ignored';
   const event = input.hook_event_name;
-  if (event !== 'Stop' && event !== 'Notification') return 'ignored';
+  if (event !== 'Stop' && event !== 'Notification' && event !== 'PermissionRequest') return 'ignored';
   if (!(await hookEnabled())) return 'disabled';
+  if (event === 'PermissionRequest') return permissionRequest(input, deps, connect, now);
 
   const cwd = typeof input.cwd === 'string' && input.cwd ? input.cwd : process.cwd();
   const project = basename(cwd);

@@ -7,11 +7,14 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { APPROVAL_HOOK_TIMEOUT_S } from '@clippy/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   CLAUDE_MD_HINT,
+  PERMISSION_HOOK_TIMEOUT_S,
   addHint,
   hookCommand,
+  ourHookGroup,
   parseArgs,
   removeHint,
   resolveConfigDir,
@@ -89,6 +92,8 @@ const userSettings = {
   },
 };
 const userMd = '# My rules\n\nBe terse.\n';
+/** The PermissionRequest entry we add: every tool, and long enough for the user to answer from the phone. */
+const permissionGroup = (command: string) => ({ matcher: '*', hooks: [{ type: 'command', command, timeout: 1800 }] });
 
 describe('install', () => {
   it('registers the MCP server via the CLI, merges hooks and appends the hint', () => {
@@ -110,10 +115,11 @@ describe('install', () => {
     }
     expect(servers).toEqual(new Set(['clippy']));
 
-    const ours = { hooks: [{ type: 'command', command: `node "${fwd(hookPath)}" --professor-clippy` }] };
+    const command = `node "${fwd(hookPath)}" --professor-clippy`;
+    const ours = { hooks: [{ type: 'command', command }] };
     expect(readSettings()).toEqual({
       ...userSettings,
-      hooks: { ...userSettings.hooks, Stop: [...userSettings.hooks.Stop, ours], Notification: [ours] },
+      hooks: { ...userSettings.hooks, Stop: [...userSettings.hooks.Stop, ours], Notification: [ours], PermissionRequest: [permissionGroup(command)] },
     });
     expect(backups()).toEqual(['settings.json.clippy-backup-2026-10-30T12-00-00-000Z']);
     expect(JSON.parse(readFileSync(join(configDir, backups()[0]!), 'utf8'))).toEqual(userSettings);
@@ -123,7 +129,7 @@ describe('install', () => {
 
   it('creates settings.json and CLAUDE.md when missing (no backup needed)', () => {
     run('install');
-    expect(Object.keys(readSettings().hooks)).toEqual(['Stop', 'Notification']);
+    expect(Object.keys(readSettings().hooks)).toEqual(['Stop', 'Notification', 'PermissionRequest']);
     expect(backups()).toEqual([]);
     expect(readFileSync(join(configDir, 'CLAUDE.md'), 'utf8')).toBe(`${CLAUDE_MD_HINT}\n`);
   });
@@ -155,6 +161,36 @@ describe('install', () => {
     for (const event of ['Stop', 'Notification']) {
       expect(hooks[event]).toEqual([{ hooks: [{ type: 'command', command: hookCommand(hookPath) }] }]);
     }
+    expect(hooks.PermissionRequest).toEqual([permissionGroup(hookCommand(hookPath))]);
+  });
+
+  it("repairs an older install: adds the PermissionRequest entry next to the user's own", () => {
+    mkdirSync(configDir, { recursive: true });
+    const ours = { hooks: [{ type: 'command', command: hookCommand(hookPath) }] };
+    const theirs = { matcher: 'Bash', hooks: [{ type: 'command', command: 'audit.sh' }] };
+    writeFileSync(settingsFile(), JSON.stringify({ hooks: { Stop: [ours], Notification: [ours], PermissionRequest: [theirs] } }));
+    run('install');
+    expect(readSettings().hooks).toEqual({ Stop: [ours], Notification: [ours], PermissionRequest: [theirs, permissionGroup(hookCommand(hookPath))] });
+    // ...and then it is done: a second install changes nothing.
+    expect(run('install')).toContain('settings.json: hooks already installed');
+  });
+
+  it('repairs a PermissionRequest entry of ours without the long timeout or the catch-all matcher', () => {
+    mkdirSync(configDir, { recursive: true });
+    const command = hookCommand(hookPath);
+    const ours = { hooks: [{ type: 'command', command }] };
+    const broken = [ours, { matcher: '*', hooks: [{ type: 'command', command, timeout: 60 }] }, { ...permissionGroup(command), matcher: 'Bash' }];
+    for (const entry of broken) {
+      writeFileSync(settingsFile(), JSON.stringify({ hooks: { Stop: [ours], Notification: [ours], PermissionRequest: [entry] } }));
+      run('install');
+      expect(readSettings().hooks.PermissionRequest).toEqual([permissionGroup(command)]);
+    }
+  });
+
+  it('writes the timeout the app expects (the hook waits 1740 s, then gives up)', () => {
+    expect(PERMISSION_HOOK_TIMEOUT_S).toBe(APPROVAL_HOOK_TIMEOUT_S);
+    expect(ourHookGroup('PermissionRequest', hookPath)).toEqual(permissionGroup(hookCommand(hookPath)));
+    expect(ourHookGroup('Stop', hookPath)).toEqual({ hooks: [{ type: 'command', command: hookCommand(hookPath) }] });
   });
 
   it('refuses to overwrite a settings.json that is not valid JSON', () => {
@@ -225,7 +261,11 @@ describe('foreign look-alike hooks (another monorepo with apps/hook/dist/index.j
     run('install');
     const ours = { hooks: [{ type: 'command', command: hookCommand(hookPath) }] };
     expect(readSettings()).toEqual({
-      hooks: { Stop: [...withForeign.hooks.Stop, ours], Notification: [...withForeign.hooks.Notification, ours] },
+      hooks: {
+        Stop: [...withForeign.hooks.Stop, ours],
+        Notification: [...withForeign.hooks.Notification, ours],
+        PermissionRequest: [permissionGroup(hookCommand(hookPath))],
+      },
     });
   });
 

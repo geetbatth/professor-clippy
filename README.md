@@ -66,6 +66,17 @@ that have waited less than an hour are sent; older ones stay on the desk.
   with a "Cancel restart" button meanwhile. Each outcome leaves a short "🔁 Restart" note. Only
   Clippy's brain gets these tools (`list_open_apps`, `restart_app`, `restart_computer`), not your
   other agents.
+- **Approving agents' permission requests from your phone** (off by default: Settings →
+  "Approve agents' permission requests from your phone", under the Claude Code hook). While you
+  are away (the "I count as away after" time), a Claude Code agent that stops to ask "allow this
+  tool use?" puts the question on the note and on your phone instead, e.g. "🔐 payments wants
+  permission / Run: npm publish", with Allow and Deny buttons; your tap answers the agent. A typed
+  reply ("use pnpm instead") denies it and passes your words on to the agent. At the PC nothing
+  changes: you get Claude Code's normal prompt. Only you can answer one (not Clippy, not a standing
+  order, not another agent). If nobody answers within 29 minutes, or you dismiss the note, the
+  agent falls back to its normal terminal prompt. It needs the hook's `PermissionRequest` entry:
+  run **Connect Claude Code…** again after updating. Your deny rules still win over an Allow, and
+  `AskUserQuestion` always stays in the terminal.
 - **A morning brief** (Settings → Morning brief; 09:00 on weekdays by default) is one loud note
   from Clippy: today's reminders, the questions waiting on you, your unread notes, and what the
   agents did overnight per project. A quiet day gets a single "Clear day" line. If the PC was off at
@@ -141,8 +152,12 @@ The wiring does three things, all at user scope:
 
 1. `claude mcp add --scope user clippy -- node <path>\mcp\index.js` (the CLI writes
    `~/.claude.json`; the wiring never edits that file itself).
-2. Adds `Stop` and `Notification` hooks running `node "<path>\hook\index.js" --professor-clippy`
-   to `~/.claude/settings.json`, keeping everything else (a timestamped backup is made first).
+2. Adds `Stop`, `Notification` and `PermissionRequest` hooks running
+   `node "<path>\hook\index.js" --professor-clippy` to `~/.claude/settings.json`, keeping
+   everything else (a timestamped backup is made first). `PermissionRequest` (phone approvals)
+   matches every tool and has `"timeout": 1800`, since it may wait for your answer; it does
+   nothing unless phone approvals are on and you are away. Running the wiring again over an older
+   install adds it.
 3. Appends a one-line hint to `~/.claude/CLAUDE.md` telling agents to use the Clippy tools.
 
 From the app: the first-run wizard, or Settings → Claude Code → **Connect Claude Code…**. It
@@ -333,6 +348,11 @@ local API), `brain\` (the brain's MCP config) and `hook-state.json`.
   after your own tap on the desk, in Telegram or on WhatsApp. An answer from Clippy
   (`answer_pending`) and any answer through the local API are refused for these questions. Turning
   the setting off stops new requests and any not yet confirmed.
+- **Phone approvals are yours alone.** An agent's permission request on your phone is answered
+  only by your own tap or reply (desk, Telegram, WhatsApp): Clippy's `answer_pending`, standing
+  orders and the local API (which every agent can call) are refused or never consulted. An Allow
+  never overrides your Claude Code deny rules. Anyone holding your phone while you are away can
+  approve what your agents ask, so lock it.
 - **Meta's test number.** It can only message the numbers you verify (up to 5), shows as a test
   sender, and Meta can change or limit test numbers at any time. Outside the 24 h window it can
   only send the approved template.

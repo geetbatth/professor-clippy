@@ -13,6 +13,7 @@ import { BRAIN_SENDER, type Message, type Watch } from '@clippy/shared';
 import type { Bus } from './core/bus';
 import { systemClock, type Clock } from './core/clock';
 import type { Store } from './core/store';
+import { isApprovalAsk } from './approvals/approvals';
 import { POWER_SENDER } from './power/actions';
 
 /** Sender of the nudge notes (Clippy's own). */
@@ -21,10 +22,12 @@ const NUDGE_TITLE = '⏰ Nudge';
 
 /**
  * The watches a new message triggers: Clippy's own notes and questions (nudges, the brain's,
- * restart confirmations) never do, chat and reminders never do.
+ * restart confirmations) never do, nor do phone approvals (an agent's permission request: the
+ * agent is blocked, not done), chat and reminders.
  */
 export function matchWatches(watches: Watch[], m: Pick<Message, 'kind' | 'project' | 'event' | 'sender'>): Watch[] {
   if (m.sender === NUDGE_SENDER || m.sender === BRAIN_SENDER || m.sender === POWER_SENDER || (m.kind !== 'note' && m.kind !== 'ask')) return [];
+  if (isApprovalAsk(m)) return [];
   const project = m.project?.toLowerCase();
   return watches.filter((w) => {
     if (w.project !== undefined && !project?.includes(w.project.toLowerCase())) return false;

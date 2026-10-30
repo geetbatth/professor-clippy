@@ -42,8 +42,12 @@ export interface RouteDef {
  * - `restartApp` (body RestartAppBody) → PowerRequestResult (202): a question the user must confirm
  * - `restartPc` (body RestartPcBody) → PowerRequestResult (202): likewise
  * - `listApps` → OpenApp[] (windowed apps)
+ * - `requestApproval` (body ApprovalRequestBody) → ApprovalResult (201 when `waiting`, else 200)
+ * - `withdrawApproval` → 204, no body (also for an unknown or already closed approval)
  *
  * The three power routes answer 403 while the `allowPowerActions` setting is off.
+ * `answerAsk` answers 403 for an open restart confirmation or phone approval: only the user's own
+ * taps (in-process, from the desk and the phones) answer those.
  */
 export const Routes = {
   health: { method: 'GET', path: '/health' },
@@ -67,6 +71,8 @@ export const Routes = {
   restartApp: { method: 'POST', path: '/power/restart-app' },
   restartPc: { method: 'POST', path: '/power/restart-pc' },
   listApps: { method: 'GET', path: '/power/apps' },
+  requestApproval: { method: 'POST', path: '/approvals' },
+  withdrawApproval: { method: 'POST', path: '/approvals/:id/withdraw' },
 } as const satisfies Record<string, RouteDef>;
 
 /** Fill a route's `:id` placeholder (URL-encoded). */
@@ -147,6 +153,52 @@ export const OpenApp = z.object({
   title: z.string(),
 });
 export type OpenApp = z.infer<typeof OpenApp>;
+
+/**
+ * How long the hook waits for the user's answer to a phone approval, seconds. It stays under
+ * {@link APPROVAL_HOOK_TIMEOUT_S} (Claude Code cancels a hook at its timeout and discards its
+ * output), so the hook can still withdraw the request and let the terminal prompt show.
+ */
+export const APPROVAL_WAIT_S = 1740;
+/** The `timeout` of the `PermissionRequest` hook entry the installer writes, seconds. */
+export const APPROVAL_HOOK_TIMEOUT_S = 1800;
+/** The two buttons of a phone approval. */
+export const APPROVAL_ALLOW = 'Allow';
+export const APPROVAL_DENY = 'Deny';
+/**
+ * What Clippy itself answers an approval with when it closes one: it timed out or was left from
+ * before a restart (Expired), the hook gave up waiting (Withdrawn), or the user dismissed the desk
+ * note (Dismissed). Each means "no decision": the agent's terminal prompt shows instead.
+ */
+export const APPROVAL_EXPIRED = 'Expired';
+export const APPROVAL_WITHDRAWN = 'Withdrawn';
+export const APPROVAL_DISMISSED = 'Dismissed';
+
+/**
+ * `POST /approvals` body: an agent's permission request (the hook's `PermissionRequest` event).
+ * `input` is the tool's input as Claude Code gave it (any JSON).
+ */
+export const ApprovalRequestBody = z.object({
+  sessionId: z.string().max(200).optional(),
+  cwd: z.string().max(1000).optional(),
+  project: z.string().min(1).max(200).optional(),
+  tool: z.string().min(1).max(200),
+  input: z.unknown().optional(),
+  sender: z.string().min(1).max(200),
+});
+export type ApprovalRequestBody = z.infer<typeof ApprovalRequestBody>;
+
+/**
+ * `POST /approvals` result. `off`: the `phoneApprovals` setting or the hook is off; `at-desk`: the
+ * user is at the PC. Either way the agent gets its normal terminal prompt. `waiting`: the question
+ * `id` (an ask) is on the desk and the phone; long-poll it with `GET /asks/:id?wait=`.
+ */
+export const ApprovalResult = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('off') }),
+  z.object({ status: z.literal('at-desk') }),
+  z.object({ status: z.literal('waiting'), id: z.string() }),
+]);
+export type ApprovalResult = z.infer<typeof ApprovalResult>;
 
 /** Error response body for any non-2xx status. */
 export const ApiError = z.object({ error: z.string() });

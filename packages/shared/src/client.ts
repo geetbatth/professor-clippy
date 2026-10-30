@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import {
   ApiError,
+  ApprovalResult,
   Health,
   MATCH_ORDER_TIMEOUT_MS,
   MAX_LONG_POLL_S,
@@ -13,6 +14,7 @@ import {
   PowerRequestResult,
   Routes,
   routePath,
+  type ApprovalRequestBody,
   type RouteDef,
 } from './api';
 import { portPath, tokenPath } from './paths';
@@ -240,6 +242,20 @@ export class ClippyClient {
   /** `GET /power/apps`: running apps that have a window. */
   listOpenApps(): Promise<OpenApp[]> {
     return this.#request(Routes.listApps, { schema: z.array(OpenApp), timeoutMs: Math.max(POWER_TIMEOUT_MS, this.#timeoutMs) });
+  }
+
+  /**
+   * `POST /approvals`: put an agent's permission request on the desk and the phone (only while
+   * the user is away and the setting is on). With `waiting`, wait for the answer with
+   * {@link waitAsk}; `off` / `at-desk` mean the agent should get its normal prompt.
+   */
+  requestApproval(input: ApprovalRequestBody): Promise<ApprovalResult> {
+    return this.#request(Routes.requestApproval, { body: input, schema: ApprovalResult });
+  }
+
+  /** `POST /approvals/:id/withdraw`: the agent stopped waiting; close the question ("Withdrawn"). */
+  async withdrawApproval(id: string): Promise<void> {
+    await this.#request(Routes.withdrawApproval, { id });
   }
 
   async #request<T = undefined>(

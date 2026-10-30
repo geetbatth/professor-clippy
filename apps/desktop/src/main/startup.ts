@@ -10,7 +10,7 @@
  * 3. then **synchronously**, with no `await` in between: the brain, the phone gate, the watcher, the relay and
  *    Telegram, which subscribe to the bus (the gate first: the two channels mirror on the gate's
  *    `message:mirror`, not on `message:new`); Telegram is then handed the catch-up messages,
- *    restart requests left from before are expired (so the phone copies are updated too), and
+ *    restart requests and phone approvals left from before are expired (so the phone copies are updated too), and
  *    the morning brief starts (a late start sends it at once, to listening channels). An agent
  *    (often the MCP server that just launched the app) can post as soon as `/health`
  *    answers; its request is only handled on a later turn of the event loop, by which time
@@ -110,6 +110,8 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
       },
       ...(idleSeconds && { isUserActive: () => idleSeconds() < settings.get().awayThresholdS }),
       allowPowerActions: () => settings.get().allowPowerActions,
+      // Phone approvals need the hook too: it is what asks, and turning it off should stop them.
+      approvalsEnabled: () => settings.get().phoneApprovals && settings.get().hookEnabled,
       ...(options.powerExecutor && { powerExecutor: options.powerExecutor }),
       ...(options.version !== undefined && { version: options.version }),
     });
@@ -166,6 +168,8 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
   // Restart questions from before this start must not look live: answered "Expired" now that
   // Telegram listens (its copy loses its buttons); nothing is run.
   core.power.expireLeftovers();
+  // Likewise approvals: their agents gave up when Clippy went away (no decision, the terminal prompt shows).
+  core.approvals.expireLeftovers();
   // The morning brief is a note from Clippy too, and if it is due now (a late start) it is sent
   // here, once the relay and Telegram are listening for what the gate mirrors.
   const brief = new BriefScheduler({ ...options.brief, store: core.store, settings: () => settings.get() });

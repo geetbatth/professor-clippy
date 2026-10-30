@@ -59,6 +59,35 @@ describe('startServices', () => {
     expect(actions(fake)).toEqual([]);
   });
 
+  it('phone approvals need both phoneApprovals and the hook, follow the away time, and leftovers expire on the next start', async () => {
+    let idle = 0;
+    const start = () =>
+      startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: quietBrief(), brain: { emit: () => {} }, idleSeconds: () => idle });
+    services = await start();
+    const request = { tool: 'Bash', input: { command: 'npm test' }, sender: 'claude-code', project: 'payments' };
+    expect(services.core.approvals.request(request)).toEqual({ status: 'off' }); // off by default
+    await services.settings.update({ phoneApprovals: true, hookEnabled: false });
+    expect(services.core.approvals.request(request)).toEqual({ status: 'off' });
+    await services.settings.update({ hookEnabled: true, awayThresholdS: 180 });
+    expect(services.core.approvals.request(request)).toEqual({ status: 'at-desk' });
+    idle = 180;
+    const result = services.core.approvals.request(request);
+    expect(result).toMatchObject({ status: 'waiting' });
+    const { id } = result as { id: string };
+
+    // Clippy quits and starts again: the old question is closed ("Expired"), which the hook takes as no decision.
+    services.phoneGate.stop();
+    services.watcher.stop();
+    services.brief.stop();
+    services.relay.stop();
+    await services.telegram.stop();
+    services.brain.dispose();
+    await services.core.stop();
+    services = await start();
+    expect(services.core.asks.result(id)).toMatchObject({ status: 'answered', answer: 'Expired', answeredVia: 'clippy' });
+    expect(services.core.approvals.isOpen(id)).toBe(false);
+  });
+
   it('has the relay listening before the first API request can be handled', async () => {
     writeFileSync(join(dir, 'settings.json'), JSON.stringify({ workerUrl: 'https://relay.example.workers.dev', workerSecret: 's' }));
     const sends: RelaySendRequest[] = [];

@@ -70,6 +70,31 @@ describe('formatForTelegram', () => {
   });
 });
 
+describe('phone approvals', () => {
+  const approval = (patch: Partial<Message> = {}) =>
+    msg({ kind: 'ask', event: 'agent-permission-request', urgent: true, options: ['Allow', 'Deny'], project: 'payments', sender: 'claude-code', ...patch });
+
+  it('puts the heading in bold and what the agent wants in a code block, escaped', () => {
+    expect(formatForTelegram(approval({ body: '🔐 payments wants permission\nRun: grep "<x>" a && b' }))).toBe(
+      '🔴 ❓ <b>🔐 payments wants permission</b>\n<pre>Run: grep &quot;&lt;x&gt;&quot; a &amp;&amp; b</pre>\n\n<i>— claude-code · payments</i>\n<i>Tap an answer, or reply to this message with your own.</i>',
+    );
+    expect(askKeyboard(approval())?.inline_keyboard.map((row) => row[0]!.text)).toEqual(['Allow', 'Deny']);
+  });
+
+  it('keeps the code block closed when a huge command is cut, and when answered', () => {
+    const out = formatForTelegram(approval({ body: `🔐 p wants permission\nRun: ${'<'.repeat(5000)}` }));
+    expect(out.length).toBeLessThanOrEqual(TG_MAX);
+    expect(out).toContain(`${TG_MORE}</pre>\n\n<i>— claude-code · payments</i>`);
+    const done = formatForTelegram(approval({ body: '🔐 p wants permission\nRun: ls', answer: 'Expired', answeredVia: 'clippy' }), { answered: true });
+    expect(done).toBe('🔴 ❓ <b>🔐 p wants permission</b>\n<pre>Run: ls</pre>\n\n<i>— claude-code · payments</i>\n\n✅ Answered: Expired <i>(by Clippy)</i>');
+  });
+
+  it('only for approvals: an ordinary ask with the same text is plain', () => {
+    expect(formatForTelegram(msg({ kind: 'ask', body: 'a\nb' }))).toMatch(/^❓ a\nb\n\n/);
+    expect(formatForTelegram(approval({ body: 'no detail line' }))).toMatch(/^🔴 ❓ no detail line\n\n/);
+  });
+});
+
 describe('every part is capped', () => {
   const huge = '<&>"'.repeat(1500); // 6000 characters, 25500 escaped
 

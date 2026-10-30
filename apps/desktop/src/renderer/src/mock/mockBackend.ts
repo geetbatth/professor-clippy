@@ -174,7 +174,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
             `Installing Professor Clippy wiring (Claude config dir: ${config})`,
             '[dry-run] would run: claude mcp remove --scope user clippy',
             `[dry-run] would run: claude mcp add --scope user clippy -- node ${mcp}`,
-            `[dry-run] would add Stop + Notification hooks (node "${hook}" --professor-clippy) in ${config}/settings.json`,
+            `[dry-run] would add Stop + Notification + PermissionRequest hooks (node "${hook}" --professor-clippy) in ${config}/settings.json`,
             `[dry-run] would append the Professor Clippy hint in ${config}/CLAUDE.md`,
             'Dry run: nothing changed.',
           ],

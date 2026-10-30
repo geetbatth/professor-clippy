@@ -1,8 +1,9 @@
 /**
- * Professor Clippy Claude Code hook (`Stop` and `Notification`). Reads the hook
- * event JSON on stdin and posts a note via `ClippyClient`. It must never get
- * in Claude Code's way: it prints nothing, exits 0, and finishes within a
- * couple of seconds.
+ * Professor Clippy Claude Code hook (`Stop`, `Notification` and `PermissionRequest`). Reads the
+ * hook event JSON on stdin and posts a note via `ClippyClient`. It must never get in Claude Code's
+ * way: it exits 0, prints nothing (except a `PermissionRequest` decision the user made), and
+ * finishes within a couple of seconds (a `PermissionRequest` waits for the user while they are
+ * away, up to `HOOK_WAIT_S`).
  *
  * How it stays bounded without risking a crash: stdin is read for at most
  * STDIN_LIMIT_MS, and each local API request times out after
@@ -12,15 +13,15 @@
  * (`!(handle->flags & UV_HANDLE_CLOSING)`, exit code 0xC0000409), so normal
  * runs never call it. The only `process.exit` is the unref'd LAST_RESORT_MS
  * timer, which fires only if something unforeseen still holds the loop open
- * long after every request has timed out.
+ * long after every request has timed out. A `PermissionRequest` re-arms it for
+ * PERMISSION_LAST_RESORT_MS, still under that hook entry's 1800 s timeout.
  */
-import { runHook } from './hook';
+import { LAST_RESORT_MS, lastResortMs, runHook } from './hook';
 
 const STDIN_LIMIT_MS = 1000;
-const LAST_RESORT_MS = 4000;
 
 process.exitCode = 0;
-setTimeout(() => process.exit(0), LAST_RESORT_MS).unref();
+let lastResort = setTimeout(() => process.exit(0), LAST_RESORT_MS).unref();
 
 function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return Promise.resolve('');
@@ -40,7 +41,13 @@ function readStdin(): Promise<string> {
 }
 
 try {
-  await runHook(await readStdin());
+  const raw = await readStdin();
+  const ms = lastResortMs(raw);
+  if (ms !== LAST_RESORT_MS) {
+    clearTimeout(lastResort);
+    lastResort = setTimeout(() => process.exit(0), ms).unref();
+  }
+  await runHook(raw, { write: (text) => process.stdout.write(text) });
 } catch {
   // never fail the hook
 }

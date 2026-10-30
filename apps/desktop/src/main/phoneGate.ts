@@ -14,11 +14,14 @@
  * - "Waiting" is counted from when the message was held, and starts again when it wakes from a
  *   snooze, so a snoozed ask is not sent the moment it comes back.
  * - Messages that arrive `done` (quiet agent-finished notes, chat lines) are never mirrored.
+ * - A phone approval (an agent's permission request, `isApprovalAsk`) is mirrored at once, always:
+ *   it is only ever posted when the user is away, and its agent is blocked until they answer.
  *
  * Electron-free: "away" is injected (`startServices` builds it from the idle time and the
  * away threshold).
  */
 import type { Message } from '@clippy/shared';
+import { isApprovalAsk } from './approvals/approvals';
 import type { Bus } from './core/bus';
 import { systemClock, type Clock, type TimerHandle } from './core/clock';
 import type { Store } from './core/store';
@@ -96,7 +99,7 @@ export class PhoneGate {
   #onNew(m: Message): void {
     if (m.kind !== 'note' && m.kind !== 'ask' && m.kind !== 'reminder') return;
     if (m.state === 'done') return;
-    if (m.state === 'unread' && this.#open()) this.#o.bus.emit('message:mirror', m);
+    if (m.state === 'unread' && (isApprovalAsk(m) || this.#open())) this.#o.bus.emit('message:mirror', m);
     else this.#held.set(m.id, { since: this.#clock.now(), snoozed: m.state === 'snoozed' });
   }
 
