@@ -81,7 +81,7 @@ describe('SettingsStore: the Telegram token', () => {
       return [...raw.slice(3)].reverse().join('');
     },
   };
-  const TOKEN = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw';
+  const TOKEN = '123456789:AAHfakeTokenForTestsOnly0123456789';
 
   it('migrates a plaintext telegramBotToken: encrypts it into telegramBotTokenEnc and removes the plaintext', async () => {
     writeFileSync(file, JSON.stringify({ soundEnabled: false, telegramBotToken: ` ${TOKEN} `, telegramChatId: 4242 }));
@@ -89,13 +89,13 @@ describe('SettingsStore: the Telegram token', () => {
     const s = await SettingsStore.load(file, { secrets, log: (m) => logs.push(m) });
     const onDisk = readFileSync(file, 'utf8');
     expect(onDisk).not.toContain(TOKEN);
-    expect(onDisk).not.toContain('AAHdqTcv');
+    expect(onDisk).not.toContain('AAHfakeT');
     const json = JSON.parse(onDisk);
     expect(json).not.toHaveProperty('telegramBotToken');
     expect(json).toMatchObject({ soundEnabled: false, telegramChatId: 4242, telegramBotTokenEnc: secrets.encrypt(TOKEN) });
     expect(s.telegramToken()).toBe(TOKEN);
     expect(s.hasTelegramToken).toBe(true);
-    expect(logs.join('\n')).not.toContain('AAHdqTcv');
+    expect(logs.join('\n')).not.toContain('AAHfakeT');
     // Loading again changes nothing.
     const again = await SettingsStore.load(file, { secrets });
     expect(again.telegramToken()).toBe(TOKEN);
