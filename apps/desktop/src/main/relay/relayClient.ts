@@ -2,8 +2,10 @@
  * Transport to the Cloudflare relay Worker: REST calls plus one outbound WebSocket.
  *
  * - `GET ${workerUrl}/ws` (https → wss) with `Authorization: Bearer <secret>`.
- * - Reconnects with exponential backoff, 1 s doubling to 60 s; the delay resets after a
- *   successful open. A ping every 30 s; no pong by the next ping drops the socket.
+ * - Reconnects with exponential backoff, 1 s doubling to 60 s. The delay resets only once the
+ *   connection has proved itself (a pong or a frame arrived), so a Worker that accepts and
+ *   immediately drops the socket doesn't cause a 1 s reconnect loop. A ping every 30 s; no
+ *   pong by the next ping drops the socket. `reconnect()` (after the PC wakes) reconnects now.
  * - Frames are parsed with the shared `WorkerToPc` schema and handled one at a time, in order.
  *   A frame's id is acked only after its handler resolves; a handler that throws leaves it
  *   unacked, so the Worker redelivers it on the next connect.
@@ -28,6 +30,8 @@ export type FrameHandler = (frame: WorkerToPc) => Promise<void>;
 export interface RelayTransport {
   start(onFrame: FrameHandler): void;
   stop(): void;
+  /** Reconnect now (e.g. after the PC wakes from sleep). */
+  reconnect(): void;
   send(request: RelaySendRequest): Promise<RelaySendResponse>;
   putReminder(id: string, body: RelayReminderPut): Promise<void>;
   deleteReminder(id: string): Promise<void>;
@@ -101,6 +105,16 @@ export class RelayClient implements RelayTransport {
     return this.#ws?.readyState === WebSocket.OPEN;
   }
 
+  /** Drop the current socket (if any) and connect again now, with a fresh backoff. */
+  reconnect(): void {
+    if (!this.#running) return;
+    clearTimeout(this.#reconnectTimer);
+    this.#reconnectTimer = undefined;
+    this.#closeSocket();
+    this.#attempt = 0;
+    this.#connect();
+  }
+
   start(onFrame: FrameHandler): void {
     if (this.#running) return;
     this.#running = true;
@@ -172,7 +186,6 @@ export class RelayClient implements RelayTransport {
     let alive = true;
 
     ws.on('open', () => {
-      this.#attempt = 0;
       this.#log('relay connected');
       clearInterval(this.#pingTimer);
       this.#pingTimer = setInterval(() => {
@@ -188,9 +201,11 @@ export class RelayClient implements RelayTransport {
     });
     ws.on('pong', () => {
       alive = true;
+      this.#attempt = 0; // the connection works end to end
     });
     ws.on('message', (data) => {
       alive = true;
+      this.#attempt = 0;
       this.#receive(ws, data.toString());
     });
     ws.on('unexpected-response', (_req, res) => {

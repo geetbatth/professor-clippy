@@ -21,6 +21,8 @@ export class FakeWorker {
   /** Frames not yet acked, in order. */
   outbox: WorkerToPc[] = [];
   connections = 0;
+  /** Accept the upgrade, then drop the socket at once (a flapping Worker). */
+  closeOnAccept = false;
   rejectedUpgrades = 0;
   /** Respond to the next `/send` calls with these statuses (then 200). */
   sendFailures: number[] = [];
@@ -67,6 +69,10 @@ export class FakeWorker {
 
   #accept(ws: WebSocket): void {
     this.connections++;
+    if (this.closeOnAccept) {
+      ws.close();
+      return;
+    }
     this.#sockets.add(ws);
     ws.on('close', () => this.#sockets.delete(ws));
     ws.on('message', (data) => {

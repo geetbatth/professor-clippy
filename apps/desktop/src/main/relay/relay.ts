@@ -77,6 +77,8 @@ export class Relay {
     const { bus } = this.#d;
     this.#unsubscribe.push(
       bus.on('message:new', (m) => {
+        // Ruling: mirror notes and asks only. Reminders go out from the Worker; desk chat is
+        // not mirrored (only replies to WhatsApp messages are sent, from #inbound).
         if (m.kind === 'note' || m.kind === 'ask') this.#mirror(m.id);
       }),
       bus.on('reminder:created', (r) => this.#putReminder(r.id)),
@@ -91,6 +93,11 @@ export class Relay {
     for (const t of this.#timers) clearTimeout(t);
     this.#timers.clear();
     this.#d.transport.stop();
+  }
+
+  /** Reconnect the socket now (after the PC wakes from sleep). */
+  reconnect(): void {
+    if (this.#running) this.#d.transport.reconnect();
   }
 
   /** Resolves once every queued Worker call has settled (tests). */

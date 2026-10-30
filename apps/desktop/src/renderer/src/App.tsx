@@ -38,6 +38,11 @@ export function App({ runtime }: { runtime: Runtime }) {
 
   const settingsState = useSettings(api);
   const { settings } = settingsState;
+  const { refresh: refreshSettings } = settingsState;
+  // Opening Settings shows the current values (the tray can change sounds behind our back).
+  useEffect(() => {
+    if (tab === 'settings') refreshSettings();
+  }, [tab, refreshSettings]);
   const soundOn = useRef(true);
   soundOn.current = settings?.soundEnabled ?? true;
   const sounds = useMemo(() => createSoundBoard(() => soundOn.current), []);

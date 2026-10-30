@@ -172,7 +172,7 @@ describe('Brain', () => {
     expect((await next).message?.body).toBe('pong');
   });
 
-  it('dispose() kills the running turn and fails queued ones', async () => {
+  it('dispose() kills the running turn and fails queued ones, each settled once', async () => {
     const { b, fake } = brain([{ stdout: fixture('pong'), hold: true }]);
     const running = b.ask('one');
     const queued = b.ask('two');
@@ -181,6 +181,11 @@ describe('Brain', () => {
     expect(fake.killed).toBe(1);
     expect((await queued).error).toMatch(/shutting down/);
     expect((await running).error).toMatch(/shutting down/);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(of('chat:done')).toEqual([{ error: 'Clippy is shutting down.' }]); // the running turn only
+    expect(of('brain:state')).toEqual(['thinking', 'idle']);
+    expect(fake.calls).toHaveLength(1); // the queued turn never started
+    expect(b.busy).toBe(false);
     expect((await b.ask('three')).error).toMatch(/shutting down/);
   });
 });

@@ -3,16 +3,12 @@
  * SQLite, scheduler), settings, the brain, the WhatsApp relay, the Clippy window and a tray icon.
  */
 import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { app, powerMonitor } from 'electron';
-import { appDataDir, type ClippyEvent, type ClippyEventMap, type Settings } from '@clippy/shared';
+import { appDataDir, settingsPath, type ClippyEvent, type ClippyEventMap, type Settings } from '@clippy/shared';
 import { createBackend } from './backend';
-import { Brain } from './brain/brain';
-import { findNode, resolveMcpServerPath, writeBrainFiles } from './brain/mcpConfig';
+import { findNode, resolveMcpServerPath } from './brain/mcpConfig';
 import { Bus } from './core/bus';
-import { startCore, type Core } from './core/core';
-import { RelayManager } from './relay';
-import { SettingsStore } from './settings';
+import { startServices } from './startup';
 import { createTray, type ClippyTray } from './tray';
 import { createClippyWindow, type ClippyWindow } from './window/createClippyWindow';
 import { registerIpc, type ClippyIpc } from './window/registerIpc';
@@ -48,25 +44,20 @@ async function main(): Promise<void> {
   bus.on('message:new', (m) => emit('message:new', m));
   bus.on('message:updated', (m) => emit('message:updated', m));
 
-  const core: Core = await startCore({ dataDir, version: app.getVersion(), bus });
-  const settings = await SettingsStore.load(join(dataDir, 'settings.json'));
-
   const mcpServerPath = resolveMcpServerPath({
     override: process.env.CLIPPY_MCP_PATH,
     resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
     mainDir: import.meta.dirname,
   });
   if (!mcpServerPath) console.warn('[clippy] MCP server not built (apps/mcp/dist/index.js); the brain runs without clippy tools');
-  const brainFiles = await writeBrainFiles(
+  // Settings, core, brain and relay; the relay is subscribed before any API request is handled.
+  const { core, settings, brain, relay } = await startServices({
     dataDir,
-    mcpServerPath ? { serverPath: mcpServerPath, dataDir, nodePath: findNode(), execPath: process.execPath } : undefined,
-  );
-  const brain = new Brain({
-    store: core.store,
-    emit,
-    mcpConfigPath: brainFiles.mcpConfigPath,
-    settingsPath: brainFiles.settingsPath,
-    cwd: homedir(),
+    settingsFile: settingsPath(),
+    version: app.getVersion(),
+    bus,
+    mcp: mcpServerPath ? { serverPath: mcpServerPath, dataDir, nodePath: findNode(), execPath: process.execPath } : undefined,
+    brain: { emit, cwd: homedir() },
   });
 
   const backend = createBackend({ store: core.store, asks: core.asks, brain, settings });
@@ -87,9 +78,6 @@ async function main(): Promise<void> {
     win.hide();
   });
 
-  const relay = new RelayManager({ store: core.store, bus, scheduler: core.scheduler, asks: core.asks, brain });
-  relay.apply(settings.get());
-
   const tray: ClippyTray = createTray({
     onShow: showClippy,
     muted: () => !settings.get().soundEnabled,
@@ -105,11 +93,14 @@ async function main(): Promise<void> {
       if (!win.isDestroyed()) win.webContents.setAudioMuted(!next.soundEnabled);
       tray.refresh();
     }
-    relay.apply(next);
   });
   applyLoginItem(settings.get());
 
-  powerMonitor.on('resume', () => core.scheduler.onResume());
+  powerMonitor.on('resume', () => {
+    core.scheduler.onResume();
+    // The socket may have died silently while asleep: reconnect now rather than on the next ping.
+    relay.reconnect();
+  });
 
   // Orderly shutdown: stop the relay and brain, then the core (API, scheduler, database).
   let stopped = false;

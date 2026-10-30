@@ -100,11 +100,15 @@ export class Brain {
     return this.#running || this.#queue.length > 0;
   }
 
-  /** Kill the running turn and fail the queued ones. */
+  /**
+   * Fail the queued turns and kill the running one (which then finishes through the normal
+   * path with a "shutting down" error, so it is resolved exactly once).
+   */
   dispose(): void {
     this.#disposed = true;
+    const waiting = this.#queue.splice(this.#running ? 1 : 0);
+    for (const turn of waiting) turn.resolve({ error: 'Clippy is shutting down.' });
     this.#current?.kill();
-    for (const turn of this.#queue.splice(0)) turn.resolve({ error: 'Clippy is shutting down.' });
   }
 
   /** CLI arguments for a turn (the prompt itself goes to stdin). */
@@ -146,7 +150,7 @@ export class Brain {
           this.#log('brain turn failed', err);
           reply = { error: `My brain hiccuped: ${err instanceof Error ? err.message : String(err)}` };
         }
-        this.#queue.shift();
+        if (this.#queue[0] === turn) this.#queue.shift();
         const done: ChatDone = reply.message ? { message: reply.message } : { error: reply.error ?? 'Unknown error' };
         this.#opts.emit('chat:done', done);
         turn.resolve(reply);

@@ -141,6 +141,36 @@ describe('RelayClient', () => {
     expect(logs.some((l) => l.includes('stopped answering pings'))).toBe(true);
   });
 
+  it('does not reset the backoff on open alone: accept-then-close backs off instead of looping', async () => {
+    worker.closeOnAccept = true;
+    make({ backoffMinMs: 20, backoffMaxMs: 10_000 }).start(async () => {});
+    await new Promise((r) => setTimeout(r, 700));
+    // 20+40+80+160+320 ms of backoff fits in 700 ms about 5 times; resetting on open would give ~25.
+    expect(worker.connections).toBeGreaterThanOrEqual(3);
+    expect(worker.connections).toBeLessThanOrEqual(7);
+  });
+
+  it('resets the backoff once a frame arrives', async () => {
+    const handled: string[] = [];
+    make({ backoffMinMs: 20, backoffMaxMs: 10_000 }).start(async (f) => void handled.push(f.id));
+    await waitFor(() => worker.openSockets === 1);
+    worker.push(inbound('hello'));
+    await waitFor(() => handled.length === 1);
+    worker.dropAll();
+    const t0 = Date.now();
+    await waitFor(() => worker.connections === 2, 3000, 'quick reconnect');
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+
+  it('reconnect() replaces a live socket at once (after the PC wakes)', async () => {
+    const c = make();
+    c.start(async () => {});
+    await waitFor(() => worker.openSockets === 1);
+    c.reconnect();
+    await waitFor(() => worker.connections === 2, 3000, 'second connection');
+    await waitFor(() => worker.openSockets === 1, 3000, 'old socket closed');
+  });
+
   it('a dropped connection is re-established and frames pushed meanwhile are delivered', async () => {
     const handled: string[] = [];
     make().start(async (f) => void handled.push(f.id));

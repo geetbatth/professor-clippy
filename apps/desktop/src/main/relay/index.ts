@@ -54,6 +54,11 @@ export class RelayManager {
     this.#relay.start();
   }
 
+  /** Reconnect the running relay's socket now (no-op when the relay is off). */
+  reconnect(): void {
+    this.#relay?.reconnect();
+  }
+
   stop(): void {
     this.#relay?.stop();
     this.#relay = undefined;

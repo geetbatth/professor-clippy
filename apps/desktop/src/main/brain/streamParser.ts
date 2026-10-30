@@ -43,6 +43,9 @@ export class StreamJsonParser {
   readonly #streamed = new Set<string>();
   /** `<message id>:<block index>` of the block the last delta belonged to. */
   #lastBlock: string | undefined;
+  /** Id of the message being streamed, for lines that lack `api_message_id`. */
+  #currentMessage = 'stream-0';
+  #messageCount = 0;
   /** Set when the CLI reported an authentication failure (e.g. "Not logged in"). */
   #authFailed = false;
 
@@ -117,10 +120,13 @@ export class StreamJsonParser {
   #streamEvent(obj: Json): void {
     const event = obj.event;
     if (!isObject(event)) return;
-    const messageId = typeof obj.api_message_id === 'string' ? obj.api_message_id : 'stream';
-    if (event.type === 'message_start' && isObject(event.message) && typeof event.message.id === 'string') {
-      this.#streamed.add(event.message.id);
+    if (event.type === 'message_start') {
+      // A new assistant message: its blocks never continue the previous message's blocks.
+      const id = isObject(event.message) && typeof event.message.id === 'string' ? event.message.id : undefined;
+      this.#currentMessage = id ?? `stream-${++this.#messageCount}`;
+      if (id) this.#streamed.add(id);
     }
+    const messageId = typeof obj.api_message_id === 'string' ? obj.api_message_id : this.#currentMessage;
     if (event.type !== 'content_block_delta') return;
     const delta = event.delta;
     if (!isObject(delta) || delta.type !== 'text_delta' || typeof delta.text !== 'string' || !delta.text) return;

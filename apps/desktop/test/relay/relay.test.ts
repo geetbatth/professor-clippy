@@ -27,6 +27,7 @@ class FakeTransport implements RelayTransport {
   onFrame: FrameHandler | undefined;
   started = 0;
   stopped = 0;
+  reconnects = 0;
   #wa = 1;
   start(onFrame: FrameHandler) {
     this.started++;
@@ -34,6 +35,9 @@ class FakeTransport implements RelayTransport {
   }
   stop() {
     this.stopped++;
+  }
+  reconnect() {
+    this.reconnects++;
   }
   #maybeFail() {
     const err = this.failures.shift();
@@ -295,6 +299,8 @@ describe('RelayManager', () => {
     manager.apply({ ...on, soundEnabled: false }); // unrelated change: no restart
     expect(transports).toHaveLength(1);
     expect(manager.active).toBe(true);
+    manager.reconnect();
+    expect(transports[0]!.reconnects).toBe(1);
     manager.apply({ ...on, workerSecret: 's2' });
     expect(transports.map((t) => [t.started, t.stopped])).toEqual([
       [1, 1],
@@ -303,6 +309,7 @@ describe('RelayManager', () => {
     manager.apply(DEFAULT_SETTINGS);
     expect(transports[1]!.stopped).toBe(1);
     expect(manager.active).toBe(false);
+    manager.reconnect(); // off: nothing to do
     store.close();
   });
 });

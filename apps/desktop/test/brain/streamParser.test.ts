@@ -51,6 +51,15 @@ describe('StreamJsonParser', () => {
     expect(parser.reply).toBe('');
   });
 
+  it('keeps blocks of separate streamed messages apart even without api_message_id', () => {
+    const parser = new StreamJsonParser();
+    const line = (event: object) => `${JSON.stringify({ type: 'stream_event', event, parent_tool_use_id: null })}\n`;
+    const delta = (text: string) => line({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } });
+    parser.push(line({ type: 'message_start', message: { content: [] } }) + delta('Let me look.'));
+    parser.push(line({ type: 'message_start', message: { content: [] } }) + delta('Found it') + delta('.'));
+    expect(parser.reply).toBe('Let me look.\n\nFound it.');
+  });
+
   it('skips blank, malformed and unknown lines, and handles CRLF and a final line without newline', () => {
     const events: BrainStreamEvent[] = [];
     const parser = new StreamJsonParser((e) => events.push(e));
