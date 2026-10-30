@@ -13,6 +13,10 @@
  * - `POST /approvals` posts an agent's permission request for the phone (only when the user is
  *   away), never waiting for the answer; the hook long-polls the ask. `POST /asks/:id/answer`
  *   refuses (403) to answer an open one, too.
+ * - `POST /look` changes only the three theme settings (a `LookPatch`), through `ApiDeps.setLook`.
+ * - `/pages` writes as the body's `sender`, which may not be `you` (the user's own name, IPC only):
+ *   an agent changes only the pages it wrote (403), and a stale `baseUpdatedAt` is a 409 whose
+ *   body also has the page as it is now. No route deletes a page.
  */
 import { timingSafeEqual } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
@@ -21,27 +25,34 @@ import type { AddressInfo } from 'node:net';
 import {
   AnswerAskBody,
   ApprovalRequestBody,
+  LookPatch,
   MATCH_ORDER_TIMEOUT_MS,
   MAX_LONG_POLL_S,
   MessageFilter,
   NewAskInput,
   NewMessageInput,
+  NewPageBody,
   NewReminderInput,
   NewStandingOrderInput,
   NewWatchInput,
+  PageChangeBody,
+  PageListQuery,
+  PageSenderBody,
   RestartAppBody,
   RestartPcBody,
   Routes,
   SnoozeBody,
   type Health,
+  type Look,
   type RouteDef,
 } from '@clippy/shared';
 import { z } from 'zod';
 import { ONLY_USER_APPROVES_MESSAGE, type Approvals } from '../approvals/approvals';
 import { ONLY_USER_CONFIRMS_MESSAGE, POWER_OFF_MESSAGE, type PowerActions } from '../power/actions';
 import type { Asks } from './asks';
-import { CoreError, ForbiddenError, NotFoundError, ValidationError } from './errors';
+import { ConflictError, CoreError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { writeAtomic } from './files';
+import type { Pages } from './pages';
 import type { Scheduler } from './scheduler';
 import type { Store } from './store';
 
@@ -50,10 +61,14 @@ const MAX_BODY_BYTES = 1024 * 1024;
 /** How long `close()` waits for in-flight requests before dropping connections. */
 const CLOSE_GRACE_MS = 1000;
 
+/** What `POST /look` answers when the app was started without access to its settings. */
+const NO_SETTINGS_MESSAGE = "Professor Clippy can't change his look right now.";
+
 export interface ApiDeps {
   store: Store;
   scheduler: Scheduler;
   asks: Asks;
+  pages: Pages;
   /** Restart requests (`/power/*`). Absent: those routes answer 403 as if the setting were off. */
   power?: PowerActions;
   /** Agents' permission requests for the phone (`/approvals`). Absent: every request is `off`. */
@@ -74,6 +89,8 @@ export interface ApiDeps {
   matchOrder?: (input: NewAskInput) => Promise<{ orderId: string; answer: string } | undefined>;
   /** Default {@link MATCH_ORDER_TIMEOUT_MS} (a test seam). */
   matchOrderTimeoutMs?: number;
+  /** Saves a change to the colour theme settings (`POST /look`). Absent: that route answers 403. */
+  setLook?: (patch: LookPatch) => Promise<Look>;
 }
 
 export interface StartApiOptions extends ApiDeps {
@@ -107,7 +124,7 @@ type Handler = (ctx: RequestContext) => Reply | Promise<Reply>;
 
 /** Build the request listener (no I/O besides the request itself; handy for tests). */
 export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: ServerResponse) => void {
-  const { store, scheduler, asks } = deps;
+  const { store, scheduler, asks, pages } = deps;
   const expectedAuth = Buffer.from(`Bearer ${deps.token}`);
 
   // Order matters: `/asks/pending` must match before `/asks/:id`.
@@ -185,6 +202,31 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       },
     ],
     [Routes.withdrawApproval, ({ id }) => (deps.approvals?.withdraw(id), { status: 204 })],
+    [Routes.listPages, ({ url }) => ok(pages.list(parse(PageListQuery, query(url, ['q', 'archived']))))],
+    [Routes.getPage, ({ id }) => ok(pages.get(id))],
+    [
+      Routes.createPage,
+      async ({ req }) => {
+        const { sender, ...input } = await body(req, NewPageBody);
+        return created(pages.create(input, sender));
+      },
+    ],
+    [
+      Routes.writePage,
+      async ({ req, id }) => {
+        const { sender, ...change } = await body(req, PageChangeBody);
+        return ok(pages.write(id, change, sender));
+      },
+    ],
+    [Routes.archivePage, async ({ req, id }) => ok(pages.archive(id, (await body(req, PageSenderBody)).sender))],
+    [
+      Routes.setLook,
+      async ({ req }) => {
+        const patch = await body(req, LookPatch);
+        if (!deps.setLook) throw new ForbiddenError(NO_SETTINGS_MESSAGE);
+        return ok(await deps.setLook(patch));
+      },
+    ],
   ]);
 
   return (req, res) => {
@@ -193,8 +235,11 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       try {
         reply = await dispatch(req, res);
       } catch (err) {
-        if (err instanceof CoreError) reply = { status: err.status, body: { error: err.message } };
-        else {
+        if (err instanceof CoreError) {
+          // A page conflict also carries the page as it is now (`{ error, page }`).
+          const details = err instanceof ConflictError ? err.details : undefined;
+          reply = { status: err.status, body: { ...details, error: err.message } };
+        } else {
           console.error('[clippy] API error:', err);
           reply = { status: 500, body: { error: 'Internal error' } };
         }

@@ -66,3 +66,27 @@ export interface ClippyWindowShell {
 export function isWindowMode(value: unknown): value is WindowMode {
   return value === 'mini' || value === 'expanded';
 }
+
+/** Height of a popped-out page window's header, in DIPs: what is left when it is collapsed. */
+export const PAGE_HEADER_HEIGHT = 30;
+
+/** Renderer → main channels of a popped-out page's window. */
+export const PageWindowChannels = {
+  /** renderer → main: `true` = shrink to the header ("—"), `false` = back to full size. */
+  collapse: 'pageWindow:collapse',
+  /**
+   * renderer → main: the resize grip was grabbed / moved / released; main reads the cursor
+   * itself. (Windows gives transparent windows no resizable border, so the sticky has a grip.)
+   */
+  resizeStart: 'pageWindow:resizeStart',
+  resizeMove: 'pageWindow:resizeMove',
+  resizeEnd: 'pageWindow:resizeEnd',
+} as const;
+
+/** What the preload exposes as `window.clippyPageWindow` (only a page window acts on it). */
+export interface PageWindowShell {
+  setCollapsed(collapsed: boolean): void;
+  resizeStart(): void;
+  resizeMove(): void;
+  resizeEnd(): void;
+}

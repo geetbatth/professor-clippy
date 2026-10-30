@@ -12,7 +12,7 @@
   gap: 8px;
   padding: 4px 6px;
   border-radius: 6px;
-  background: rgba(74, 61, 18, 0.07);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
 }
 .rules-text {
   flex: 1;

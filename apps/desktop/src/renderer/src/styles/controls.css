@@ -12,39 +12,39 @@
   cursor: default;
 }
 .btn-done {
-  background: #4a3d12;
-  color: #fff8d1;
+  background: var(--btn);
+  color: var(--btn-ink);
 }
 .btn-done:hover:not(:disabled) {
-  background: #2f2710;
+  background: var(--ink-strong);
 }
 .btn-ghost {
   background: transparent;
-  color: #6b5a1e;
+  color: var(--ink-ghost);
 }
 .btn-ghost:hover {
-  background: rgba(74, 61, 18, 0.1);
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
 }
 .btn-option {
-  background: #fffbe0;
-  border-color: rgba(74, 61, 18, 0.35);
-  color: #3a300c;
+  background: var(--option);
+  border-color: color-mix(in srgb, var(--ink) 35%, transparent);
+  color: var(--ink-label);
 }
 .btn-option:hover:not(:disabled) {
-  background: #fff3a8;
-  border-color: #4a3d12;
+  background: var(--option-hover);
+  border-color: var(--ink);
 }
 
 .field-input {
   flex: 1;
   min-width: 0;
   padding: 4px 9px;
-  border: 1px solid rgba(74, 61, 18, 0.3);
+  border: 1px solid var(--field-border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--field);
   font-size: 12.5px;
   outline: none;
 }
 .field-input:focus {
-  border-color: #4a3d12;
+  border-color: var(--ink);
 }

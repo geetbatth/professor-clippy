@@ -23,10 +23,13 @@ export function useSettings(api: ClippyWindowApi): SettingsState {
   useEffect(() => {
     let live = true;
     void api.getSettings().then((s) => live && setSettings(s));
-    // The tray can mute sounds while the window is open; pick that up when the user comes back.
+    // A change made anywhere (another window, the tray, the brain) arrives at once.
+    const off = api.on('settings:changed', setSettings);
+    // And re-read when the user comes back, in case an event was missed.
     window.addEventListener('focus', refresh);
     return () => {
       live = false;
+      off();
       window.removeEventListener('focus', refresh);
     };
   }, [api, refresh]);

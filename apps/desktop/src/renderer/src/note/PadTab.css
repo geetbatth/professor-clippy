@@ -1,0 +1,265 @@
+/* The Pad tab: the list of pages, and one page open on lined paper (PageEditor). */
+.pad {
+  display: flex;
+  flex-direction: column;
+}
+.pad--page {
+  min-height: 100%;
+}
+.pad-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.pad-search {
+  padding: 6px 12px;
+}
+.pad-new {
+  flex: none;
+  padding: 5px 12px;
+}
+.pad-label {
+  margin: 12px 2px 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: 700 10.5px 'Segoe UI', sans-serif;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  text-align: left;
+}
+.pad-archived {
+  margin-top: 16px;
+  cursor: pointer;
+}
+.pad-archived:hover {
+  color: var(--ink);
+}
+.pad-empty {
+  margin: 28px 0;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.pad-empty p {
+  margin: 0 0 4px;
+}
+
+/* A page in the list: title (with who wrote it), its first line, when. */
+.pad-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  color: var(--ink-strong);
+}
+button.pad-card {
+  cursor: pointer;
+}
+button.pad-card:hover {
+  border-color: color-mix(in srgb, var(--ink) 35%, transparent);
+}
+.pad-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pad-card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 13.5px;
+}
+.pad-badge {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+}
+.pad-pin {
+  margin-left: auto;
+  font-size: 12px;
+}
+.pad-new-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.pad-card-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-body);
+}
+.pad-card-meta {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.pad-card--archived {
+  opacity: 0.92;
+}
+.pad-confirm {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bad);
+}
+.btn.pad-delete {
+  background: var(--bad);
+  color: var(--bad-bg);
+}
+.btn.pad-delete:hover:not(:disabled) {
+  background: var(--urgent);
+}
+
+/* One page open. */
+.pad-back {
+  align-self: flex-start;
+  margin: 0 0 6px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-ghost);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pad-back:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+/* The sheet: the theme's paper, or the page's own colour (`data-page-color`, see theme.css). */
+.page-paper {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 180px;
+  padding: 6px 10px 4px;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--paper-1), var(--paper-2));
+  color: var(--ink);
+}
+.page-title {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 2px 4px;
+  border: none;
+  border-bottom: 2px dashed var(--line);
+  background: none;
+  font: 700 17px 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;
+  color: var(--head);
+  outline: none;
+}
+.page-title:focus {
+  border-bottom-color: var(--ink-faint);
+}
+/* Lined paper: a rule under every line, scrolling with the text. */
+.page-text {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 0 2px;
+  border: none;
+  resize: none;
+  outline: none;
+  background: repeating-linear-gradient(180deg, transparent 0 21px, var(--line) 21px 22px);
+  background-attachment: local;
+  color: var(--ink-strong);
+  font: 13.5px/22px 'Segoe UI', sans-serif;
+}
+.page-text::-webkit-scrollbar {
+  width: 8px;
+}
+.page-text::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+  border-radius: 4px;
+}
+.page-footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+}
+.page-footer--small {
+  min-height: 20px;
+}
+.page-footer-gap {
+  flex: 1;
+}
+.page-status {
+  font-size: 11.5px;
+  color: var(--ok);
+  white-space: nowrap;
+}
+.page-status--bad {
+  color: var(--bad);
+  white-space: normal;
+}
+.page-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent);
+  border-radius: 8px;
+  background: var(--bad-bg);
+  color: var(--bad);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.page-conflict span {
+  flex: 1 1 100%;
+}
+.page-colors {
+  display: flex;
+  gap: 5px;
+}
+.page-color {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--ink) 35%, transparent);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.page-color[aria-checked='true'] {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+/* "Same as the note": half the note's paper, half its ink. */
+.page-color--theme {
+  background: linear-gradient(135deg, var(--paper-1) 50%, var(--ink-faint) 50%);
+}
+.page-keep {
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+.page-keep--on {
+  color: var(--ink);
+}

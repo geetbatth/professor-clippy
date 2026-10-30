@@ -9,9 +9,11 @@ import {
 } from '@clippy/shared/ipc';
 import {
   isWindowMode,
+  PageWindowChannels,
   WindowChannels,
   type ClippyWindowShell,
   type CursorPoint,
+  type PageWindowShell,
   type WindowMode,
 } from '../main/window/windowApi';
 
@@ -60,5 +62,16 @@ const shell: ClippyWindowShell = {
   blur: () => ipcRenderer.send(WindowChannels.blur),
 };
 
+// A popped-out page's window: main ignores these from any other window.
+const pageShell: PageWindowShell = {
+  setCollapsed(collapsed: boolean) {
+    ipcRenderer.send(PageWindowChannels.collapse, collapsed === true);
+  },
+  resizeStart: () => ipcRenderer.send(PageWindowChannels.resizeStart),
+  resizeMove: () => ipcRenderer.send(PageWindowChannels.resizeMove),
+  resizeEnd: () => ipcRenderer.send(PageWindowChannels.resizeEnd),
+};
+
 contextBridge.exposeInMainWorld('clippy', api);
 contextBridge.exposeInMainWorld('clippyWindow', shell);
+contextBridge.exposeInMainWorld('clippyPageWindow', pageShell);

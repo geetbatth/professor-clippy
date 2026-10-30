@@ -25,7 +25,9 @@ describe('startServices', () => {
   });
   afterEach(async () => {
     services?.phoneGate.stop();
+    services?.pageArchiver.stop();
     services?.watcher.stop();
+    services?.onboarding.stop();
     services?.brief.stop();
     services?.relay.stop();
     await services?.telegram.stop();
@@ -382,6 +384,41 @@ describe('startServices', () => {
     expect(core.store.listActiveWatches()).toEqual([]);
   });
 
+  it('archives pages left untouched for over 30 days at start, then every 6 hours until stopped', async () => {
+    // Pages written a month ago (a store with its own clock, as if the app had run back then).
+    const DAY = 24 * 60 * 60 * 1000;
+    const then = new Store({ path: join(dir, 'clippy.db'), clock: new FakeClock(Date.now() - 31 * DAY) });
+    const old = then.newId();
+    const base = { body: '', color: null, pinned: false, popped: false, popBounds: null, author: 'you', project: null, unseen: false, archivedAt: null };
+    then.insertPage({ ...base, id: old, title: 'Old', createdAt: Date.now() - 31 * DAY, updatedAt: Date.now() - 31 * DAY });
+    const nearly = then.newId();
+    then.insertPage({ ...base, id: nearly, title: 'Nearly', createdAt: Date.now() - 30 * DAY + 3 * 60 * 60 * 1000, updatedAt: Date.now() - 30 * DAY + 3 * 60 * 60 * 1000 });
+    then.close();
+
+    const clock = new FakeClock(Date.now());
+    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: quietBrief(), pageArchive: { clock }, brain: { emit: () => {} } });
+    const { pages } = services.core;
+    expect(pages.get(old).archivedAt).not.toBeNull();
+    expect(pages.get(nearly).archivedAt).toBeNull();
+    clock.advance(6 * 60 * 60 * 1000);
+    expect(pages.get(nearly).archivedAt).not.toBeNull();
+    services.pageArchiver.stop();
+    expect(clock.pending).toBe(0);
+  });
+
+  it('POST /look saves the theme into the settings file and returns the look', async () => {
+    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: quietBrief(), brain: { emit: () => {} } });
+    const res = await fetch(`http://127.0.0.1:${services.core.port}/look`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${services.core.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ theme: 'night', followSystemDark: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ theme: 'night', followSystemDark: true, darkTheme: 'night' });
+    expect(services.settings.get()).toMatchObject({ theme: 'night', followSystemDark: true });
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toMatchObject({ theme: 'night', followSystemDark: true });
+  });
+
   it('wires settings changes to the relay and writes the brain files first', async () => {
     let transports = 0;
     services = await startServices({
@@ -407,6 +444,8 @@ describe('startServices', () => {
     services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: { clock }, brain: { emit: () => {} } });
     const briefs = () => services!.core.store.listMessages({}).filter((m) => m.sender === 'clippy' && m.title === '☀️ Morning brief');
     expect(briefs()).toHaveLength(1);
+    // Getting started is listening before the brief starts, so a brief sent at start ticks it.
+    expect(services.onboarding.state().done).toEqual(['brief']);
     expect(clock.pending).toBe(1);
     await services.settings.update({ briefEnabled: false });
     expect(clock.pending).toBe(0);

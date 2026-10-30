@@ -19,6 +19,10 @@ describe('Settings', () => {
       autoStart: true,
       allowPowerActions: false,
       phoneApprovals: false,
+      theme: 'classic',
+      followSystemDark: false,
+      darkTheme: 'night',
+      showTips: true,
       firstRunDone: false,
       quietDefaultsApplied: false,
     });
@@ -178,5 +182,20 @@ describe('Settings: morning brief', () => {
       briefTime: '07:30',
       briefWeekdaysOnly: false,
     });
+  });
+});
+
+describe('Settings: look', () => {
+  it('accepts the look settings in a patch and rejects an unknown theme', () => {
+    expect(SettingsPatch.parse({ theme: 'night', followSystemDark: true, darkTheme: 'chalkboard', showTips: false })).toEqual({
+      theme: 'night',
+      followSystemDark: true,
+      darkTheme: 'chalkboard',
+      showTips: false,
+    });
+    expect(Settings.safeParse({ theme: 'neon' }).success).toBe(false);
+    expect(SettingsPatch.safeParse({ theme: 'neon' }).success).toBe(false);
+    // The dark theme slot only takes a dark theme.
+    expect(SettingsPatch.safeParse({ darkTheme: 'mint' }).success).toBe(false);
   });
 });

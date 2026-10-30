@@ -7,24 +7,34 @@ import { createBackend } from '../src/main/backend';
 import { Asks } from '../src/main/core/asks';
 import { Bus } from '../src/main/core/bus';
 import { ConflictError, NotFoundError } from '../src/main/core/errors';
+import { Pages } from '../src/main/core/pages';
 import { Store } from '../src/main/core/store';
+import { Onboarding } from '../src/main/onboarding';
 import { SettingsStore } from '../src/main/settings';
 
 describe('createBackend', () => {
   let dir: string;
   let store: Store;
   let asks: Asks;
+  let pages: Pages;
+  let pageEvents: string[];
   let asked: [string, unknown][];
   let newChats: number;
   let backend: ReturnType<typeof createBackend>;
   let settings: SettingsStore;
   let telegramCalls: unknown[][];
+  let dark = false;
+  let onboarding: Onboarding;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'clippy-backend-'));
     const bus = new Bus();
     store = new Store({ path: ':memory:', bus });
     asks = new Asks({ store, bus });
+    pages = new Pages({ store, bus });
+    pageEvents = [];
+    bus.on('page:changed', (p) => pageEvents.push(`changed ${p.title}`));
+    bus.on('page:deleted', ({ id }) => pageEvents.push(`deleted ${id}`));
     asked = [];
     newChats = 0;
     const brain = {
@@ -51,7 +61,20 @@ describe('createBackend', () => {
       sendTest: async () => ({ ok: false, error: 'not paired' }),
     };
     settings = await SettingsStore.load(join(dir, 'settings.json'));
-    backend = createBackend({ store, asks, brain, settings, claudeWiring, telegram, hotkey: () => ({ accelerator: 'Alt+T', ok: false, error: 'taken' }) });
+    onboarding = new Onboarding({ bus, store });
+    onboarding.start();
+    backend = createBackend({
+      store,
+      asks,
+      pages,
+      brain,
+      settings,
+      claudeWiring,
+      telegram,
+      hotkey: () => ({ accelerator: 'Alt+T', ok: false, error: 'taken' }),
+      systemDark: () => dark,
+      onboarding,
+    });
   });
   afterEach(() => {
     store.close();
@@ -100,7 +123,7 @@ describe('createBackend', () => {
     const secrets = { available: () => true, encrypt: (s: string) => `enc(${s})`, decrypt: (s: string) => s.slice(4, -1) };
     const withToken = await SettingsStore.load(join(dir, 'settings.json'), { secrets });
     await withToken.setTelegramToken('123456:AAHfakefakefakefakefakefake');
-    const b = createBackend({ store, asks, brain: { ask: async () => ({}), newChat: () => {} }, settings: withToken, claudeWiring: { connect: async () => ({ ok: true, log: [], warnings: [] }) }, hotkey: () => ({ accelerator: '', ok: true }), telegram: { status: () => ({ tokenSaved: true, state: 'off' }), setToken: async () => ({ tokenSaved: true, state: 'off' }), unpair: async () => ({ tokenSaved: true, state: 'off' }), sendTest: async () => ({ ok: true }) } });
+    const b = createBackend({ store, asks, pages, brain: { ask: async () => ({}), newChat: () => {} }, settings: withToken, claudeWiring: { connect: async () => ({ ok: true, log: [], warnings: [] }) }, hotkey: () => ({ accelerator: '', ok: true }), systemDark: () => false, onboarding, telegram: { status: () => ({ tokenSaved: true, state: 'off' }), setToken: async () => ({ tokenSaved: true, state: 'off' }), unpair: async () => ({ tokenSaved: true, state: 'off' }), sendTest: async () => ({ ok: true }) } });
     expect(withToken.get().telegramBotTokenEnc).toBeDefined();
     expect(await b.getSettings()).not.toHaveProperty('telegramBotTokenEnc');
     expect(await b.setSettings({ telegramChatId: 42 })).toMatchObject({ telegramChatId: 42 });
@@ -129,6 +152,40 @@ describe('createBackend', () => {
     await expect(backend.cancelWatch('01ARZ3NDEKTSV4RRFFQ69G5FAV')).rejects.toBeInstanceOf(NotFoundError);
   });
 
+  it("writes pages as 'you': seen, any page, and a stale save resolves to the conflict instead of throwing", async () => {
+    const mine = await backend.createPage({ title: 'Scratch', body: 'v1' });
+    expect(mine).toMatchObject({ author: 'you', unseen: false });
+    const agents = pages.create({ title: 'Deploy steps', body: '1. build' }, 'claude-code');
+    expect((await backend.listPages({})).map((p) => p.title)).toEqual(['Deploy steps', 'Scratch']);
+    expect(await backend.markPageSeen(agents.id)).toMatchObject({ unseen: false });
+    const edited = await backend.writePage(agents.id, { append: '2. ship', baseUpdatedAt: agents.updatedAt });
+    expect(edited).toEqual({ ok: true, page: expect.objectContaining({ body: '1. build\n2. ship', author: 'claude-code', unseen: false }) });
+
+    const clippys = pages.write(mine.id, { append: 'from Clippy' }, 'clippy-brain');
+    expect(await backend.writePage(mine.id, { body: 'v1 and my typing', baseUpdatedAt: mine.updatedAt })).toEqual({ ok: false, conflict: clippys });
+    expect((await backend.getPage(mine.id)).body).toBe('v1\nfrom Clippy');
+    await expect(backend.getPage('01ARZ3NDEKTSV4RRFFQ69G5FAV')).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('pops, archives, restores and deletes pages, emitting page events', async () => {
+    const page = await backend.createPage({ title: 'Float' });
+    expect(await backend.popPage(page.id, true)).toMatchObject({ popped: true });
+    expect(await backend.archivePage(page.id)).toMatchObject({ archivedAt: expect.any(Number), popped: false });
+    expect((await backend.listPages({ archived: true })).map((p) => p.id)).toEqual([page.id]);
+    expect(await backend.restorePage(page.id)).toMatchObject({ archivedAt: null });
+    await expect(backend.deletePage(page.id)).rejects.toBeInstanceOf(ConflictError); // only archived pages
+    await backend.archivePage(page.id);
+    await backend.deletePage(page.id);
+    expect(await backend.listPages({ archived: true })).toEqual([]);
+    expect(pageEvents).toEqual(['changed Float', 'changed Float', 'changed Float', 'changed Float', 'changed Float', `deleted ${page.id}`]);
+  });
+
+  it('reports whether Windows is in dark mode as it is now', async () => {
+    expect(await backend.systemDark()).toBe(false);
+    dark = true;
+    expect(await backend.systemDark()).toBe(true);
+  });
+
   it('reports the Tell Clippy hotkey status', async () => {
     expect(await backend.hotkeyStatus()).toEqual({ accelerator: 'Alt+T', ok: false, error: 'taken' });
   });
@@ -143,7 +200,25 @@ describe('createBackend', () => {
     expect(settings.get()).toBeDefined();
   });
 
-  it('forwards Connect Claude Code to the wiring', async () => {
+  it('forwards Connect Claude Code to the wiring; a successful install ticks Getting started', async () => {
     expect(await backend.connectClaude('preview')).toEqual({ ok: true, log: ['preview'], warnings: [] });
+    expect((await backend.onboarding()).done).toEqual([]);
+    await backend.connectClaude('install');
+    expect((await backend.onboarding()).done).toEqual(['connect']);
+  });
+
+  it('Getting started: ticks, dismisses, records tips, and runs the welcome again', async () => {
+    await settings.update({ firstRunDone: true });
+    expect(await backend.markOnboarding('hotkey')).toMatchObject({ done: ['hotkey'] });
+    expect(await backend.dismissChecklist()).toMatchObject({ dismissed: true });
+    expect(await backend.markTipShown('pad-jot')).toMatchObject({ tipsShown: ['pad-jot'] });
+    expect(await backend.restartWelcome()).toMatchObject({ done: ['hotkey'], dismissed: false, tipsShown: ['pad-jot'] });
+    expect(settings.get().firstRunDone).toBe(false);
+  });
+
+  it('answering from the desk ticks "Answer a question"', async () => {
+    const ask = store.createMessage({ kind: 'ask', body: 'Tea?', sender: 'agent' });
+    await backend.answerAsk(ask.id, 'Tea');
+    expect((await backend.onboarding()).done).toEqual(['answer']);
   });
 });

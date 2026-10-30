@@ -10,7 +10,7 @@ body,
 }
 body {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  color: #3a321c;
+  color: var(--ink-body);
   user-select: none;
   -webkit-font-smoothing: antialiased;
 }

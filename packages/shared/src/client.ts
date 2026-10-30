@@ -8,6 +8,7 @@ import {
   ApiError,
   ApprovalResult,
   Health,
+  Look,
   MATCH_ORDER_TIMEOUT_MS,
   MAX_LONG_POLL_S,
   OpenApp,
@@ -15,12 +16,16 @@ import {
   Routes,
   routePath,
   type ApprovalRequestBody,
+  type LookPatch,
+  type NewPageBody,
+  type PageChangeBody,
   type RouteDef,
 } from './api';
 import { portPath, tokenPath } from './paths';
 import {
   AskResult,
   Message,
+  Page,
   Reminder,
   StandingOrder,
   Watch,
@@ -30,6 +35,7 @@ import {
   type NewMessageInput,
   type NewReminderInput,
   type NewWatchInput,
+  type PageFilter,
 } from './schemas';
 
 /** Thrown when the desktop app isn't running: port/token files missing, or the API is unreachable. */
@@ -256,6 +262,39 @@ export class ClippyClient {
   /** `POST /approvals/:id/withdraw`: the agent stopped waiting; close the question ("Withdrawn"). */
   async withdrawApproval(id: string): Promise<void> {
     await this.#request(Routes.withdrawApproval, { id });
+  }
+
+  /** `POST /look`: change the colour theme settings; returns them as they are now. */
+  setLook(patch: LookPatch): Promise<Look> {
+    return this.#request(Routes.setLook, { body: patch, schema: Look });
+  }
+  /** `GET /pages`: pages, pinned first then most recently changed (not archived unless `archived`). */
+  listPages(filter: PageFilter = {}): Promise<Page[]> {
+    const query = { q: filter.q, archived: filter.archived === undefined ? undefined : String(filter.archived) };
+    return this.#request(Routes.listPages, { query, schema: z.array(Page) });
+  }
+
+  /** `GET /pages/:id`. */
+  getPage(id: string): Promise<Page> {
+    return this.#request(Routes.getPage, { id, schema: Page });
+  }
+
+  /** `POST /pages`: a new page written by `sender`. */
+  createPage(input: NewPageBody): Promise<Page> {
+    return this.#request(Routes.createPage, { body: input, schema: Page });
+  }
+
+  /**
+   * `POST /pages/:id`: change a page. A 403 means another sender (or the user) wrote it; a 409 means
+   * it changed since `baseUpdatedAt`.
+   */
+  writePage(id: string, change: PageChangeBody): Promise<Page> {
+    return this.#request(Routes.writePage, { id, body: change, schema: Page });
+  }
+
+  /** `POST /pages/:id/archive`. */
+  archivePage(id: string, sender: string): Promise<Page> {
+    return this.#request(Routes.archivePage, { id, body: { sender }, schema: Page });
   }
 
   async #request<T = undefined>(

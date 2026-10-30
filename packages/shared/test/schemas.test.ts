@@ -8,6 +8,11 @@ import {
   NewReminderInput,
   NewStandingOrderInput,
   NewWatchInput,
+  NewPageInput,
+  Page,
+  PageChange,
+  appendToBody,
+  findPageByTitle,
   Reminder,
   StandingOrder,
   Watch,
@@ -207,5 +212,55 @@ describe('Watch', () => {
     expect(NewMessageInput.safeParse({ body: 'hi', sender: 'a', event: 'agent-permission-request' }).success).toBe(false);
     // An ask posted through the API can't carry an event at all (it is stripped).
     expect(NewAskInput.parse({ question: 'q', sender: 'a', event: 'agent-permission-request' })).toEqual({ question: 'q', sender: 'a' });
+  });
+});
+
+describe('Page', () => {
+  const page: Page = {
+    id: ID,
+    title: 'Scratch',
+    body: 'a\nb',
+    color: 'mint',
+    pinned: true,
+    popped: true,
+    popBounds: { x: -1200, y: 40, width: 260, height: 220, displayId: 2 },
+    author: 'you',
+    project: null,
+    unseen: false,
+    createdAt: 1,
+    updatedAt: 2,
+    archivedAt: null,
+  };
+
+  it('parses a page; titles are 1 to 120 characters, bodies at most 100 000', () => {
+    expect(Page.parse(page)).toEqual(page);
+    expect(Page.safeParse({ ...page, color: 'neon' }).success).toBe(false);
+    expect(NewPageInput.parse({ title: 'x'.repeat(120), body: 'x'.repeat(100_000) }).title).toHaveLength(120);
+    for (const bad of [{ title: '' }, { title: '   ' }, { title: 'x'.repeat(121) }, { title: 'T', body: 'x'.repeat(100_001) }]) {
+      expect(NewPageInput.safeParse(bad).success, JSON.stringify(bad).slice(0, 40)).toBe(false);
+    }
+  });
+
+  it('takes a change to the title, text, colour or pin only', () => {
+    expect(PageChange.parse({ append: 'x', baseUpdatedAt: 5, color: null })).toEqual({ append: 'x', baseUpdatedAt: 5, color: null });
+    expect(PageChange.safeParse({ popped: true }).success).toBe(false);
+    expect(PageChange.safeParse({ author: 'you' }).success).toBe(false);
+    expect(PageChange.safeParse({ append: '' }).success).toBe(false);
+  });
+
+  it('appendToBody puts the text on its own line', () => {
+    expect(appendToBody('a', 'b')).toBe('a\nb');
+    expect(appendToBody('a\n', 'b')).toBe('a\nb');
+    expect(appendToBody('', 'b')).toBe('b');
+  });
+
+  it('findPageByTitle: exact (any case, newest wins), else a unique prefix', () => {
+    const p = (id: string, title: string, updatedAt: number): Page => ({ ...page, id, title, updatedAt });
+    const pages = [p('A', 'Dave call', 1), p('B', 'dave CALL', 2), p('C', 'Deploy steps', 1), p('D', 'Deploy notes', 1), p('E', 'Groceries', 1)];
+    expect(findPageByTitle(pages, 'DAVE call')?.id).toBe('B');
+    expect(findPageByTitle(pages, 'gro')?.id).toBe('E');
+    expect(findPageByTitle(pages, 'Deploy')).toBeUndefined();
+    expect(findPageByTitle(pages, '  ')).toBeUndefined();
+    expect(findPageByTitle([], 'x')).toBeUndefined();
   });
 });

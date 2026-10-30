@@ -8,14 +8,14 @@ npm workspaces monorepo (Node 24, npm 11, TypeScript strict, ESM, Vitest).
 | --- | --- | --- |
 | `packages/shared` | `@clippy/shared` | Every shared contract: zod schemas and types, settings, local API routes, data-dir paths, `ClippyClient`, Electron IPC contract, Worker relay protocol. TypeScript source only (no build step). |
 | `apps/desktop` | `@clippy/desktop` | Electron + electron-vite + React. Hosts the local API (127.0.0.1), SQLite store, scheduler and Clippy's brain. The character (`src/renderer/src/clippy/`) is a set of painted robot sprites driven by a pure mood state machine (`mood.ts`): `poses.ts` maps moods to sprites and aligns them on one stage, CSS does the motion, and clicks pass through his transparent pixels (alpha masks built when the sprites are preloaded). |
-| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Ten extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`, `watch_for`, `list_watches`, `cancel_watch`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. Three more (`list_open_apps`, `restart_app`, `restart_computer`) need env `CLIPPY_POWER_TOOLS=1`, also set only for the brain (see "Restarting apps and the PC"). |
+| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Twelve extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `set_look`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`, `watch_for`, `list_watches`, `cancel_watch`, `archive_page`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. Three more (`list_open_apps`, `restart_app`, `restart_computer`) need env `CLIPPY_POWER_TOOLS=1`, also set only for the brain (see "Restarting apps and the PC"). |
 | `apps/hook` | `@clippy/hook` | Claude Code hook; posts a note when an agent finishes or needs permission, and (away, opt-in) turns a `PermissionRequest` into a phone approval. Built like `apps/mcp`. |
 | `apps/worker` | `@clippy/worker` | Cloudflare Worker plus one SQLite-backed Durable Object (`ClippyDO`, binding `CLIPPY`) relaying WhatsApp Cloud API traffic. |
 | `scripts/` | | Repo scripts: the Claude Code wiring (`install-claude-wiring.ts`, also bundled into the app for "Connect Claude Code"), SQLite smoke test, run-in-Electron helper. |
 
 Root scripts: `npm test`, `npm run typecheck`, `npm run build` (each runs in every workspace), `npm run dev` (desktop app), `npm run package` (build, then the NSIS installer from `apps/desktop/electron-builder.yml` into `apps/desktop/release/`; the built MCP server and hook ship as `resources/mcp` and `resources/hook`).
 
-`@clippy/shared` is consumed as TypeScript source. Vite (desktop, mcp, hook), wrangler (worker) and Vitest bundle or transform it; it is never `require`d from `node_modules` at runtime. Its root entry is Node-only. Renderer, preload and Worker code import the Node-free subpaths (`@clippy/shared/schemas`, `/settings`, `/api`, `/ipc`, `/relay`).
+`@clippy/shared` is consumed as TypeScript source. Vite (desktop, mcp, hook), wrangler (worker) and Vitest bundle or transform it; it is never `require`d from `node_modules` at runtime. Its root entry is Node-only. Renderer, preload and Worker code import the Node-free subpaths (`@clippy/shared/schemas`, `/settings`, `/theme`, `/brain`, `/api`, `/ipc`, `/relay`).
 
 ## Phone channels: WhatsApp and Telegram
 
@@ -118,7 +118,7 @@ gives focus back on Escape. Auto-collapse is held off while the box has focus or
 A standing order (`StandingOrder`, table `standing_orders`, schema version 5; routes `GET/POST
 /orders`, `DELETE /orders/:id`; IPC `listOrders` / `addOrder` / `cancelOrder`) is a sentence the user
 gave Clippy ("When an agent asks about X, answer: Y"), saved by the brain's `add_standing_order` tool
-or typed into Settings (`RulesSection`). `POST /asks` awaits `ApiDeps.matchOrder` before storing the
+or typed into Settings → Standing orders & watches (`RulesSection`). `POST /asks` awaits `ApiDeps.matchOrder` before storing the
 ask; a match goes to `Asks.create(input, { orderId, answer })`, which stores the ask already
 `done`, `answeredVia: 'clippy'` with `Message.orderId` (column `order_id`), so it never pops up,
 isn't mirrored to a phone (both channels skip answered asks) and the agent's long-poll answers
@@ -136,8 +136,8 @@ order id, and with options only an answer that is one of them (the option's own 
 A watch (`Watch`, table `watches`, schema version 6; routes `GET/POST /watches`, `DELETE
 /watches/:id`; IPC `listWatches` / `addWatch` / `cancelWatch`) is "when this agent finishes, remind
 me to Y": an optional project (matched as a case-insensitive substring of a message's `project`),
-an event (`finished` or `any`) and a nudge. The brain sets one with `watch_for`; Settings
-(`RulesSection`, "Waiting for") lists and cancels them. The hook now tags its notes with
+an event (`finished` or `any`) and a nudge. The brain sets one with `watch_for`; Settings →
+Standing orders & watches (`RulesSection`, "Waiting for") lists and cancels them. The hook now tags its notes with
 `Message.event` (`agent-finished` for Stop, `agent-needs-permission` for Notification; column
 `messages.event`), which is what `finished` waits for; `any` takes any note or question from the
 project, never a reminder or chat line. `Watcher` (`main/watches.ts`, started in `startServices`
@@ -250,6 +250,205 @@ wait plus 60 s) or for leftovers from before a restart (open approvals are kept 
 `approvalRequests`; `startServices` calls `core.approvals.expireLeftovers()` after the power ones),
 and "Dismissed" when the desk note is dismissed (state `done` with no answer). Each edits the
 Telegram copy like any answered ask.
+
+## Colour themes
+
+Seven themes (`THEMES` in `@clippy/shared/theme`: classic, mint, blush, sky, peach, and the dark night
+and chalkboard). The settings `theme`, `followSystemDark` (default off) and `darkTheme` (default
+night) choose one; `resolveTheme(settings, systemDark)` says which one is painted. Colours live
+only in `renderer/src/styles/theme.css`, one `:root[data-theme="<id>"]` block per theme defining
+the same tokens (`--paper-1`, `--ink`, `--card`, `--btn`, `--bubble`, ...; `classic` is also the
+`:root` default and reproduces the original yellow exactly), and every other stylesheet uses
+`var(--token)`, with `color-mix(in srgb, var(--ink) N%, transparent)` for see-through shades.
+`test/renderer/theme.test.ts` checks every theme defines every token. Left as literal colours on
+purpose: Clippy's own artwork and shadows, drop shadows, the white on the red badges, the switch
+knob while off (on, it takes `--btn-ink`), the dark wiring-log panel, the "Clippy is missing"
+screen and the dev gallery. Settings → Look picks the three settings with paper chips
+(`ThemeSwatches`, `note/settings/LookSection.tsx`), saved and painted at once.
+
+`hooks/useTheme.ts` sets `data-theme` and `data-dark` on `<html>` (`themeAttrs`, `theme.ts`); before
+that, `main.tsx` paints any `?theme=` in the URL (`themeFromSearch`: a page window's, or the
+preview's). Under
+`data-dark="true"` Clippy's sprite gets a rim light, and native controls turn dark. Windows' mode
+comes from the `systemDark()` IPC method (`nativeTheme.shouldUseDarkColors`) and the `theme:system`
+event: `forwardSystemTheme` (`main/window/systemTheme.ts`) listens to `nativeTheme` `updated` once
+and sends it to every `BrowserWindow`. `POST /look` (`Routes.setLook`, body `LookPatch`, only the
+three theme keys, at least one) saves through `ApiDeps.setLook`, which `startServices` backs with
+`SettingsStore.update`; `ClippyClient.setLook` and the brain-only MCP tool `set_look` use it, so
+"go dark" works. The renderer re-reads the settings when the brain finishes a turn
+(`brain:state` idle), since that is when `set_look` may have changed them, and on
+`settings:changed`, which main sends to every window whenever the settings change.
+
+## Settings
+
+The note's tabs are Notes · Pad · Clippy · ⚙ Settings. Settings (`note/SettingsTab.tsx`) opens on
+`settings/SettingsMenu.tsx`: History, then the sections grouped How I behave (`alerts`, `phone`,
+`brief`), Agents (`claude`, `rules`) and This PC (`look`, `pc`), one component each in
+`note/settings/`. Each row's one-line summary is `sectionSummary(section, ctx)` (`summaries.ts`,
+pure and tested) over the settings plus what the menu reads when it opens: Telegram's status, the
+order, watch and History counts (the same `listMessages({state: 'done'})` History shows, chat left
+out; over 50 reads "50+", as History lists the latest 50) and the hotkey status. No IPC was added.
+The open section lives in `App` (`settingsSection`), so `openSettings(section?)` can deep-link
+from anywhere: the empty Notes tab's "History ›" opens `history`, which is the old History tab
+(`HistoryTab`). The ⚙ tab itself always opens on the menu. Each section keeps its own input state
+and commit helpers (ask wait, away time, hotkey, relay fields). In the Phone section, Telegram and
+the WhatsApp relay are rows that unfold their setup in place. "Run the welcome again" (Windows &
+hotkeys) calls `restartWelcome` (below), which brings back the welcome; the version shown
+there is `apps/desktop/package.json`'s, imported at build time. Preview: `?mock=1&tab=settings&section=look`
+(`tab=history` still works, as Settings → History; `&telegram=1` pairs the mock's Telegram).
+
+## Welcome, Getting started and tips
+
+**The welcome** (`note/FirstRunWizard.tsx`, shown while `firstRunDone` is false; steps in
+`note/firstRun.ts`: `claude`, `look`, `phone`, `tour`). Every step can be skipped. Connect Claude
+Code is the existing `ConnectClaude` (with "Later" / "Next" in its row); How should I look? reuses
+Settings' `ThemeSwatches` and `ToggleSetting` (saved and painted at once); Want me on your phone?
+unfolds `TelegramSetup` or the Phone section's `RelayFields`. Try it renders `demoQuestion`
+(`note/welcome/tour.ts`) with the real `AskCard`; the answer only changes that local copy and ticks
+`answer` through `markOnboarding`: it is never stored, mirrored or sent to an agent. Finish saves
+`firstRunDone: true` and opens the Pad. An install that already had `firstRunDone` never sees it.
+
+**Getting started.** `Onboarding` (`main/onboarding.ts`, started in `startServices` after the
+watcher and before the morning brief, stopped on quit) keeps kv `onboarding` = `OnboardingState`
+(`@clippy/shared/schemas`: `startedAt`, `done: ChecklistItem[]`, `dismissed`, `tipsShown: TipId[]`,
+`lastTipAt`). Its first start sets `startedAt`, for new and existing installs alike. Items tick from
+the bus: `ask:answered` not `via: 'clippy'` → `answer`; `message:updated` to `snoozed` → `snooze`;
+`order:added` (now emitted by `Store.insertOrder`, so Settings and the brain both count) → `order`;
+`page:changed` with `popped` → `popout`; a new morning brief note (`isBriefNote`) → `brief`. The
+backend ticks `connect` when `connectClaude('install')` succeeds, and `main/index.ts` at start when
+`claudeHooksInstalled()` finds the hook's `--professor-clippy` marker in Claude Code's
+`settings.json`. The renderer ticks `hotkey` on any Tell box send. IPC: `onboarding`,
+`markOnboarding`, `dismissChecklist`, `markTipShown`, `restartWelcome` (the list back, ticks kept,
+then `firstRunDone: false`); every change is `onboarding:changed` to the note. The Pad
+(`PadTab`) shows a "Getting started 📎 N/7" row above the pages while `showChecklist` (not
+dismissed, not all done); it opens `note/welcome/GettingStarted.tsx`, the seven items on lined
+paper, ticked ones struck through, the rest with a one-line `howTo` and, where Settings has it, a
+"Show me ›" into that section.
+
+**Tips** (`note/welcome/tips.ts`, pure). `nextTip({ now, state, showTips, event })` gives a tip only
+with `showTips` on, before `startedAt` + 14 days, an hour after `lastTipAt`, and once each:
+`quiet-history` (an `agent-finished` note arrives already `done`), `standing-order` (exactly the
+third question the user answered today, `answeredToday`, with no standing orders), `pin-out` (the
+user's own pages go to two or more, unless a page was pinned out already) and `pad-jot` (a Tell box
+line that is not about the Pad, `aboutPage`). `hooks/useTips.ts` feeds it from `message:new`,
+`message:updated` and App (pages made, Tell box sends) and shows the tip in the speech bubble for
+12 s (`TIP_SHOW_MS`) only on the open note with no quip up and not in the welcome; otherwise it is
+not recorded, so a later moment can say it. A quip that arrives replaces a tip. Shown tips go back
+through `markTipShown`. Preview: `?mock=1&firstrun=1`, and `&done=connect,answer` to tick items.
+
+## Pages (the Pad)
+
+A page (`Page`, table `pages`, schema version 7, index `pages_list` on `(archived_at, pinned,
+updated_at)`; `pop_bounds` is JSON) is a note the user keeps: title (1–120), body (at most
+100 000 characters), colour (`PageColor` or `null` = the theme's paper), pinned, popped (open as its
+own window, with `popBounds`), author, project, unseen, and created / updated / archived times.
+`Pages` (`core/pages.ts`, created in `startCore` as `core.pages`) holds the rules; the store only
+stores. Every change emits `page:changed` (the page) and a delete `page:deleted` (`{ id }`), which
+`main/index.ts` sends to every `BrowserWindow`.
+
+- **Authors.** The user writes as `'you'` (`PAGE_USER_AUTHOR`), only through IPC. The routes take
+  the body's `sender`, and refuse `you` in any case or spacing (400, `PageSender`), so no caller of
+  the local API gets the user's powers. The user and the brain (`BRAIN_SENDER`) may change any page;
+  any other sender only pages whose `author` is itself, else `ForbiddenError` (403) "Only the person
+  who wrote this page (or you) can change it." That covers `archivePage` too.
+- **Conflicts.** `write(id, change, author)` with a `baseUpdatedAt` that is not the stored
+  `updatedAt` throws `ConflictError` with `details.page` = the page as it is now, and changes
+  nothing. The API answers 409 `{ error, page }` (the error handler spreads a `ConflictError`'s
+  `details` into the body); IPC `writePage` resolves to `{ ok: false, conflict }` instead of
+  rejecting, so the editor can keep the user's text and offer both versions. `updatedAt` strictly
+  increases (`max(now, previous + 1)`), so two writes in one millisecond still conflict. A change
+  that alters nothing is not stored and emits nothing.
+- **Unseen.** A page created or changed by anyone but the user is `unseen` until `markSeen` (the
+  user opening it); the user's own change clears it. `markSeen` and `setPopped` leave `updatedAt`
+  alone.
+- **Append** adds a newline first unless the body is empty or already ends in one
+  (`appendToBody`). **Finding by title** (`findPageByTitle`, shared so the MCP server matches the
+  same way): an exact title in any case (the most recently changed of several), else the only title
+  that starts with it; archived pages are not searched. **Search** (`q`) is `LIKE` over title and
+  body with `%`, `_` and `\` escaped.
+- **Archive.** `archive` also un-pops the page, and `setPopped(id, true)` on an archived page is
+  refused (`ConflictError`, "Restore the page before pinning it out."), so it never opens a window; `restore` counts as a change (`updatedAt` = now) so
+  the page is not archived again at once; `remove` takes only archived pages (IPC only, no route).
+  `startStaleArchiver` (`startServices`, at start and every 6 h; `Services.pageArchiver`, stopped on
+  quit) archives pages that are not pinned, popped or archived and unchanged for
+  `PAGE_ARCHIVE_AFTER_MS` (30 days).
+
+Routes: `GET /pages?q=&archived=true|false`, `GET /pages/:id`, `POST /pages` (`NewPageBody`), `POST
+/pages/:id` (`PageChangeBody`: title, body or append, colour, pinned, baseUpdatedAt; nothing else),
+`POST /pages/:id/archive` (`{ sender }`), with `ClippyClient` methods of the same names. IPC (as the
+user): `listPages`, `getPage`, `createPage`, `writePage`, `markPageSeen`, `archivePage`,
+`restorePage`, `deletePage`, `popPage(id, popped)` (`setPopped`; the page windows follow, below).
+MCP, for every agent: `write_page` (`title`, `text`, `mode` new / append (default) / replace,
+`page_id`; append and replace write `page_id` or the page the title finds and create one if there
+is none; an agent's title only finds pages whose `author` is its sender, the brain's any page),
+`read_page` (`page_id` or `title`), `list_pages` (`query`; id, title, first line, author,
+time; at most 50); brain-only: `archive_page`. The persona maps "jot down" to `write_page` new, "add
+X to my Y page" to append, "what did I write about" to `list_pages` + `read_page`, and never
+replaces a page the user wrote unless told to. The CLAUDE.md hint tells agents to leave a page to
+keep (a checklist, a summary) instead of a note; installing over an older hint replaces it in place
+(`LEGACY_CLAUDE_MD_HINTS`), and uninstall removes either. The browser preview keeps pages in memory
+(`mockBackend.pushPage` simulates Clippy writing one).
+
+**The Pad tab** (renderer, `note/PadTab.tsx`). `usePages` (in `App`, for the tab's "new" dot) loads
+the Pad's and the archived pages and keeps them live from `page:changed` / `page:deleted`
+(`applyPage` / `removePage` in `note/padList.ts`, with `padSections`, search and the row text:
+"📎 Clippy" / "🤖 sender · project" badges, "made by ..." / "edited ..."). `note/PageEditor.tsx` is one
+page, self-contained (props: the page, the api, callbacks) so a page window can reuse it. Its text
+goes through `createSaveController` (`note/pageSave.ts`, pure, injectable timer): saves wait 400 ms
+after the last keystroke but at most 2 s after the first unsaved one (`SAVE_MAX_WAIT_MS`, so steady
+typing saves too), `flush()` saves at once (blur, unmount on page / tab switch or collapse,
+`beforeunload`), and every save sends `baseUpdatedAt`. A refusal whose page has the same text as the
+editor last saved (only the title, colour or pin moved) is retried on the new base; otherwise the
+state is `conflict`: the typed text stays, nothing saves, and the banner's Keep mine saves it on top
+of theirs, Use theirs takes theirs. Leaving in `conflict` (unmount, or `beforeunload` on quit or
+window close, where React does not unmount) keeps the typed text as a new page "<title> (your
+version)", once per text (`leave(onCopy)`), so a quit and the unmount after it make one copy; so
+does a last save that `leave` starts and that comes back refused after the editor has gone. Someone else's change while nothing is unsaved shows at once. Title,
+colour and pin are separate `writePage` calls without a base, after a `flush()`. Opening a page (or
+a change arriving while it is open) calls `markPageSeen`. While a page has focus or a conflict,
+auto-collapse waits (`onActive`, the Tell box's rule). A page's own colour is `data-page-color` on
+its paper: `theme.css` gives `[data-page-color="<id>"]` the tokens of that light theme (yellow is
+classic), so it keeps light paper and ink inside a dark theme. The mock starts with sample pages
+(`samplePages`: Scratch pinned, Call Dave by Clippy not opened yet, an agent's Deploy steps, one
+archived).
+
+**Pages popped out on the desktop** (`main/window/pageWindows.ts`, `createPageWindows` in
+`index.ts`). The windows follow the store: `page:changed` with `popped` and not archived opens one
+(if none is open), anything else (un-popped, archived) or `page:deleted` closes it, so "📌 Pin out"
+(which turns into "Un-pin"), the window's "×" and archiving only change the page. `restoreAll()`
+runs after the Clippy window is made and opens every popped page. Each is a frameless, transparent
+`BrowserWindow`, not always-on-top, `skipTaskbar`, min 180 × 120, loading the renderer with
+`?page=<id>&theme=<id>` (`loadRenderer`, shared with `createClippyWindow`; the theme is
+`resolveTheme(settings, nativeTheme.shouldUseDarkColors)` as it opens, which `main.tsx` paints
+before the first render, so a dark theme never flashes classic yellow). Where it opens: `popBounds` through
+`clampBounds` (`main/window/pageBounds.ts`, pure: displays primary first; a window at least 80 %
+visible stays put, taking the id of the display it overlaps most if its own is gone; one less
+visible is pulled in on its own display, or onto the primary work area if that display is gone,
+the size kept unless bigger than the work area), else `defaultPageBounds(index, workArea)`
+(260 × 220, cascading 24 px down and left from the top-right). `move` / `resize` save `popBounds`
+(`setPopped(id, true, bounds)`) 500 ms after the last one. Closing a window any other way (Alt+F4)
+un-pops it like "×"; while the app quits (`before-quit`) or Windows ends the session
+(`session-end`), windows close but stay popped. Windows gives a transparent window no resizable
+border, so the renderer's corner grip sends `pageWindow:resizeStart/Move/End` and main follows the
+cursor; "—" sends `pageWindow:collapse` and main shrinks the window to the 30 px header (Windows
+keeps it at its smallest, 39 px; the rest is see-through), saving the full height meanwhile. Those
+channels act only for the page window that sent them (`window.clippyPageWindow` in the preload).
+`registerIpc(backend, win, { allowSender })` accepts backend calls from the Clippy window and from
+any page window (`pageWindows.owns`, a `WeakSet` of their web contents, so the last save on
+`beforeunload` still lands while one closes); any other sender is refused. `index.ts` passes
+`disposeOnClose: false`, so the handlers outlive the Clippy window (on quit all windows close at
+once) and are removed in `will-quit` only after `core.stop()`. `page:changed`,
+`page:deleted`, `theme:system` and `settings:changed` (every settings change, without the
+encrypted Telegram token) go to every window; the rest only to the Clippy window.
+
+The renderer picks the view in `main.tsx`: `?page=<id>` is `views/PageWindow.tsx`, a sticky in the
+page's colour (or the theme's paper) with a drag header (`-webkit-app-region: drag`: title, "—",
+"×") over `PageEditor` with `compact` (no title field, only the save state below the text; colour,
+keep at top and archive stay in the Pad), the same save controller, kept mounted while collapsed.
+It runs `useSettings` + `useTheme` like `App`, and `useSettings` also listens to `settings:changed`,
+so a theme picked in the note reaches every page at once. In the browser preview
+`?mock=1&page=Scratch` shows one (the mock's sample ids change every load, so there `page` may be
+a title).
 
 ## Storage
 

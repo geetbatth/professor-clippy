@@ -4,13 +4,13 @@ import type { Message, StandingOrder } from '@clippy/shared/schemas';
 import { useNow } from '../hooks/useNow';
 import { CardMeta } from './CardMeta';
 import { orderLabel } from './orderLabel';
+import { HISTORY_RECENT_LIMIT } from './settings/summaries';
 import './cards.css';
 import './HistoryTab.css';
 
 const SEARCH_DEBOUNCE_MS = 250;
-const RECENT_LIMIT = 50;
 
-/** Search everything that's been dealt with. An empty box shows the most recent. */
+/** Settings → History: search everything that's been dealt with. An empty box shows the most recent. */
 export function HistoryTab({ api }: { api: ClippyWindowApi }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<Message[] | undefined>();
@@ -25,7 +25,7 @@ export function HistoryTab({ api }: { api: ClippyWindowApi }) {
         const query = q.trim();
         const load = query
           ? api.searchHistory(query)
-          : api.listMessages({ state: 'done' }).then((list) => list.filter((m) => m.kind !== 'chat').slice(0, RECENT_LIMIT));
+          : api.listMessages({ state: 'done' }).then((list) => list.filter((m) => m.kind !== 'chat').slice(0, HISTORY_RECENT_LIMIT));
         load.then(
           (list) => {
             if (!live) return;

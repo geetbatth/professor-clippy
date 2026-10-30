@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CLAUDE_MD_HINT, type ClaudeRunner } from '../../../scripts/install-claude-wiring';
 import {
+  claudeHooksInstalled,
   createClaudeWiring,
   resolveWiringPaths,
   runWiringJob,
@@ -179,5 +180,19 @@ describe('wiringRunner', () => {
     const viaCmd = wiringRunner({ command: shim, viaCmd: true })!;
     const out = viaCmd(['mcp', 'add', '--', 'node', 'C:/Program Files/x.js'], process.env);
     expect(out).toMatchObject({ status: 0, stdout: 'mcp|add|--|node|C:/Program Files/x.js\n' });
+  });
+});
+
+describe('claudeHooksInstalled', () => {
+  it("is true once settings.json has Clippy's hook, false without the file or the hook", async () => {
+    expect(await claudeHooksInstalled(home, {})).toBe(false);
+    mkdirSync(join(home, '.claude'));
+    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'other' }] }] } }));
+    expect(await claudeHooksInstalled(home, {})).toBe(false);
+    writeFileSync(
+      join(home, '.claude', 'settings.json'),
+      JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node "C:/x/hook/index.js" --professor-clippy' }] }] } }),
+    );
+    expect(await claudeHooksInstalled(home, {})).toBe(true);
   });
 });

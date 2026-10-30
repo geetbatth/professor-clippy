@@ -1,5 +1,5 @@
 /**
- * Core domain contracts: messages, reminders, asks and their API inputs.
+ * Core domain contracts: messages, reminders, asks, standing orders, watches, pages and their API inputs.
  *
  * Each export is both a zod schema (runtime value) and the inferred TypeScript
  * type of the same name, so `Message.parse(x)` and `const m: Message` both work.
@@ -7,6 +7,7 @@
  * All timestamps are Unix epoch **milliseconds** (`Date.now()` style).
  */
 import { z } from 'zod';
+import { PageColor } from './theme';
 
 /** Epoch-milliseconds timestamp. */
 export const Timestamp = z.number().int().nonnegative();
@@ -218,6 +219,111 @@ export const NewWatchInput = z.object({
 });
 export type NewWatchInput = z.infer<typeof NewWatchInput>;
 
+/** The author of a page the user wrote (IPC only; the local API never accepts it as a sender). */
+export const PAGE_USER_AUTHOR = 'you';
+/** Longest page title, characters. */
+export const PAGE_TITLE_MAX = 120;
+/** Longest page body, characters. */
+export const PAGE_BODY_MAX = 100_000;
+
+/** A page title: 1 to 120 characters, not only spaces. */
+export const PageTitle = z.string().max(PAGE_TITLE_MAX).regex(/\S/, 'A page needs a title');
+/** A page body: up to 100 000 characters. */
+export const PageBody = z.string().max(PAGE_BODY_MAX);
+
+/** Where a popped-out page's window was last (screen pixels) and on which display (Electron display id). */
+export const PageBounds = z.object({
+  x: z.number().int(),
+  y: z.number().int(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  displayId: z.number().int(),
+});
+export type PageBounds = z.infer<typeof PageBounds>;
+
+/**
+ * A page on the Pad: the user's own notes, which save as they type, and which Clippy's brain and
+ * agents can write too. An agent may change only the pages it wrote; the user and the brain any.
+ */
+export const Page = z.object({
+  /** ULID. */
+  id: z.ulid(),
+  title: PageTitle,
+  body: PageBody,
+  /** Paper colour; `null` follows the theme. */
+  color: PageColor.nullable(),
+  /** Kept at the top of the list (and never archived for being old). */
+  pinned: z.boolean(),
+  /** Open as its own little window on the desktop. */
+  popped: z.boolean(),
+  popBounds: PageBounds.nullable(),
+  /** `'you'` for the user, else the sender that created it (`clippy-brain`, `claude-code`, ...). Never changes. */
+  author: z.string(),
+  /** Project folder of the agent that created it. */
+  project: z.string().nullable(),
+  /** Written by someone else and not opened by the user since. */
+  unseen: z.boolean(),
+  createdAt: Timestamp,
+  /** Last change to the title, body, colour or pin (strictly increasing; a save's `baseUpdatedAt`). */
+  updatedAt: Timestamp,
+  archivedAt: Timestamp.nullable(),
+});
+export type Page = z.infer<typeof Page>;
+
+/** A new page (`POST /pages` adds `sender`; IPC `createPage` writes as the user). */
+export const NewPageInput = z.object({
+  title: PageTitle,
+  body: PageBody.optional(),
+  color: PageColor.nullable().optional(),
+  project: z.string().min(1).max(200).optional(),
+});
+export type NewPageInput = z.infer<typeof NewPageInput>;
+
+/**
+ * A change to a page. `body` replaces the text; `append` adds a line to it (not both).
+ * `baseUpdatedAt` is the `updatedAt` the writer last saw: if the page changed since, the change
+ * is refused (409) with the page as it is now, so nobody's words are silently lost.
+ */
+export const PageChange = z
+  .object({
+    title: PageTitle.optional(),
+    body: PageBody.optional(),
+    append: z.string().min(1).max(PAGE_BODY_MAX).optional(),
+    color: PageColor.nullable().optional(),
+    pinned: z.boolean().optional(),
+    baseUpdatedAt: Timestamp.optional(),
+  })
+  .strict();
+export type PageChange = z.infer<typeof PageChange>;
+
+/** Filter for listing pages (`GET /pages`, IPC `listPages`). Not archived unless `archived`. */
+export const PageFilter = z.object({
+  /** Case-insensitive part of the title or body. */
+  q: z.string().optional(),
+  archived: z.boolean().optional(),
+});
+export type PageFilter = z.infer<typeof PageFilter>;
+
+/** `body` with `text` added: on a new line, unless the body is empty or already ends in one. */
+export function appendToBody(body: string, text: string): string {
+  return body === '' || body.endsWith('\n') ? body + text : `${body}\n${text}`;
+}
+
+/**
+ * The page a title refers to: one whose title matches exactly (any case; the most recently changed
+ * if several do), else the only one whose title starts with it. Undefined if none, or if the
+ * prefix fits several pages.
+ */
+export function findPageByTitle(pages: readonly Page[], title: string): Page | undefined {
+  const wanted = title.trim().toLowerCase();
+  if (wanted === '') return undefined;
+  const newest = (list: Page[]) => list.reduce<Page | undefined>((best, p) => (!best || p.updatedAt > best.updatedAt ? p : best), undefined);
+  const exact = pages.filter((p) => p.title.trim().toLowerCase() === wanted);
+  if (exact.length > 0) return newest(exact);
+  const prefix = pages.filter((p) => p.title.trim().toLowerCase().startsWith(wanted));
+  return prefix.length === 1 ? prefix[0] : undefined;
+}
+
 /** Filter for listing messages (`GET /messages` query, IPC `listMessages`). `q` is a full-text (FTS) search. */
 export const MessageFilter = z.object({
   state: MessageState.optional(),
@@ -225,3 +331,25 @@ export const MessageFilter = z.object({
   q: z.string().optional(),
 });
 export type MessageFilter = z.infer<typeof MessageFilter>;
+
+/** The Getting started list on the Pad: what a new user has tried (in the order it is listed). */
+export const ChecklistItem = z.enum(['connect', 'answer', 'hotkey', 'snooze', 'order', 'popout', 'brief']);
+export type ChecklistItem = z.infer<typeof ChecklistItem>;
+
+/** The one-time tips Clippy gives in his speech bubble during the first two weeks. */
+export const TipId = z.enum(['quiet-history', 'standing-order', 'pin-out', 'pad-jot']);
+export type TipId = z.infer<typeof TipId>;
+
+/**
+ * How far the user is with the welcome (kv `onboarding` in the desktop app): when this version
+ * first ran (tips stop 14 days later), the Getting started items done, whether the list was
+ * dismissed, the tips already given and when the last one was.
+ */
+export const OnboardingState = z.object({
+  startedAt: Timestamp,
+  done: z.array(ChecklistItem),
+  dismissed: z.boolean(),
+  tipsShown: z.array(TipId),
+  lastTipAt: Timestamp.optional(),
+});
+export type OnboardingState = z.infer<typeof OnboardingState>;

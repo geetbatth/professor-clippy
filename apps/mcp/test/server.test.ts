@@ -7,7 +7,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Message } from '@clippy/shared';
 import { createClippyServer, type ClippyServerOptions } from '../src/server';
-import { startFakeApi, type FakeApi } from './fake-api';
+import { startFakeApi, TOKEN, type FakeApi } from './fake-api';
 
 let home: string;
 let api: FakeApi | undefined;
@@ -46,7 +46,7 @@ const texts = (r: CallToolResult) => r.content.map((c) => (c.type === 'text' ? c
 const askPolls = (fake: FakeApi) => fake.requests.filter((r) => r.method === 'GET' && /^\/asks\/(?!pending)/.test(r.path));
 
 describe('tools/list', () => {
-  it('exposes the eight tools with usage guidance', async () => {
+  it('exposes the eleven tools with usage guidance', async () => {
     const { client } = await setup();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
@@ -56,9 +56,12 @@ describe('tools/list', () => {
         'cancel_reminder',
         'check_reply',
         'leave_message',
+        'list_pages',
         'list_pending_asks',
         'list_reminders',
+        'read_page',
         'remind_me',
+        'write_page',
       ].sort(),
     );
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
@@ -247,6 +250,7 @@ describe('brain-only note tools', () => {
   const BRAIN = { CLIPPY_SENDER: 'clippy-brain' };
   const BRAIN_TOOLS = [
     'add_standing_order',
+    'archive_page',
     'cancel_standing_order',
     'cancel_watch',
     'dismiss_note',
@@ -254,6 +258,7 @@ describe('brain-only note tools', () => {
     'list_standing_orders',
     'list_watches',
     'recent_activity',
+    'set_look',
     'snooze_note',
     'watch_for',
   ];
@@ -434,6 +439,43 @@ describe('brain-only watch tools', () => {
   });
 });
 
+describe('set_look', () => {
+  const BRAIN = { CLIPPY_SENDER: 'clippy-brain' };
+
+  it('exists only for the brain, never for an agent', async () => {
+    await setup({ env: BRAIN });
+    expect((await client!.listTools()).tools.map((t) => t.name)).toContain('set_look');
+    await client!.close();
+    await api?.close();
+
+    for (const sender of ['codex', undefined]) {
+      await setup({ env: sender ? { CLIPPY_SENDER: sender } : {} });
+      expect((await client!.listTools()).tools.map((t) => t.name)).not.toContain('set_look');
+      await client!.close();
+      await api?.close();
+    }
+  });
+
+  it('changes the look through POST /look and says what it is now', async () => {
+    const { api } = await setup({ env: BRAIN });
+    const r = await call('set_look', { theme: 'night' });
+    expect(r.isError).toBeFalsy();
+    expect(api.requests.find((q) => q.path === '/look')?.body).toEqual({ theme: 'night' });
+    expect(texts(r)[0]).toContain('night');
+    const follow = await call('set_look', { followSystemDark: true, darkTheme: 'chalkboard' });
+    expect(follow.isError).toBeFalsy();
+    expect(api.requests.filter((q) => q.path === '/look').at(-1)?.body).toEqual({ followSystemDark: true, darkTheme: 'chalkboard' });
+  });
+
+  it('refuses an empty change, an unknown theme and a light theme as the dark one', async () => {
+    const { api } = await setup({ env: BRAIN });
+    expect((await call('set_look', {})).isError).toBe(true);
+    expect((await call('set_look', { theme: 'neon' })).isError).toBe(true);
+    expect((await call('set_look', { darkTheme: 'mint' })).isError).toBe(true);
+    expect(api.requests.some((q) => q.path === '/look')).toBe(false);
+  });
+});
+
 describe('power tools', () => {
   const POWER_TOOLS = ['list_open_apps', 'restart_app', 'restart_computer'];
   const BRAIN_WITH_POWER = { CLIPPY_SENDER: 'clippy-brain', CLIPPY_POWER_TOOLS: '1' };
@@ -497,6 +539,122 @@ describe('power tools', () => {
     const off = await call('restart_computer', { reason: 'updates' });
     expect(off.isError).toBe(true);
     expect(texts(off)[0]).toMatch(/403.*turned off/);
+  });
+});
+
+describe('pages', () => {
+  const BRAIN = { CLIPPY_SENDER: 'clippy-brain' };
+  const pagePosts = (fake: FakeApi) => fake.requests.filter((r) => r.method === 'POST' && r.path.startsWith('/pages'));
+  const seedPage = async (fake: FakeApi, input: { title: string; body?: string; sender: string }) => {
+    const res = await fetch(`${fake.url}/pages`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    fake.requests.length = 0;
+    return (await res.json()) as { id: string; title: string };
+  };
+
+  it('write_page creates a page when no page has the title, and says its id and title', async () => {
+    const { api } = await setup();
+    const r = await call('write_page', { title: 'Deploy checklist', text: '- [ ] tests' });
+    expect(r.isError).toBeFalsy();
+    expect(pagePosts(api)).toEqual([
+      expect.objectContaining({ path: '/pages', body: { title: 'Deploy checklist', body: '- [ ] tests', sender: 'test-agent', project: basename(process.cwd()) } }),
+    ]);
+    const page = api.pages[0]!;
+    expect(texts(r).join('\n')).toContain(page.id);
+    expect(texts(r).join('\n')).toContain('Deploy checklist');
+  });
+
+  it('write_page appends to the page whose title matches (any case, or a unique prefix), or replaces it', async () => {
+    const { api } = await setup();
+    const page = await seedPage(api, { title: 'Deploy checklist', body: '- [ ] tests', sender: 'test-agent' });
+    expect((await call('write_page', { title: 'deploy CHECKLIST', text: '- [ ] tag' })).isError).toBeFalsy();
+    expect((await call('write_page', { title: 'Deploy', text: '- [ ] ship' })).isError).toBeFalsy();
+    expect((await call('write_page', { title: 'Deploy checklist', text: 'all done', mode: 'replace' })).isError).toBeFalsy();
+    expect(pagePosts(api).map((q) => [q.path, q.body])).toEqual([
+      [`/pages/${page.id}`, { append: '- [ ] tag', sender: 'test-agent' }],
+      [`/pages/${page.id}`, { append: '- [ ] ship', sender: 'test-agent' }],
+      [`/pages/${page.id}`, { body: 'all done', sender: 'test-agent' }],
+    ]);
+    expect(api.pages).toHaveLength(1);
+    expect(api.pages[0]!.body).toBe('all done');
+  });
+
+  it('write_page with mode new always creates, and with page_id writes that page', async () => {
+    const { api } = await setup();
+    const page = await seedPage(api, { title: 'Notes', body: 'a', sender: 'test-agent' });
+    await call('write_page', { title: 'Notes', text: 'fresh', mode: 'new' });
+    expect(api.pages).toHaveLength(2);
+    await call('write_page', { title: 'whatever', text: 'b', page_id: page.id });
+    expect(api.pages.find((p) => p.id === page.id)!.body).toBe('a\nb');
+  });
+
+  it("write_page on someone else's page (by page_id) comes back as the 403 explanation", async () => {
+    const { api } = await setup();
+    const page = await seedPage(api, { title: 'My plans', body: 'mine', sender: 'you-via-app' });
+    const r = await call('write_page', { title: 'My plans', text: 'agent text', page_id: page.id });
+    expect(r.isError).toBe(true);
+    expect(texts(r)[0]).toMatch(/403.*Only the person who wrote this page \(or you\) can change it/);
+  });
+
+  it("an agent's write_page by title finds only its own pages: the user's \"Notes for Friday\" is left alone and it gets its own \"Notes\"", async () => {
+    const { api } = await setup();
+    const users = await seedPage(api, { title: 'Notes for Friday', body: 'mine', sender: 'you-via-app' });
+    await seedPage(api, { title: 'Notes', body: 'theirs', sender: 'other-agent' });
+    const first = await call('write_page', { title: 'Notes', text: 'first' });
+    expect(first.isError).toBeFalsy();
+    const own = api.pages.find((p) => p.author === 'test-agent')!;
+    expect(own).toMatchObject({ title: 'Notes', body: 'first' });
+    expect((await call('write_page', { title: 'notes', text: 'second' })).isError).toBeFalsy();
+    expect(api.pages.find((p) => p.id === own.id)!.body).toBe('first\nsecond');
+    expect(api.pages.find((p) => p.id === users.id)!.body).toBe('mine');
+    expect(api.pages.find((p) => p.author === 'other-agent')!.body).toBe('theirs');
+    expect(api.pages).toHaveLength(3);
+  });
+
+  it("the brain's write_page by title finds any page, the user's too", async () => {
+    const { api } = await setup({ env: BRAIN });
+    const users = await seedPage(api, { title: 'Shopping', body: 'eggs', sender: 'you-via-app' });
+    expect((await call('write_page', { title: 'Shopping', text: 'milk' })).isError).toBeFalsy();
+    expect(api.pages).toHaveLength(1);
+    expect(api.pages.find((p) => p.id === users.id)!.body).toBe('eggs\nmilk');
+  });
+
+  it('read_page reads by title or id; list_pages lists id, title, first line, author and time, at most 50', async () => {
+    const { api } = await setup();
+    const page = await seedPage(api, { title: 'Dave call', body: 'Call Dave at 3\nabout the invoice', sender: 'clippy-brain' });
+    const byTitle = await call('read_page', { title: 'dave call' });
+    expect(byTitle.isError).toBeFalsy();
+    expect(texts(byTitle).join('\n')).toContain('Dave call');
+    expect(texts(byTitle).join('\n')).toContain('Call Dave at 3\nabout the invoice');
+    expect(texts(await call('read_page', { page_id: page.id })).join('\n')).toContain('about the invoice');
+    expect((await call('read_page', { title: 'nope' })).isError).toBe(true);
+    expect((await call('read_page', {})).isError).toBe(true);
+
+    for (let i = 0; i < 55; i++) await seedPage(api, { title: `Page ${i}`, sender: 'test-agent' });
+    const listed = JSON.parse(texts(await call('list_pages', {}))[0]!);
+    expect(listed).toHaveLength(50);
+    const found = JSON.parse(texts(await call('list_pages', { query: 'invoice' }))[0]!);
+    expect(found).toEqual([{ id: page.id, title: 'Dave call', firstLine: 'Call Dave at 3', author: 'clippy-brain', updated: expect.any(String) }]);
+    expect(api.requests.find((q) => q.method === 'GET' && q.path === '/pages' && q.query.q === 'invoice')).toBeTruthy();
+  });
+
+  it('archive_page is for the brain only', async () => {
+    await setup();
+    expect((await client!.listTools()).tools.map((t) => t.name)).not.toContain('archive_page');
+    await client!.close();
+    await api?.close();
+
+    const { api: fake } = await setup({ env: BRAIN });
+    const names = (await client!.listTools()).tools.map((t) => t.name);
+    expect(names).toEqual(expect.arrayContaining(['archive_page', 'write_page', 'read_page', 'list_pages']));
+    const page = await seedPage(fake, { title: 'Old', sender: 'claude-code' });
+    const r = await call('archive_page', { page_id: page.id });
+    expect(r.isError).toBeFalsy();
+    expect(pagePosts(fake)).toEqual([expect.objectContaining({ path: `/pages/${page.id}/archive`, body: { sender: 'clippy-brain' } })]);
+    expect(fake.pages[0]!.archivedAt).not.toBeNull();
   });
 });
 

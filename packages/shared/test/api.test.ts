@@ -4,6 +4,11 @@ import {
   APPROVAL_WAIT_S,
   ApprovalRequestBody,
   ApprovalResult,
+  LookPatch,
+  NewPageBody,
+  PageChangeBody,
+  PageListQuery,
+  PageSenderBody,
   RestartAppBody,
   RestartPcBody,
   Routes,
@@ -37,6 +42,12 @@ describe('Routes', () => {
       'GET /power/apps',
       'POST /approvals',
       'POST /approvals/:id/withdraw',
+      'POST /look',
+      'GET /pages',
+      'GET /pages/:id',
+      'POST /pages',
+      'POST /pages/:id',
+      'POST /pages/:id/archive',
     ]);
   });
 });
@@ -83,6 +94,22 @@ describe('power bodies', () => {
   });
 });
 
+describe('LookPatch', () => {
+  it('takes any of the three look settings, but at least one', () => {
+    expect(LookPatch.parse({ theme: 'night' })).toEqual({ theme: 'night' });
+    expect(LookPatch.parse({ followSystemDark: true, darkTheme: 'chalkboard' })).toEqual({ followSystemDark: true, darkTheme: 'chalkboard' });
+    expect(LookPatch.safeParse({}).success).toBe(false);
+  });
+
+  it('refuses an unknown theme, a light dark theme and settings that are not the look', () => {
+    expect(LookPatch.safeParse({ theme: 'neon' }).success).toBe(false);
+    expect(LookPatch.safeParse({ darkTheme: 'mint' }).success).toBe(false);
+    // Unrelated settings are not smuggled through this route.
+    expect(LookPatch.safeParse({ soundEnabled: false }).success).toBe(false);
+    expect(LookPatch.safeParse({ theme: 'mint', soundEnabled: false }).success).toBe(false);
+  });
+});
+
 describe('routePath', () => {
   it('returns static paths unchanged', () => {
     expect(routePath(Routes.health)).toBe('/health');
@@ -95,5 +122,25 @@ describe('routePath', () => {
 
   it('throws when an id is required but missing', () => {
     expect(() => routePath(Routes.markDone)).toThrow(/needs an id/);
+  });
+});
+
+describe('page bodies', () => {
+  it("take the sender's own name, never the user's", () => {
+    expect(NewPageBody.parse({ title: 'T', sender: 'claude-code' })).toEqual({ title: 'T', sender: 'claude-code' });
+    expect(PageChangeBody.parse({ append: 'x', sender: 'clippy-brain' })).toEqual({ append: 'x', sender: 'clippy-brain' });
+    for (const sender of ['you', 'YOU', ' you ', '']) {
+      expect(NewPageBody.safeParse({ title: 'T', sender }).success, sender).toBe(false);
+      expect(PageChangeBody.safeParse({ append: 'x', sender }).success, sender).toBe(false);
+      expect(PageSenderBody.safeParse({ sender }).success, sender).toBe(false);
+    }
+    expect(PageChangeBody.safeParse({ unseen: false, sender: 's' }).success).toBe(false);
+  });
+
+  it('reads archived from the query as true or false', () => {
+    expect(PageListQuery.parse({})).toEqual({});
+    expect(PageListQuery.parse({ q: 'x', archived: 'true' })).toEqual({ q: 'x', archived: true });
+    expect(PageListQuery.parse({ archived: 'false' })).toEqual({ archived: false });
+    expect(PageListQuery.safeParse({ archived: 'yes' }).success).toBe(false);
   });
 });

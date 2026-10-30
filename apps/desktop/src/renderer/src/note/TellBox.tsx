@@ -15,10 +15,12 @@ export interface TellBoxProps {
   onActive(active: boolean): void;
   /** Escape: tuck Clippy away. */
   onCollapse(): void;
+  /** A line was sent (Getting started's "hotkey" item, and the tips). */
+  onSend?(text: string): void;
 }
 
 /** A one-line "Tell Clippy…" input pinned under the notes, with his reply to that line below it. */
-export function TellBox({ chat, shell, wantFocus, onFocused, onActive, onCollapse }: TellBoxProps) {
+export function TellBox({ chat, shell, wantFocus, onFocused, onActive, onCollapse, onSend }: TellBoxProps) {
   const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
   /** When the last line was sent from here; unset once the answer is cleared. */
@@ -43,6 +45,7 @@ export function TellBox({ chat, shell, wantFocus, onFocused, onActive, onCollaps
     setDraft('');
     setSentAt(Date.now());
     void chat.send(text);
+    onSend?.(text);
   };
 
   const reply = sentAt === undefined ? undefined : tellReply(chat.lines, sentAt);

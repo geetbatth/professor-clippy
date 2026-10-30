@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { ClaudeWiringReport, ClippyWindowApi } from '@clippy/shared/ipc';
 import './ConnectClaude.css';
 
@@ -21,7 +21,16 @@ const failure = (err: unknown): ClaudeWiringReport => ({
  * "Connect Claude Code": first shows exactly what would change (a dry run of the wiring),
  * and installs only when the user confirms that.
  */
-export function ConnectClaude({ api, onInstalled }: { api: ClippyWindowApi; onInstalled?: () => void }) {
+export function ConnectClaude({
+  api,
+  onInstalled,
+  actions,
+}: {
+  api: ClippyWindowApi;
+  onInstalled?: () => void;
+  /** More buttons for the same row (the welcome's "Later" / "Next"). */
+  actions?: ReactNode;
+}) {
   const [phase, setPhase] = useState<Phase>({ at: 'idle' });
 
   const preview = async () => {
@@ -68,6 +77,7 @@ export function ConnectClaude({ api, onInstalled }: { api: ClippyWindowApi; onIn
             </button>
           </>
         )}
+        {actions}
       </div>
     </div>
   );

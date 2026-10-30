@@ -3,12 +3,13 @@
  * main a typed way to push `IpcEvents` to that window's renderer.
  *
  * Arguments from the renderer are validated with the shared zod schemas before they reach
- * the backend, and calls from any other web contents are rejected.
+ * the backend. Calls are accepted from that window and from any `allowSender` vouches for (the
+ * popped-out page windows); every other web contents is rejected.
  */
-import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
+import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import { z } from 'zod';
 import { IpcInvoke, type ClippyBackend, type ClippyEvent, type ClippyEventMap } from '@clippy/shared/ipc';
-import { MessageFilter, NewStandingOrderInput, NewWatchInput, Timestamp } from '@clippy/shared/schemas';
+import { ChecklistItem, MessageFilter, NewPageInput, NewStandingOrderInput, NewWatchInput, PageChange, PageFilter, TipId, Timestamp } from '@clippy/shared/schemas';
 import { SettingsPatch } from '@clippy/shared/settings';
 
 const id = z.string().min(1);
@@ -37,22 +38,49 @@ const argSchemas: { [K in keyof ClippyBackend]: z.ZodType<Parameters<ClippyBacke
   listWatches: z.tuple([]),
   addWatch: z.tuple([NewWatchInput]),
   cancelWatch: z.tuple([id]),
+  systemDark: z.tuple([]),
+  listPages: z.tuple([PageFilter.strict()]),
+  getPage: z.tuple([id]),
+  createPage: z.tuple([NewPageInput.strict()]),
+  writePage: z.tuple([id, PageChange]),
+  markPageSeen: z.tuple([id]),
+  archivePage: z.tuple([id]),
+  restorePage: z.tuple([id]),
+  deletePage: z.tuple([id]),
+  popPage: z.tuple([id, z.boolean()]),
+  onboarding: z.tuple([]),
+  markOnboarding: z.tuple([ChecklistItem]),
+  dismissChecklist: z.tuple([]),
+  markTipShown: z.tuple([TipId]),
+  restartWelcome: z.tuple([]),
 };
 
 export interface ClippyIpc {
   /** Push an event to the window's renderer (no-op once the window is gone). */
   emit<E extends ClippyEvent>(event: E, payload: ClippyEventMap[E]): void;
-  /** Remove all handlers (also done automatically when the window closes). */
+  /** Remove all handlers (also done when the window closes, unless `disposeOnClose` is off). */
   dispose(): void;
 }
 
-export function registerIpc(backend: ClippyBackend, win: BrowserWindow): ClippyIpc {
+export interface RegisterIpcOptions {
+  /** Other web contents allowed to call the backend (a popped-out page's window). */
+  allowSender?: (sender: WebContents) => boolean;
+  /**
+   * Remove the handlers when the window closes (default true). Off when page windows may still
+   * call after it: on quit every window closes at once, and a page window's last save
+   * (`beforeunload`) must still land, so main disposes once the app has stopped instead.
+   */
+  disposeOnClose?: boolean;
+}
+
+export function registerIpc(backend: ClippyBackend, win: BrowserWindow, opts: RegisterIpcOptions = {}): ClippyIpc {
   const contents = win.webContents;
+  const allowed = (sender: WebContents) => sender === contents || opts.allowSender?.(sender) === true;
   const methods = Object.keys(IpcInvoke) as (keyof ClippyBackend)[];
 
   for (const method of methods) {
     ipcMain.handle(IpcInvoke[method], (e: IpcMainInvokeEvent, ...raw: unknown[]) => {
-      if (e.sender !== contents) throw new Error(`${method}: not allowed from this sender`);
+      if (!allowed(e.sender)) throw new Error(`${method}: not allowed from this sender`);
       const args = argSchemas[method].parse(raw) as unknown[];
       const fn = backend[method] as (...a: unknown[]) => Promise<unknown>;
       return fn.apply(backend, args);
@@ -65,7 +93,7 @@ export function registerIpc(backend: ClippyBackend, win: BrowserWindow): ClippyI
     disposed = true;
     for (const method of methods) ipcMain.removeHandler(IpcInvoke[method]);
   };
-  win.once('closed', dispose);
+  if (opts.disposeOnClose !== false) win.once('closed', dispose);
 
   return {
     emit(event, payload) {

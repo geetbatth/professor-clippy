@@ -11,6 +11,7 @@ import { APPROVAL_HOOK_TIMEOUT_S } from '@clippy/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   CLAUDE_MD_HINT,
+  LEGACY_CLAUDE_MD_HINTS,
   PERMISSION_HOOK_TIMEOUT_S,
   addHint,
   hookCommand,
@@ -350,5 +351,18 @@ describe('helpers', () => {
       expect(removeHint(added)).toBe(md === 'a' ? 'a\n' : md);
     }
     expect(addHint('a\r\n')).toBe(`a\r\n\r\n${CLAUDE_MD_HINT}\r\n`);
+  });
+
+  it('the hint mentions pages, and replaces (or removes) the hint an older version wrote', () => {
+    expect(CLAUDE_MD_HINT).toMatch(/write_page/);
+    expect(CLAUDE_MD_HINT).toMatch(/a checklist, a summary/);
+    const [old] = LEGACY_CLAUDE_MD_HINTS;
+    expect(old).toBe(
+      'When the user asks you to leave a message, remind them, notify them, or check with them, use the Professor Clippy MCP tools (leave_message / remind_me / ask_user).',
+    );
+    const md = `# Rules\r\n\r\n${old}\r\nMore\r\n`;
+    expect(addHint(md)).toBe(`# Rules\r\n\r\n${CLAUDE_MD_HINT}\r\nMore\r\n`);
+    expect(addHint(addHint(md))).toBe(addHint(md));
+    expect(removeHint(md)).toBe('# Rules\r\nMore\r\n');
   });
 });

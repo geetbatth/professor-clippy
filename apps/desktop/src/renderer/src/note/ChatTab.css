@@ -19,7 +19,7 @@
   margin: 30px 18px;
   text-align: center;
   font: 13px/1.4 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;
-  color: rgba(74, 61, 18, 0.7);
+  color: var(--ink-soft);
 }
 .chat-hint p {
   margin: 0 0 6px;
@@ -52,15 +52,15 @@
 }
 .chat-line--user {
   align-self: flex-end;
-  background: #4a3d12;
-  color: #fff8d1;
+  background: var(--btn);
+  color: var(--btn-ink);
   border-bottom-right-radius: 4px;
 }
 .chat-line--clippy {
   align-self: flex-start;
-  background: #ffffff;
-  color: #2f2710;
-  border: 1px solid rgba(74, 61, 18, 0.15);
+  background: var(--reply);
+  color: var(--ink-strong);
+  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
   border-bottom-left-radius: 4px;
 }
 .chat-line--live p::after {
@@ -82,7 +82,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #8a7a40;
+  background: var(--typing);
   animation: typing 1s ease-in-out infinite;
 }
 .chat-typing span:nth-child(2) {
@@ -109,20 +109,20 @@
   gap: 6px;
   align-items: flex-end;
   padding: 8px 0 2px;
-  background: linear-gradient(180deg, rgba(255, 236, 110, 0), #ffe96e 30%);
+  background: linear-gradient(180deg, transparent, var(--paper-fade) 30%);
 }
 .chat-input textarea {
   flex: 1;
   resize: none;
   padding: 6px 10px;
-  border: 1px solid rgba(74, 61, 18, 0.3);
+  border: 1px solid var(--field-border);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--reply) 90%, transparent);
   font-size: 13px;
   outline: none;
 }
 .chat-input textarea:focus {
-  border-color: #4a3d12;
+  border-color: var(--ink);
 }
 @media (prefers-reduced-motion: reduce) {
   .chat-typing span,

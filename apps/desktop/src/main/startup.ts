@@ -7,11 +7,12 @@
  *    scheduler catch-up (reminders missed while the app was off) fires inside it, so the
  *    messages it creates are collected from the bus meanwhile. Its standing-order matcher is
  *    handed over here, reading the orders from the core once that exists;
- * 3. then **synchronously**, with no `await` in between: the brain, the phone gate, the watcher, the relay and
+ * 3. then **synchronously**, with no `await` in between: the brain, the phone gate, the watcher, onboarding, the relay and
  *    Telegram, which subscribe to the bus (the gate first: the two channels mirror on the gate's
  *    `message:mirror`, not on `message:new`); Telegram is then handed the catch-up messages,
  *    restart requests and phone approvals left from before are expired (so the phone copies are updated too), and
- *    the morning brief starts (a late start sends it at once, to listening channels). An agent
+ *    the morning brief starts (a late start sends it at once, to listening channels), and so does
+ *    the archiver of pages nobody changed for a month (at once, then every 6 hours). An agent
  *    (often the MCP server that just launched the app) can post as soon as `/health`
  *    answers; its request is only handled on a later turn of the event loop, by which time
  *    both channels are listening.
@@ -20,10 +21,13 @@
  */
 import { BriefScheduler, type BriefSchedulerOptions } from './brief';
 import { Bus } from './core/bus';
+import type { Clock } from './core/clock';
 import { startCore as defaultStartCore, type Core, type StartCoreOptions } from './core/core';
+import { startStaleArchiver } from './core/pages';
 import { Brain, type BrainOptions } from './brain/brain';
 import { writeBrainFiles, type McpConfigInput } from './brain/mcpConfig';
 import type { Message } from '@clippy/shared';
+import { Onboarding } from './onboarding';
 import { createOrderMatcher } from './orders';
 import { PhoneGate, type PhoneGateOptions } from './phoneGate';
 import type { PowerExecutor } from './power/executor';
@@ -65,6 +69,8 @@ export interface StartServicesOptions {
   powerExecutor?: PowerExecutor;
   /** Morning brief clock (test seam). */
   brief?: Pick<BriefSchedulerOptions, 'clock'>;
+  /** Clock of the old-page archiver (test seam). */
+  pageArchive?: { clock?: Clock };
   /** Telegram test seams (fake Bot API server, short timings). */
   telegram?: Omit<TelegramManagerOptions, 'store' | 'bus' | 'asks' | 'brain' | 'settings'>;
 }
@@ -75,7 +81,11 @@ export interface Services {
   brain: Brain;
   phoneGate: PhoneGate;
   watcher: Watcher;
+  /** The welcome's Getting started list and tips; ticks items from the bus. */
+  onboarding: Onboarding;
   brief: BriefScheduler;
+  /** Archives pages nobody changed for 30 days, at start and every 6 hours. */
+  pageArchiver: { stop(): void };
   relay: RelayManager;
   telegram: TelegramManager;
 }
@@ -110,6 +120,11 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
       },
       ...(idleSeconds && { isUserActive: () => idleSeconds() < settings.get().awayThresholdS }),
       allowPowerActions: () => settings.get().allowPowerActions,
+      // "Go dark" from Clippy's brain: the same settings the Look section changes.
+      setLook: async (patch) => {
+        const { theme, followSystemDark, darkTheme } = await settings.update(patch);
+        return { theme, followSystemDark, darkTheme };
+      },
       // Phone approvals need the hook too: it is what asks, and turning it off should stop them.
       approvalsEnabled: () => settings.get().phoneApprovals && settings.get().hookEnabled,
       ...(options.powerExecutor && { powerExecutor: options.powerExecutor }),
@@ -145,6 +160,9 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
   // Nudges from watches are ordinary notes from Clippy, so they reach the gate like any other.
   const watcher = new Watcher({ bus, store: core.store });
   watcher.start();
+  // Getting started ticks itself as things happen (before the brief starts: a late brief ticks it too).
+  const onboarding = new Onboarding({ bus, store: core.store });
+  onboarding.start();
   const relay = new RelayManager({
     store: core.store,
     bus,
@@ -174,6 +192,8 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
   // here, once the relay and Telegram are listening for what the gate mirrors.
   const brief = new BriefScheduler({ ...options.brief, store: core.store, settings: () => settings.get() });
   brief.start();
+  // Pages nobody touched for a month leave the Pad for its archive (pinned and popped ones stay).
+  const pageArchiver = { stop: startStaleArchiver(core.pages, options.pageArchive?.clock) };
   settings.onChange((next, prev) => {
     relay.apply(next);
     telegram.apply();
@@ -181,5 +201,5 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
       brief.reschedule();
     }
   });
-  return { core, settings, brain, phoneGate, watcher, brief, relay, telegram };
+  return { core, settings, brain, phoneGate, watcher, onboarding, brief, pageArchiver, relay, telegram };
 }

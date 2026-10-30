@@ -1,0 +1,112 @@
+/* A Pad page popped out onto the desktop (PageWindow): the whole window is the sticky. */
+.page-window {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(176deg, var(--paper-shine), transparent 30%),
+    linear-gradient(180deg, var(--paper-1), var(--paper-2));
+  color: var(--ink);
+}
+/* The drag header: the title, "—" and "×". Electron moves the window from it. */
+.page-window-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 0 4px 0 10px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  -webkit-app-region: drag;
+}
+/* Collapsed, the sticky is just its header. Windows keeps the window itself a little taller
+   than that (its smallest window), so the rest stays see-through. */
+.page-window--collapsed {
+  bottom: auto;
+}
+.page-window--collapsed .page-window-head {
+  background: none;
+}
+.page-window-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 13.5px 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;
+  color: var(--head);
+}
+.page-window-btn {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-ghost);
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.page-window-btn:hover {
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+  color: var(--ink);
+}
+.page-window-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 2px 8px 2px;
+}
+.page-window-body[hidden] {
+  display: none;
+}
+/* The editor fills the window: the window is the paper, so the sheet loses its own frame. */
+.page-window .page {
+  gap: 2px;
+}
+.page-window .page-paper {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+}
+.page-window .page-text {
+  margin-top: 2px;
+}
+.page-window .page-footer {
+  min-height: 18px;
+}
+.page-window .page-status {
+  font-size: 11px;
+}
+.page-window .page-conflict {
+  padding: 4px 6px;
+  font-size: 11.5px;
+}
+/* The resize grip: a folded-over corner, like the note's. */
+.page-window-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  background: linear-gradient(135deg, transparent 50%, var(--paper-curl) 50%, var(--paper-curl-2));
+  border-top-left-radius: 3px;
+  cursor: nwse-resize;
+  -webkit-app-region: no-drag;
+}
+.page-window-gone {
+  margin: 12px 4px;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}

@@ -12,6 +12,7 @@ import { startApi, type ApiDeps, type ApiServer } from './api';
 import { Asks } from './asks';
 import { Bus } from './bus';
 import { systemClock, type Clock } from './clock';
+import { Pages } from './pages';
 import { Scheduler } from './scheduler';
 import { Store } from './store';
 import { loadOrCreateToken } from './token';
@@ -41,6 +42,8 @@ export interface StartCoreOptions {
   powerExecutor?: PowerExecutor;
   /** The `phoneApprovals` setting and the hook both on (agents' permission requests on the phone). Default: always off. */
   approvalsEnabled?: () => boolean;
+  /** Saves a change to the colour theme settings (see `ApiDeps.setLook`). Default: the route answers 403. */
+  setLook?: ApiDeps['setLook'];
 }
 
 export interface Core {
@@ -48,6 +51,8 @@ export interface Core {
   bus: Bus;
   scheduler: Scheduler;
   asks: Asks;
+  /** The Pad's pages. Old ones are archived by `startServices`. */
+  pages: Pages;
   /** Restart requests the user confirms (see `power/actions.ts`). Its leftovers are expired by `startServices`. */
   power: PowerActions;
   /** Agents' permission requests the user answers from the phone (see `approvals/approvals.ts`). Leftovers are expired by `startServices`. */
@@ -73,6 +78,7 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
   const store = new Store({ path: file(dbPath), bus, clock });
   const scheduler = new Scheduler({ store, bus, clock });
   const asks = new Asks({ store, bus, clock });
+  const pages = new Pages({ store, bus, clock });
   const power = new PowerActions({
     store,
     bus,
@@ -98,6 +104,7 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
       store,
       scheduler,
       asks,
+      pages,
       power,
       approvals,
       token,
@@ -106,6 +113,7 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
       ...(options.isUserActive && { isUserActive: options.isUserActive }),
       ...(options.matchOrder && { matchOrder: options.matchOrder }),
       ...(options.matchOrderTimeoutMs !== undefined && { matchOrderTimeoutMs: options.matchOrderTimeoutMs }),
+      ...(options.setLook && { setLook: options.setLook }),
     });
   } catch (err) {
     scheduler.stop();
@@ -121,6 +129,7 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
     bus,
     scheduler,
     asks,
+    pages,
     power,
     approvals,
     api,

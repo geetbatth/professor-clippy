@@ -51,6 +51,21 @@ function fakeBackend(): ClippyBackend {
     listWatches: vi.fn(async () => []),
     addWatch: vi.fn(async (input: { nudge: string }) => ({ id: 'W1', event: 'finished' as const, nudge: input.nudge, active: true, createdAt: 1 })),
     cancelWatch: vi.fn(async () => {}),
+    systemDark: vi.fn(async () => true),
+    listPages: vi.fn(async () => []),
+    getPage: vi.fn(async (id: string) => ({ id }) as never),
+    createPage: vi.fn(async (input: { title: string }) => ({ title: input.title }) as never),
+    writePage: vi.fn(async () => ({ ok: true as const, page: {} as never })),
+    markPageSeen: vi.fn(async () => ({}) as never),
+    archivePage: vi.fn(async () => ({}) as never),
+    restorePage: vi.fn(async () => ({}) as never),
+    deletePage: vi.fn(async () => {}),
+    popPage: vi.fn(async () => ({}) as never),
+    onboarding: vi.fn(async () => ({}) as never),
+    markOnboarding: vi.fn(async () => ({}) as never),
+    dismissChecklist: vi.fn(async () => ({}) as never),
+    markTipShown: vi.fn(async () => ({}) as never),
+    restartWelcome: vi.fn(async () => ({}) as never),
   };
 }
 
@@ -93,6 +108,27 @@ describe('registerIpc', () => {
     expect(backend.addWatch).toHaveBeenCalledWith({ project: 'api', nudge: 'Deploy' });
     await handlers.get(IpcInvoke.cancelWatch)!(e, 'W1');
     expect(backend.cancelWatch).toHaveBeenCalledWith('W1');
+    await expect(handlers.get(IpcInvoke.systemDark)!(e)).resolves.toBe(true);
+    await handlers.get(IpcInvoke.listPages)!(e, { q: 'deploy', archived: true });
+    expect(backend.listPages).toHaveBeenCalledWith({ q: 'deploy', archived: true });
+    await handlers.get(IpcInvoke.createPage)!(e, { title: 'Scratch', color: 'mint' });
+    expect(backend.createPage).toHaveBeenCalledWith({ title: 'Scratch', color: 'mint' });
+    await handlers.get(IpcInvoke.writePage)!(e, 'P1', { body: 'hi', baseUpdatedAt: 5 });
+    expect(backend.writePage).toHaveBeenCalledWith('P1', { body: 'hi', baseUpdatedAt: 5 });
+    await handlers.get(IpcInvoke.popPage)!(e, 'P1', true);
+    expect(backend.popPage).toHaveBeenCalledWith('P1', true);
+    for (const m of ['getPage', 'markPageSeen', 'archivePage', 'restorePage', 'deletePage'] as const) {
+      await handlers.get(IpcInvoke[m])!(e, 'P1');
+      expect(backend[m]).toHaveBeenCalledWith('P1');
+    }
+    await handlers.get(IpcInvoke.markOnboarding)!(e, 'hotkey');
+    expect(backend.markOnboarding).toHaveBeenCalledWith('hotkey');
+    await handlers.get(IpcInvoke.markTipShown)!(e, 'pad-jot');
+    expect(backend.markTipShown).toHaveBeenCalledWith('pad-jot');
+    for (const m of ['onboarding', 'dismissChecklist', 'restartWelcome'] as const) {
+      await handlers.get(IpcInvoke[m])!(e);
+      expect(backend[m]).toHaveBeenCalledOnce();
+    }
   });
 
   it('rejects bad arguments before they reach the backend', () => {
@@ -108,11 +144,21 @@ describe('registerIpc', () => {
     expect(() => handlers.get(IpcInvoke.connectClaude)!(e, 'uninstall')).toThrow();
     expect(() => handlers.get(IpcInvoke.setTelegramToken)!(e, 42)).toThrow();
     expect(() => handlers.get(IpcInvoke.hotkeyStatus)!(e, 'extra')).toThrow();
+    expect(() => handlers.get(IpcInvoke.systemDark)!(e, 'extra')).toThrow();
+    expect(() => handlers.get(IpcInvoke.setSettings)!(e, { theme: 'neon' })).toThrow();
     expect(() => handlers.get(IpcInvoke.addWatch)!(e, { nudge: '' })).toThrow();
     expect(() => handlers.get(IpcInvoke.addWatch)!(e, { event: 'soon', nudge: 'x' })).toThrow();
     expect(() => handlers.get(IpcInvoke.addOrder)!(e, '')).toThrow();
     expect(() => handlers.get(IpcInvoke.addOrder)!(e, 'x'.repeat(501))).toThrow();
     expect(() => handlers.get(IpcInvoke.cancelOrder)!(e)).toThrow();
+    expect(() => handlers.get(IpcInvoke.createPage)!(e, { title: '' })).toThrow();
+    expect(() => handlers.get(IpcInvoke.createPage)!(e, { title: 'x', body: 'x'.repeat(100_001) })).toThrow();
+    expect(() => handlers.get(IpcInvoke.writePage)!(e, 'P1', { color: 'neon' })).toThrow();
+    expect(() => handlers.get(IpcInvoke.writePage)!(e, 'P1', { popped: true })).toThrow();
+    expect(() => handlers.get(IpcInvoke.popPage)!(e, 'P1', 'yes')).toThrow();
+    expect(() => handlers.get(IpcInvoke.listPages)!(e, { archived: 'true' })).toThrow();
+    expect(() => handlers.get(IpcInvoke.markOnboarding)!(e, 'everything')).toThrow();
+    expect(() => handlers.get(IpcInvoke.markTipShown)!(e, 'nag')).toThrow();
     expect(backend.snooze).not.toHaveBeenCalled();
     expect(backend.markDone).not.toHaveBeenCalled();
   });
@@ -125,6 +171,17 @@ describe('registerIpc', () => {
     expect(backend.getSettings).not.toHaveBeenCalled();
   });
 
+  it('accepts calls from page windows it is told about, and still refuses anyone else', async () => {
+    const { win } = fakeWindow();
+    const backend = fakeBackend();
+    const pageWindow = { id: 'page window' };
+    registerIpc(backend, win as never, { allowSender: (s) => s === (pageWindow as never) });
+    await handlers.get(IpcInvoke.popPage)!({ sender: pageWindow }, 'P1', false);
+    expect(backend.popPage).toHaveBeenCalledWith('P1', false);
+    expect(() => handlers.get(IpcInvoke.getSettings)!({ sender: { id: 'some other page' } })).toThrow(/not allowed/);
+    expect(backend.getSettings).not.toHaveBeenCalled();
+  });
+
   it('emit pushes events to the window and stops after close', () => {
     const { win, contents, close } = fakeWindow();
     const ipc = registerIpc(fakeBackend(), win as never);
@@ -134,5 +191,28 @@ describe('registerIpc', () => {
     expect(handlers.size).toBe(0);
     ipc.emit('brain:state', 'idle');
     expect(contents.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('with disposeOnClose off, a page window can still save after the main window closed (quitting), until dispose()', async () => {
+    const { win, contents, close } = fakeWindow();
+    const backend = fakeBackend();
+    const pageWindow = { id: 'page window' };
+    const ipc = registerIpc(backend, win as never, { allowSender: (s) => s === (pageWindow as never), disposeOnClose: false });
+    close();
+    contents.isDestroyed.mockReturnValue(true);
+    // The page window's last save (beforeunload) arrives after the main window has gone.
+    await expect(handlers.get(IpcInvoke.writePage)!({ sender: pageWindow }, 'P1', { body: 'last words', baseUpdatedAt: 5 })).resolves.toEqual({
+      ok: true,
+      page: {},
+    });
+    expect(backend.writePage).toHaveBeenCalledWith('P1', { body: 'last words', baseUpdatedAt: 5 });
+    await handlers.get(IpcInvoke.createPage)!({ sender: pageWindow }, { title: 'Scratch (your version)', body: 'mine' });
+    expect(backend.createPage).toHaveBeenCalledOnce();
+    // Nothing is pushed to the closed window meanwhile.
+    ipc.emit('brain:state', 'idle');
+    expect(contents.send).not.toHaveBeenCalled();
+    ipc.dispose();
+    expect(handlers.size).toBe(0);
+    ipc.dispose(); // twice is fine
   });
 });

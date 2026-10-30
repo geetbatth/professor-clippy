@@ -5,26 +5,55 @@
  */
 import { ulid } from 'ulid';
 import type { ClippyEvent, ClippyEventMap, ClippyWindowApi, TelegramStatus } from '@clippy/shared/ipc';
-import type { AskResult, Message, MessageFilter, StandingOrder, Watch } from '@clippy/shared/schemas';
+import {
+  appendToBody,
+  ChecklistItem,
+  NewPageInput,
+  PAGE_USER_AUTHOR,
+  PageChange,
+  type AskResult,
+  type Message,
+  type MessageFilter,
+  type NewWatchInput,
+  type OnboardingState,
+  type Page,
+  type StandingOrder,
+  type Watch,
+} from '@clippy/shared/schemas';
 import { applySettingsPatch, DEFAULT_SETTINGS, SettingsPatch, type Settings } from '@clippy/shared/settings';
-import { MOCK_REPLIES, sampleMessages } from './sampleData';
+import type { ThemeId } from '@clippy/shared/theme';
+import { MOCK_REPLIES, sampleMessages, samplePages } from './sampleData';
 
 export interface MockOptions {
   now?: () => number;
   /** Start with these messages instead of the samples. */
   messages?: Message[];
+  /** Start with these pages instead of the samples. */
+  pages?: Page[];
   /** Delay before the reply starts and between streamed chunks. */
   thinkMs?: number;
   chunkMs?: number;
   /** Start as a fresh install (the first-run wizard shows). */
   firstRun?: boolean;
+  /** Start with this colour theme (`?theme=night` in the preview). */
+  theme?: ThemeId;
   /** Start with a Telegram bot token saved (and this chat paired, if given). */
   telegram?: { chatId?: number; chatName?: string };
+  /** Start with these standing orders and watches (none by default). */
+  orders?: readonly string[];
+  watches?: readonly NewWatchInput[];
+  /** Start the Getting started list / tips from here (default: nothing done yet, started now). */
+  onboarding?: Partial<OnboardingState>;
 }
 
 export interface MockBackend extends ClippyWindowApi {
   /** Simulate an agent posting a note (emits `message:new`). */
   pushMessage(input: Partial<Message> & Pick<Message, 'body'>): Message;
+  /**
+   * Simulate Clippy (or, with `author`, an agent) writing a page: a new one, or with the `id` of an
+   * existing one, changing it (it becomes unseen and newer, so a save based on before conflicts).
+   */
+  pushPage(input: Partial<Page> & Pick<Page, 'title'>): Page;
   /** Simulate `/start <code>` from Telegram (pairs if the code is right). */
   telegramStart(code: string, chat?: { id: number; firstName: string }): boolean;
 }
@@ -53,6 +82,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
   let settings: Settings = {
     ...DEFAULT_SETTINGS,
     firstRunDone: !opts.firstRun,
+    ...(opts.theme !== undefined && { theme: opts.theme }),
     ...(opts.telegram?.chatId !== undefined && { telegramChatId: opts.telegram.chatId }),
     ...(opts.telegram?.chatName !== undefined && { telegramChatName: opts.telegram.chatName }),
   };
@@ -70,12 +100,42 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
   };
   const orders = new Map<string, StandingOrder>();
   const watches = new Map<string, Watch>();
+  function putOrder(text: string): StandingOrder {
+    const t = now();
+    const order: StandingOrder = { id: ulid(t), text, active: true, createdAt: t };
+    orders.set(order.id, order);
+    return { ...order };
+  }
+  function putWatch({ project, event, nudge }: NewWatchInput): Watch {
+    const t = now();
+    const watch: Watch = { id: ulid(t), ...(project !== undefined && { project }), event: event ?? 'finished', nudge, active: true, createdAt: t };
+    watches.set(watch.id, watch);
+    return { ...watch };
+  }
+  opts.orders?.forEach(putOrder);
+  opts.watches?.forEach(putWatch);
+  const pages = new Map((opts.pages ?? samplePages(now())).map((p) => [p.id, { ...p }]));
+  let onboarding: OnboardingState = { startedAt: now(), done: [], dismissed: false, tipsShown: [], ...opts.onboarding };
   let previewed = false;
   let replyIndex = 0;
   const listeners = new Map<ClippyEvent, Set<(payload: never) => void>>();
 
   function emit<E extends ClippyEvent>(event: E, payload: ClippyEventMap[E]): void {
     for (const cb of listeners.get(event) ?? []) (cb as (p: ClippyEventMap[E]) => void)(payload);
+  }
+
+  /** Store and announce a new onboarding state (like main's `Onboarding`). */
+  function setOnboarding(next: OnboardingState): OnboardingState {
+    onboarding = next;
+    emit('onboarding:changed', structuredClone(next));
+    return structuredClone(next);
+  }
+
+  /** Tick a Getting started item, as main does when it sees the thing happen. */
+  function mark(item: ChecklistItem): OnboardingState {
+    if (onboarding.done.includes(item)) return structuredClone(onboarding);
+    const done = new Set([...onboarding.done, item]);
+    return setOnboarding({ ...onboarding, done: ChecklistItem.options.filter((i) => done.has(i)) });
   }
 
   function get(id: string): Message {
@@ -89,6 +149,38 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     messages.set(id, next);
     emit('message:updated', { ...next });
     return { ...next };
+  }
+
+  function getPage(id: string): Page {
+    const page = pages.get(id);
+    if (!page) throw new Error(`No page ${id}`);
+    return page;
+  }
+
+  function setPage(id: string, patch: Partial<Page>): Page {
+    const next = { ...getPage(id), ...patch };
+    pages.set(id, next);
+    emit('page:changed', { ...next });
+    return { ...next };
+  }
+
+  /** Store a whole page (new or replacing one), filling in what `input` leaves out. */
+  function putPage(input: Partial<Page> & Pick<Page, 'title' | 'body' | 'color' | 'project' | 'author'>): Page {
+    const t = now();
+    const page: Page = {
+      pinned: false,
+      popped: false,
+      popBounds: null,
+      unseen: input.author !== PAGE_USER_AUTHOR,
+      createdAt: t,
+      updatedAt: t,
+      archivedAt: null,
+      ...input,
+      id: input.id ?? ulid(t),
+    };
+    pages.set(page.id, page);
+    emit('page:changed', { ...page });
+    return { ...page };
   }
 
   function streamReply(): void {
@@ -122,12 +214,14 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
       return update(id, { state: 'done', doneAt: now(), snoozedUntil: undefined });
     },
     async snooze(id, until) {
+      mark('snooze');
       return update(id, { state: 'snoozed', snoozedUntil: until });
     },
     async answerAsk(id, answer): Promise<AskResult> {
       const m = get(id);
       if (m.kind !== 'ask') throw new Error(`${id} is not an ask`);
       update(id, { answer, answeredVia: 'desk', state: 'done', doneAt: now() });
+      mark('answer');
       return { id, status: 'answered', answer, answeredVia: 'desk' };
     },
     async sendChat(text) {
@@ -158,6 +252,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     },
     async setSettings(patch) {
       settings = applySettingsPatch(settings, SettingsPatch.parse(patch));
+      emit('settings:changed', { ...settings });
       return { ...settings };
     },
     async connectClaude(step) {
@@ -181,6 +276,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
         };
       }
       if (!previewed) return { ok: false, log: [], error: 'Show the changes first (preview), then install.', warnings: [] };
+      mark('connect');
       return { ok: true, warnings: [], log: [`Installing Professor Clippy wiring (Claude config dir: ${config})`, 'Done.'] };
     },
     async telegramStatus() {
@@ -209,10 +305,8 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
       return [...orders.values()].filter((o) => o.active).map((o) => ({ ...o }));
     },
     async addOrder(text) {
-      const t = now();
-      const order: StandingOrder = { id: ulid(t), text, active: true, createdAt: t };
-      orders.set(order.id, order);
-      return { ...order };
+      mark('order');
+      return putOrder(text);
     },
     async cancelOrder(id) {
       const order = orders.get(id);
@@ -222,16 +316,103 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     async listWatches() {
       return [...watches.values()].filter((w) => w.active).map((w) => ({ ...w }));
     },
-    async addWatch({ project, event, nudge }) {
-      const t = now();
-      const watch: Watch = { id: ulid(t), ...(project !== undefined && { project }), event: event ?? 'finished', nudge, active: true, createdAt: t };
-      watches.set(watch.id, watch);
-      return { ...watch };
+    async addWatch(input) {
+      return putWatch(input);
     },
     async cancelWatch(id) {
       const watch = watches.get(id);
       if (!watch) throw new Error(`No watch ${id}`);
       watches.set(id, { ...watch, active: false });
+    },
+    async systemDark() {
+      return false; // the preview pretends Windows is in light mode
+    },
+    async listPages(filter) {
+      const q = filter.q?.trim().toLowerCase() ?? '';
+      return [...pages.values()]
+        .filter((p) => (p.archivedAt !== null) === (filter.archived ?? false))
+        .filter((p) => !q || `${p.title}\n${p.body}`.toLowerCase().includes(q))
+        .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt)
+        .map((p) => ({ ...p }));
+    },
+    async getPage(id) {
+      return { ...getPage(id) };
+    },
+    async createPage(input) {
+      return putPage({
+        ...NewPageInput.parse(input),
+        body: input.body ?? '',
+        color: input.color ?? null,
+        project: input.project ?? null,
+        author: PAGE_USER_AUTHOR,
+      });
+    },
+    async writePage(id, change) {
+      const page = getPage(id);
+      const { title, body, append, color, pinned, baseUpdatedAt } = PageChange.parse(change);
+      if (baseUpdatedAt !== undefined && baseUpdatedAt !== page.updatedAt) return { ok: false, conflict: { ...page } };
+      return {
+        ok: true,
+        page: setPage(id, {
+          title: title ?? page.title,
+          body: append !== undefined ? appendToBody(page.body, append) : (body ?? page.body),
+          color: color === undefined ? page.color : color,
+          pinned: pinned ?? page.pinned,
+          unseen: false,
+          updatedAt: Math.max(now(), page.updatedAt + 1),
+        }),
+      };
+    },
+    async markPageSeen(id) {
+      return setPage(id, { unseen: false });
+    },
+    async archivePage(id) {
+      return setPage(id, { archivedAt: now(), popped: false });
+    },
+    async restorePage(id) {
+      return setPage(id, { archivedAt: null, updatedAt: Math.max(now(), getPage(id).updatedAt + 1) });
+    },
+    async deletePage(id) {
+      if (getPage(id).archivedAt === null) throw new Error('Archive the page before deleting it.');
+      pages.delete(id);
+      emit('page:deleted', { id });
+    },
+    async popPage(id, popped) {
+      if (popped && getPage(id).archivedAt !== null) throw new Error('Restore the page before pinning it out.');
+      if (popped) mark('popout');
+      return setPage(id, { popped });
+    },
+    async onboarding() {
+      return structuredClone(onboarding);
+    },
+    async markOnboarding(item) {
+      return mark(ChecklistItem.parse(item));
+    },
+    async dismissChecklist() {
+      return setOnboarding({ ...onboarding, dismissed: true });
+    },
+    async markTipShown(id) {
+      const tipsShown = onboarding.tipsShown.includes(id) ? onboarding.tipsShown : [...onboarding.tipsShown, id];
+      return setOnboarding({ ...onboarding, tipsShown, lastTipAt: now() });
+    },
+    async restartWelcome() {
+      const state = setOnboarding({ ...onboarding, dismissed: false });
+      settings = { ...settings, firstRunDone: false };
+      emit('settings:changed', { ...settings });
+      return state;
+    },
+    pushPage(input) {
+      const existing = input.id === undefined ? undefined : pages.get(input.id);
+      return putPage({
+        body: '',
+        color: null,
+        project: null,
+        author: 'clippy-brain',
+        ...existing,
+        ...input,
+        unseen: true,
+        updatedAt: Math.max(now(), (existing?.updatedAt ?? 0) + 1),
+      });
     },
     telegramStart(code, chat = { id: 123456789, firstName: 'You' }) {
       if (!telegramToken || settings.telegramChatId !== undefined || code.toUpperCase() !== pairingCode) return false;

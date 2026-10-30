@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatDone } from '@clippy/shared/ipc';
-import { Message } from '@clippy/shared/schemas';
+import { Message, Page } from '@clippy/shared/schemas';
 import { DEFAULT_SETTINGS } from '@clippy/shared/settings';
 import { createMockBackend } from '../../src/renderer/src/mock/mockBackend';
 
@@ -34,6 +34,13 @@ describe('mock backend', () => {
     expect(await b.hotkeyStatus()).toEqual({ accelerator: '', ok: true });
   });
 
+  it('takes the look settings and reports a light Windows, so the preview can show every theme', async () => {
+    const b = createMockBackend();
+    expect(await b.systemDark()).toBe(false);
+    expect(await b.getSettings()).toMatchObject({ theme: 'classic', followSystemDark: false, darkTheme: 'night' });
+    expect(await b.setSettings({ theme: 'night', followSystemDark: true })).toMatchObject({ theme: 'night', followSystemDark: true });
+  });
+
   it('keeps standing orders: add, list, cancel', async () => {
     const b = createMockBackend();
     const order = await b.addOrder('say yes');
@@ -50,6 +57,33 @@ describe('mock backend', () => {
     await b.cancelWatch(watch.id);
     expect(await b.listWatches()).toEqual([]);
     await expect(b.cancelWatch(watch.id + 'x')).rejects.toThrow(/No watch/);
+  });
+
+  it('can start with standing orders and watches (the preview\'s Settings)', async () => {
+    const b = createMockBackend({ orders: ['say yes', 'say no'], watches: [{ project: 'payments', nudge: 'Deploy' }] });
+    expect((await b.listOrders()).map((o) => o.text)).toEqual(['say yes', 'say no']);
+    expect(await b.listWatches()).toEqual([expect.objectContaining({ project: 'payments', event: 'finished', nudge: 'Deploy', active: true })]);
+    expect(await createMockBackend().listOrders()).toEqual([]);
+  });
+
+  it('keeps Getting started like main: ticks what happens, dismisses, records tips, runs the welcome again', async () => {
+    const b = createMockBackend({ onboarding: { done: ['brief'] } });
+    const changes: string[][] = [];
+    b.on('onboarding:changed', (s) => changes.push(s.done));
+    expect(await b.onboarding()).toEqual({ startedAt: NOW, done: ['brief'], dismissed: false, tipsShown: [] });
+    await b.addOrder('say yes');
+    await b.markOnboarding('hotkey');
+    await b.markOnboarding('hotkey');
+    expect(changes).toEqual([
+      ['order', 'brief'],
+      ['hotkey', 'order', 'brief'],
+    ]);
+    expect(await b.markTipShown('pad-jot')).toMatchObject({ tipsShown: ['pad-jot'], lastTipAt: NOW });
+    expect(await b.dismissChecklist()).toMatchObject({ dismissed: true });
+    const settings: boolean[] = [];
+    b.on('settings:changed', (s) => settings.push(s.firstRunDone));
+    expect(await b.restartWelcome()).toMatchObject({ dismissed: false, done: ['hotkey', 'order', 'brief'] });
+    expect(settings).toEqual([false]);
   });
 
   it('lists newest first', async () => {
@@ -124,14 +158,64 @@ describe('mock backend', () => {
 
   it('settings: defaults, patching and clearing', async () => {
     const b = createMockBackend();
+    const changed = vi.fn();
+    b.on('settings:changed', changed);
     expect(await b.getSettings()).toEqual({ ...DEFAULT_SETTINGS, firstRunDone: true });
     expect((await createMockBackend({ firstRun: true }).getSettings()).firstRunDone).toBe(false);
     expect(await b.setSettings({ soundEnabled: false, workerUrl: 'https://relay.example.com' })).toMatchObject({
       soundEnabled: false,
       workerUrl: 'https://relay.example.com',
     });
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ soundEnabled: false }));
     expect((await b.setSettings({ workerUrl: null })).workerUrl).toBeUndefined();
     await expect(b.setSettings({ workerUrl: 'not a url' })).rejects.toThrow();
+  });
+
+  it('ships valid sample pages: your pinned scratch page, one by Clippy not opened yet, an agent checklist, one archived', async () => {
+    const b = createMockBackend();
+    const pages = await b.listPages({});
+    for (const p of pages) expect(Page.parse(p)).toEqual(p);
+    expect(pages.map((p) => [p.title, p.author, p.pinned, p.unseen])).toEqual([
+      ['Scratch', 'you', true, false],
+      ['Call Dave', 'clippy-brain', false, true],
+      ['Deploy steps', 'claude-code', false, false],
+    ]);
+    expect(pages[2]?.project).toBe('payments-api');
+    const archived = await b.listPages({ archived: true });
+    expect(archived.map((p) => p.title)).toEqual(['Christmas party ideas']);
+    expect(Page.parse(archived[0])).toEqual(archived[0]);
+  });
+
+  it('keeps pages in memory like the app: seen when you write, stale saves come back as a conflict', async () => {
+    const b = createMockBackend({ pages: [] });
+    const changed = vi.fn();
+    b.on('page:changed', changed);
+    const page = await b.createPage({ title: 'Scratch', body: 'a' });
+    expect(Page.parse(page)).toEqual(page);
+    expect(page).toMatchObject({ author: 'you', unseen: false });
+    vi.advanceTimersByTime(1000);
+    const appended = await b.writePage(page.id, { append: 'b', baseUpdatedAt: page.updatedAt });
+    expect(appended).toEqual({ ok: true, page: expect.objectContaining({ body: 'a\nb' }) });
+    // Clippy writes meanwhile; a save based on the old version is refused with his.
+    const theirs = b.pushPage({ ...page, body: 'from Clippy', author: 'clippy-brain' });
+    expect(theirs.unseen).toBe(true);
+    expect(await b.writePage(page.id, { body: 'mine', baseUpdatedAt: page.updatedAt })).toEqual({ ok: false, conflict: theirs });
+    expect(await b.markPageSeen(page.id)).toMatchObject({ unseen: false });
+    await b.createPage({ title: 'Other' });
+    expect((await b.listPages({ q: 'clippy' })).map((p) => p.title)).toEqual(['Scratch']);
+    expect(await b.popPage(page.id, true)).toMatchObject({ popped: true });
+    expect(await b.archivePage(page.id)).toMatchObject({ popped: false, archivedAt: expect.any(Number) });
+    await expect(b.popPage(page.id, true)).rejects.toThrow(/Restore the page/);
+    expect((await b.listPages({ archived: true })).map((p) => p.id)).toEqual([page.id]);
+    expect((await b.restorePage(page.id)).archivedAt).toBeNull();
+    await expect(b.deletePage(page.id)).rejects.toThrow();
+    await b.archivePage(page.id);
+    const deleted = vi.fn();
+    b.on('page:deleted', deleted);
+    await b.deletePage(page.id);
+    expect(deleted).toHaveBeenCalledWith({ id: page.id });
+    await expect(b.getPage(page.id)).rejects.toThrow();
+    expect(changed).toHaveBeenCalled();
   });
 
   it('pushMessage emits message:new; unsubscribe stops delivery', async () => {

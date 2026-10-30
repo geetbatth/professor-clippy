@@ -1,0 +1,446 @@
+/*
+ * Colour themes. Every colour the note, pages, chat and bubble use is a token here; the other
+ * stylesheets only say `var(--...)`. `App` sets `data-theme` (and `data-dark`) on <html> from the
+ * settings (hooks/useTheme.ts); before that, and in the plain-browser preview, it is classic.
+ *
+ * Every theme defines every token (theme.test.ts checks), so a new screen can use any of them.
+ * A Pad page with its own colour (`data-page-color` on the page's paper) gets that light theme's
+ * tokens for itself and everything in it, yellow being classic, also inside a dark theme.
+ * Where a stylesheet needs a see-through shade of a token it writes
+ * `color-mix(in srgb, var(--ink) 14%, transparent)`.
+ *
+ * Intentionally NOT themed: Clippy's own artwork (his shadow and glows), drop shadows, the
+ * white ring and text on the red badges, the white switch knob while off, the dark "wiring log" panel,
+ * the "Clippy is missing" screen (no theme applies there) and the dev gallery.
+ */
+/* Classic: the original yellow sticky note. */
+:root,
+:root[data-theme="classic"],
+[data-page-color="yellow"] {
+  /* Paper (the note, and pages) */
+  --paper-1: #fff58a;
+  --paper-2: #ffe766;
+  --paper-shine: rgba(255, 255, 255, 0.35);
+  --paper-curl: #f4d84a;
+  --paper-curl-2: #e7c63a;
+  --paper-fade: #ffe96e;
+
+  /* Ink (text on the paper) */
+  --ink: #4a3d12;
+  --ink-soft: rgba(74, 61, 18, 0.7);
+  --ink-faint: rgba(74, 61, 18, 0.62);
+  --ink-strong: #2f2710;
+  --ink-label: #3a300c;
+  --ink-body: #3a321c;
+  --ink-ghost: #6b5a1e;
+
+  /* Headings, lines, cards, tabs */
+  --head: #4a3d12;
+  --line: rgba(74, 61, 18, 0.25);
+  --card: rgba(255, 255, 255, 0.62);
+  --card-border: rgba(74, 61, 18, 0.14);
+  --tab-on: rgba(255, 255, 255, 0.45);
+  --accent: #c0392b;
+
+  /* Buttons and menu items */
+  --btn: #4a3d12;
+  --btn-ink: #fff8d1;
+  --option: #fffbe0;
+  --option-hover: #fff3a8;
+
+  /* Inputs, and the Clippy chat bubbles */
+  --field: rgba(255, 255, 255, 0.85);
+  --field-border: rgba(74, 61, 18, 0.3);
+  --reply: #ffffff;
+
+  /* Clippy's speech bubble */
+  --bubble: #fffdf4;
+  --bubble-ink: #2e2a22;
+  --bubble-border: #2e2a22;
+
+  /* State colours */
+  --ok: #2e6b2e;
+  --ok-bg: #d7f0d0;
+  --ok-step: #c9e6bf;
+  --bad: #c62828;
+  --bad-bg: #fff1ef;
+  --bad-pill-bg: #fde0dc;
+  --bad-pill-ink: #b3261e;
+  --urgent: #d32f2f;
+  --kind: #8a5a00;
+  --warn: #8a4b00;
+  --typing: #8a7a40;
+  --badge: #e53935;
+}
+
+/* Mint */
+:root[data-theme="mint"],
+[data-page-color="mint"] {
+  /* Paper (the note, and pages) */
+  --paper-1: #c9f5dc;
+  --paper-2: #a9ebc6;
+  --paper-shine: rgba(255, 255, 255, 0.35);
+  --paper-curl: #94dcb2;
+  --paper-curl-2: #7fcb9f;
+  --paper-fade: #a9edce;
+
+  /* Ink (text on the paper) */
+  --ink: #1f4a38;
+  --ink-soft: rgba(31, 74, 56, 0.7);
+  --ink-faint: rgba(31, 74, 56, 0.62);
+  --ink-strong: #12301f;
+  --ink-label: #173a2b;
+  --ink-body: #1b3f31;
+  --ink-ghost: #3d6f58;
+
+  /* Headings, lines, cards, tabs */
+  --head: #1f4a38;
+  --line: rgba(31, 74, 56, 0.25);
+  --card: rgba(255, 255, 255, 0.62);
+  --card-border: rgba(31, 74, 56, 0.14);
+  --tab-on: rgba(255, 255, 255, 0.45);
+  --accent: #2f9e6a;
+
+  /* Buttons and menu items */
+  --btn: #1f4a38;
+  --btn-ink: #e6fff2;
+  --option: #f2fff8;
+  --option-hover: #cdf6de;
+
+  /* Inputs, and the Clippy chat bubbles */
+  --field: rgba(255, 255, 255, 0.85);
+  --field-border: rgba(31, 74, 56, 0.3);
+  --reply: #ffffff;
+
+  /* Clippy's speech bubble */
+  --bubble: #fffdf4;
+  --bubble-ink: #2e2a22;
+  --bubble-border: #2e2a22;
+
+  /* State colours */
+  --ok: #2e6b2e;
+  --ok-bg: #d7f0d0;
+  --ok-step: #c9e6bf;
+  --bad: #c62828;
+  --bad-bg: #fff1ef;
+  --bad-pill-bg: #fde0dc;
+  --bad-pill-ink: #b3261e;
+  --urgent: #d32f2f;
+  --kind: #8a5a00;
+  --warn: #8a4b00;
+  --typing: #5f8f78;
+  --badge: #e53935;
+}
+
+/* Blush */
+:root[data-theme="blush"],
+[data-page-color="blush"] {
+  /* Paper (the note, and pages) */
+  --paper-1: #ffd9e6;
+  --paper-2: #ffc6d9;
+  --paper-shine: rgba(255, 255, 255, 0.35);
+  --paper-curl: #f5b3c9;
+  --paper-curl-2: #e69db6;
+  --paper-fade: #ffc8e1;
+
+  /* Ink (text on the paper) */
+  --ink: #5a2a40;
+  --ink-soft: rgba(90, 42, 64, 0.7);
+  --ink-faint: rgba(90, 42, 64, 0.62);
+  --ink-strong: #3d1628;
+  --ink-label: #4a2036;
+  --ink-body: #502436;
+  --ink-ghost: #86506a;
+
+  /* Headings, lines, cards, tabs */
+  --head: #5a2a40;
+  --line: rgba(90, 42, 64, 0.25);
+  --card: rgba(255, 255, 255, 0.62);
+  --card-border: rgba(90, 42, 64, 0.14);
+  --tab-on: rgba(255, 255, 255, 0.45);
+  --accent: #d6336c;
+
+  /* Buttons and menu items */
+  --btn: #5a2a40;
+  --btn-ink: #fff0f6;
+  --option: #fff6fa;
+  --option-hover: #ffdbe8;
+
+  /* Inputs, and the Clippy chat bubbles */
+  --field: rgba(255, 255, 255, 0.85);
+  --field-border: rgba(90, 42, 64, 0.3);
+  --reply: #ffffff;
+
+  /* Clippy's speech bubble */
+  --bubble: #fffdf4;
+  --bubble-ink: #2e2a22;
+  --bubble-border: #2e2a22;
+
+  /* State colours */
+  --ok: #2e6b2e;
+  --ok-bg: #d7f0d0;
+  --ok-step: #c9e6bf;
+  --bad: #c62828;
+  --bad-bg: #fff1ef;
+  --bad-pill-bg: #fde0dc;
+  --bad-pill-ink: #b3261e;
+  --urgent: #d32f2f;
+  --kind: #8a5a00;
+  --warn: #8a4b00;
+  --typing: #a2677f;
+  --badge: #e53935;
+}
+
+/* Sky */
+:root[data-theme="sky"],
+[data-page-color="sky"] {
+  /* Paper (the note, and pages) */
+  --paper-1: #d6ecff;
+  --paper-2: #bfe0ff;
+  --paper-shine: rgba(255, 255, 255, 0.35);
+  --paper-curl: #a7cff2;
+  --paper-curl-2: #8fbfe6;
+  --paper-fade: #bfe2ff;
+
+  /* Ink (text on the paper) */
+  --ink: #1f3f63;
+  --ink-soft: rgba(31, 63, 99, 0.7);
+  --ink-faint: rgba(31, 63, 99, 0.62);
+  --ink-strong: #112a47;
+  --ink-label: #173452;
+  --ink-body: #1a3858;
+  --ink-ghost: #4a6f9a;
+
+  /* Headings, lines, cards, tabs */
+  --head: #1f3f63;
+  --line: rgba(31, 63, 99, 0.25);
+  --card: rgba(255, 255, 255, 0.62);
+  --card-border: rgba(31, 63, 99, 0.14);
+  --tab-on: rgba(255, 255, 255, 0.45);
+  --accent: #2f7fd1;
+
+  /* Buttons and menu items */
+  --btn: #1f3f63;
+  --btn-ink: #eaf5ff;
+  --option: #f4faff;
+  --option-hover: #d9edff;
+
+  /* Inputs, and the Clippy chat bubbles */
+  --field: rgba(255, 255, 255, 0.85);
+  --field-border: rgba(31, 63, 99, 0.3);
+  --reply: #ffffff;
+
+  /* Clippy's speech bubble */
+  --bubble: #fffdf4;
+  --bubble-ink: #2e2a22;
+  --bubble-border: #2e2a22;
+
+  /* State colours */
+  --ok: #2e6b2e;
+  --ok-bg: #d7f0d0;
+  --ok-step: #c9e6bf;
+  --bad: #c62828;
+  --bad-bg: #fff1ef;
+  --bad-pill-bg: #fde0dc;
+  --bad-pill-ink: #b3261e;
+  --urgent: #d32f2f;
+  --kind: #8a5a00;
+  --warn: #8a4b00;
+  --typing: #6b8fb9;
+  --badge: #e53935;
+}
+
+/* Peach */
+:root[data-theme="peach"],
+[data-page-color="peach"] {
+  /* Paper (the note, and pages) */
+  --paper-1: #ffe2c7;
+  --paper-2: #ffd0a8;
+  --paper-shine: rgba(255, 255, 255, 0.35);
+  --paper-curl: #f2bf94;
+  --paper-curl-2: #e6ac7b;
+  --paper-fade: #ffd2b0;
+
+  /* Ink (text on the paper) */
+  --ink: #5c3414;
+  --ink-soft: rgba(92, 52, 20, 0.7);
+  --ink-faint: rgba(92, 52, 20, 0.62);
+  --ink-strong: #3d2108;
+  --ink-label: #4a2a0f;
+  --ink-body: #512e12;
+  --ink-ghost: #8a5a30;
+
+  /* Headings, lines, cards, tabs */
+  --head: #5c3414;
+  --line: rgba(92, 52, 20, 0.25);
+  --card: rgba(255, 255, 255, 0.62);
+  --card-border: rgba(92, 52, 20, 0.14);
+  --tab-on: rgba(255, 255, 255, 0.45);
+  --accent: #e8590c;
+
+  /* Buttons and menu items */
+  --btn: #5c3414;
+  --btn-ink: #fff3e6;
+  --option: #fff8f0;
+  --option-hover: #ffe5cc;
+
+  /* Inputs, and the Clippy chat bubbles */
+  --field: rgba(255, 255, 255, 0.85);
+  --field-border: rgba(92, 52, 20, 0.3);
+  --reply: #ffffff;
+
+  /* Clippy's speech bubble */
+  --bubble: #fffdf4;
+  --bubble-ink: #2e2a22;
+  --bubble-border: #2e2a22;
+
+  /* State colours */
+  --ok: #2e6b2e;
+  --ok-bg: #d7f0d0;
+  --ok-step: #c9e6bf;
+  --bad: #c62828;
+  --bad-bg: #fff1ef;
+  --bad-pill-bg: #fde0dc;
+  --bad-pill-ink: #b3261e;
+  --urgent: #d32f2f;
+  --kind: #8a5a00;
+  --warn: #8a4b00;
+  --typing: #a8795a;
+  --badge: #e53935;
+}
+
+/* Night (dark) */
+:root[data-theme="night"] {
+  /* Paper (the note, and pages) */
+  --paper-1: #2b2f3a;
+  --paper-2: #1f222b;
+  --paper-shine: rgba(255, 255, 255, 0.06);
+  --paper-curl: #3a3f4d;
+  --paper-curl-2: #2d313c;
+  --paper-fade: #20242d;
+
+  /* Ink (text on the paper) */
+  --ink: #e6e2d3;
+  --ink-soft: rgba(230, 226, 211, 0.7);
+  --ink-faint: rgba(230, 226, 211, 0.62);
+  --ink-strong: #f4f1e6;
+  --ink-label: #ece8d8;
+  --ink-body: #e6e2d3;
+  --ink-ghost: #c9c4ae;
+
+  /* Headings, lines, cards, tabs */
+  --head: #ffe27a;
+  --line: rgba(230, 226, 211, 0.25);
+  --card: rgba(255, 255, 255, 0.06);
+  --card-border: rgba(230, 226, 211, 0.14);
+  --tab-on: rgba(255, 255, 255, 0.1);
+  --accent: #ffcc4d;
+
+  /* Buttons and menu items */
+  --btn: #ffe27a;
+  --btn-ink: #2b2f3a;
+  --option: #3a3f4d;
+  --option-hover: #4a5062;
+
+  /* Inputs, and the Clippy chat bubbles */
+  --field: rgba(255, 255, 255, 0.08);
+  --field-border: rgba(230, 226, 211, 0.3);
+  --reply: #3a3f4d;
+
+  /* Clippy's speech bubble */
+  --bubble: #3a4050;
+  --bubble-ink: #f1eee2;
+  --bubble-border: #e6e2d3;
+
+  /* State colours */
+  --ok: #7fd48a;
+  --ok-bg: #254a33;
+  --ok-step: #2d5a3f;
+  --bad: #ff8a80;
+  --bad-bg: #4a2a2a;
+  --bad-pill-bg: #4f2b2a;
+  --bad-pill-ink: #ffb4ab;
+  --urgent: #ff7a70;
+  --kind: #ffcc4d;
+  --warn: #ffb454;
+  --typing: #a9a58f;
+  --badge: #e53935;
+}
+
+/* Chalkboard (dark) */
+:root[data-theme="chalkboard"] {
+  /* Paper (the note, and pages) */
+  --paper-1: #2f4a3a;
+  --paper-2: #253d30;
+  --paper-shine: rgba(255, 255, 255, 0.05);
+  --paper-curl: #3a5a47;
+  --paper-curl-2: #2d4838;
+  --paper-fade: #263f32;
+
+  /* Ink (text on the paper) */
+  --ink: #eef3ea;
+  --ink-soft: rgba(238, 243, 234, 0.7);
+  --ink-faint: rgba(238, 243, 234, 0.62);
+  --ink-strong: #f7faf4;
+  --ink-label: #f1f6ee;
+  --ink-body: #eef3ea;
+  --ink-ghost: #cfdccb;
+
+  /* Headings, lines, cards, tabs */
+  --head: #fff1b8;
+  --line: rgba(238, 243, 234, 0.25);
+  --card: rgba(255, 255, 255, 0.07);
+  --card-border: rgba(238, 243, 234, 0.16);
+  --tab-on: rgba(255, 255, 255, 0.12);
+  --accent: #ffb3c7;
+
+  /* Buttons and menu items */
+  --btn: #eef3ea;
+  --btn-ink: #253d30;
+  --option: #3a5a47;
+  --option-hover: #46694f;
+
+  /* Inputs, and the Clippy chat bubbles */
+  --field: rgba(255, 255, 255, 0.08);
+  --field-border: rgba(238, 243, 234, 0.3);
+  --reply: #3a5a47;
+
+  /* Clippy's speech bubble */
+  --bubble: #3a5a47;
+  --bubble-ink: #f2f6ee;
+  --bubble-border: #eef3ea;
+
+  /* State colours */
+  --ok: #8fdc9c;
+  --ok-bg: #285a3a;
+  --ok-step: #2f6a45;
+  --bad: #ff9a92;
+  --bad-bg: #5a2f2c;
+  --bad-pill-bg: #5a302c;
+  --bad-pill-ink: #ffb9b2;
+  --urgent: #ff8a80;
+  --kind: #ffd27a;
+  --warn: #ffc17a;
+  --typing: #b5c9b0;
+  --badge: #e53935;
+}
+
+/* A coloured page is light paper even in a dark theme (its caret, scrollbar and controls). */
+[data-page-color] {
+  color-scheme: light;
+}
+
+/* Dark themes: the browser draws its own controls (the dropdowns) dark... */
+:root[data-dark="true"] {
+  color-scheme: dark;
+}
+
+/* ...hints in the inputs stay readable... */
+:root[data-dark="true"] ::placeholder {
+  color: var(--ink-soft);
+}
+
+/* ...and Clippy gets a soft rim light so his dark steel does not sink into the paper. */
+:root[data-dark="true"] .clippy-sprite {
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.35));
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { IpcEvents, IpcInvoke, type ClippyWindowApi } from '@clippy/shared/ipc';
-import { WindowChannels, type ClippyWindowShell } from '../../src/main/window/windowApi';
+import { PageWindowChannels, WindowChannels, type ClippyWindowShell, type PageWindowShell } from '../../src/main/window/windowApi';
 
 const exposed: Record<string, unknown> = {};
 const ipcRenderer = {
@@ -18,6 +18,7 @@ vi.mock('electron', () => ({
 await import('../../src/preload/index');
 const clippy = exposed.clippy as ClippyWindowApi;
 const shell = exposed.clippyWindow as ClippyWindowShell;
+const pageShell = exposed.clippyPageWindow as PageWindowShell;
 
 describe('preload', () => {
   it('exposes every backend method over ipcRenderer.invoke', async () => {
@@ -82,5 +83,17 @@ describe('preload', () => {
     ipcRenderer.send.mockClear();
     shell.blur();
     expect(ipcRenderer.send).toHaveBeenCalledWith(WindowChannels.blur);
+  });
+
+  it('exposes the page window shell: collapse (a strict boolean) and the resize grip', () => {
+    ipcRenderer.send.mockClear();
+    pageShell.setCollapsed(true);
+    expect(ipcRenderer.send).toHaveBeenCalledWith(PageWindowChannels.collapse, true);
+    pageShell.setCollapsed('yes' as never);
+    expect(ipcRenderer.send).toHaveBeenLastCalledWith(PageWindowChannels.collapse, false);
+    pageShell.resizeStart();
+    pageShell.resizeMove();
+    pageShell.resizeEnd();
+    expect(ipcRenderer.send.mock.calls.slice(-3)).toEqual([[PageWindowChannels.resizeStart], [PageWindowChannels.resizeMove], [PageWindowChannels.resizeEnd]]);
   });
 });

@@ -71,3 +71,24 @@ Agreed in chat: Clippy should show things only when they need you, and "chat" is
 ## Phone approvals — 2026-10-30
 
 1. Phone approvals are opt-in, only when away, answered only by the user, and never matched by standing orders. With Settings → "Approve agents' permission requests from your phone" on (off by default; it needs the Claude Code hook), a Claude Code agent's "allow this tool use?" prompt (the `PermissionRequest` hook) goes to the desk note and the phone with Allow and Deny, but only while the user has been idle past the away time; at the PC, Claude Code's normal terminal prompt shows. Only the user's own tap or reply (desk, Telegram, WhatsApp) answers one: Clippy's `answer_pending` and the local API are refused, and approvals are created in-process so standing orders never see them. The hook allows only on an explicit Allow-type answer; Deny or any other reply denies (the reply is passed to the agent); no answer within 29 minutes, a dismissed note or a Clippy restart means no decision, and the terminal prompt shows. `AskUserQuestion` always stays in the terminal.
+
+## Pad, themes and welcome — 2026-10-30
+
+Agreed in chat: the note should be able to hold things you keep, look the way you like, and teach itself to new users. The calls below were made while building it.
+
+1. The Pad is a set of pages that save as you type, unlike notes, which you dismiss. You, Clippy's brain and agents (through the MCP tools `write_page`, `read_page` and `list_pages`) can all write them; `archive_page` is Clippy's alone.
+2. Claude decided: a page nobody has changed for 30 days is archived, not deleted, and can be restored. Pinned pages and pages popped out on the desktop are never archived.
+3. Claude decided: an HTTP or MCP caller can't claim to be "you". Agents can only change or archive pages they wrote; Clippy's brain can change any page. A refused change says only the page's author or the user can make it.
+4. Claude decided: if Clippy or an agent changes a page while you are typing in it, both versions are kept. Your save is refused as stale, your text stays in the editor, and a banner offers "Keep mine" or "Use theirs".
+5. Claude decided: leaving a page while that "changed while you were typing" conflict is still open (or quitting) saves your text as a new page called "<title> (your version)", so nothing is lost.
+6. Claude decided: a page can pop out as its own sticky on the desktop. Popped pages are not always on top and are not in the taskbar, so they behave like paper rather than windows. A page that was popped out comes back where you left it after a restart.
+7. Claude decided: if a popped page is mostly off-screen and the monitor it was on is still attached, it is pulled back onto that monitor; if the monitor is gone it goes to the primary display.
+8. Claude decided: popped page windows get a corner grip to resize them, because Windows can't resize a transparent window by its edges.
+9. Claude decided: there are seven themes (classic yellow, mint, blush, sky, peach, and two dark ones, night and chalkboard). "Follow Windows dark mode" switches to the chosen dark theme while Windows is dark. Clippy's brain can change the look with `set_look`, and nothing else.
+10. Claude decided: each page can have its own colour (yellow, mint, blush, sky or peach, the light papers), so pinned-out pages are easy to tell apart on the desktop.
+11. Claude decided: Settings is a menu of sections (Pop-ups & sounds, Phone, Morning brief, Claude Code, Standing orders & watches, Look, Windows & hotkeys), each row saying what it is set to now. History moved into Settings from its own tab, and the empty Notes tab still links to it. Phone approvals live under Claude Code, with the hook they depend on.
+12. Claude decided: the welcome is four steps (Claude Code, Look, Phone, Try it), each skippable. The "Try it" step uses a practice question that stays on the note and goes nowhere.
+13. Claude decided: the one question the tour asks is answered locally; it is never stored or sent anywhere.
+14. Claude decided: a Getting started list sits on the Pad (connect Claude Code, answer a question, tell Clippy something with the hotkey, snooze a note, set a standing order, pin a page, get a morning brief). Each item ticks itself, and you can close the list.
+15. Claude decided: tips (a few one-time hints in Clippy's speech bubble) run for the first 14 days only, at most one an hour, and can be switched off in Settings → Look → Show tips. They only show while the note is open; a tip that can't show waits for its next trigger.
+16. Claude decided: existing installs don't see the new welcome automatically (Settings → Windows & hotkeys → Run the welcome again brings it back), but they get the Getting started list and the tips for 14 days.

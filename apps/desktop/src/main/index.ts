@@ -4,18 +4,20 @@
  * tray icon.
  */
 import { homedir } from 'node:os';
-import { app, globalShortcut, powerMonitor } from 'electron';
-import { appDataDir, settingsPath, type ClippyEvent, type ClippyEventMap, type HotkeyStatus, type Settings } from '@clippy/shared';
-import { createBackend } from './backend';
+import { app, BrowserWindow, globalShortcut, nativeTheme, powerMonitor } from 'electron';
+import { appDataDir, resolveTheme, settingsPath, type ClippyEvent, type ClippyEventMap, type HotkeyStatus, type Settings } from '@clippy/shared';
+import { createBackend, forRenderer } from './backend';
 import { findNode, resolveMcpServerPath } from './brain/mcpConfig';
 import { resolveClaude } from './brain/runner';
-import { createClaudeWiring, resolveWiringPaths } from './claudeWiring';
+import { claudeHooksInstalled, createClaudeWiring, resolveWiringPaths } from './claudeWiring';
 import { Bus } from './core/bus';
 import { startServices } from './startup';
 import { createTray, type ClippyTray } from './tray';
 import { createClippyWindow, type ClippyWindow } from './window/createClippyWindow';
 import { registerTellHotkey, type TellHotkey } from './window/hotkey';
+import { createPageWindows, type PageWindows } from './window/pageWindows';
 import { registerIpc, type ClippyIpc } from './window/registerIpc';
+import { forwardSystemTheme } from './window/systemTheme';
 import { WindowChannels } from './window/windowApi';
 import { createWindowsExecutor } from './power/executor';
 import { electronSecretBox } from './secrets';
@@ -51,6 +53,15 @@ async function main(): Promise<void> {
   const bus = new Bus();
   bus.on('message:new', (m) => emit('message:new', m));
   bus.on('message:updated', (m) => emit('message:updated', m));
+  bus.on('onboarding:changed', (state) => emit('onboarding:changed', state));
+  // Page events go to every window: the note and any page popped out on the desktop.
+  const broadcast = <E extends ClippyEvent>(event: E, payload: ClippyEventMap[E]) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed() && !w.webContents.isDestroyed()) w.webContents.send(event, payload);
+    }
+  };
+  bus.on('page:changed', (page) => broadcast('page:changed', page));
+  bus.on('page:deleted', (deleted) => broadcast('page:deleted', deleted));
 
   const mcpServerPath = resolveMcpServerPath({
     override: process.env.CLIPPY_MCP_PATH,
@@ -60,7 +71,7 @@ async function main(): Promise<void> {
   if (!mcpServerPath) console.warn('[clippy] MCP server not built (apps/mcp/dist/index.js); the brain runs without clippy tools');
   // Settings, core, brain, relay and Telegram; both channels are subscribed before any API
   // request is handled.
-  const { core, settings, brain, phoneGate, watcher, brief, relay, telegram } = await startServices({
+  const { core, settings, brain, phoneGate, watcher, onboarding, brief, pageArchiver, relay, telegram } = await startServices({
     dataDir,
     settingsFile: settingsPath(),
     version: app.getVersion(),
@@ -77,14 +88,15 @@ async function main(): Promise<void> {
     ...(!app.isPackaged && process.env.CLIPPY_TELEGRAM_API && { telegram: { baseUrl: process.env.CLIPPY_TELEGRAM_API } }),
   });
 
+  // A sandbox for trying the wizard: wire `<dir>/.claude` instead of the real ~/.claude.
+  const claudeHome = process.env.CLIPPY_CLAUDE_HOME || undefined;
   const claudeWiring = createClaudeWiring({
     paths: resolveWiringPaths({
       resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
       mainDir: import.meta.dirname,
       mcpOverride: process.env.CLIPPY_MCP_PATH,
     }),
-    // A sandbox for trying the wizard: wire `<dir>/.claude` instead of the real ~/.claude.
-    home: process.env.CLIPPY_CLAUDE_HOME || undefined,
+    home: claudeHome,
     findNode: () => findNode(),
     findClaude: () => resolveClaude(),
     runInstall: (job) => runInstallInUtilityProcess(job),
@@ -92,7 +104,22 @@ async function main(): Promise<void> {
   // The Tell Clippy hotkey; its status is what Settings shows.
   let tellHotkey: TellHotkey | undefined;
   let tellStatus: HotkeyStatus = { accelerator: settings.get().tellHotkey, ok: true };
-  const backend = createBackend({ store: core.store, asks: core.asks, brain, settings, claudeWiring, telegram, hotkey: () => tellStatus });
+  // Connected before Getting started existed: tick it (installing from the app ticks it too).
+  void claudeHooksInstalled(claudeHome)
+    .then((wired) => wired && onboarding.mark('connect'))
+    .catch((err) => console.error('[clippy] checking the Claude Code wiring failed:', err));
+  const backend = createBackend({
+    store: core.store,
+    asks: core.asks,
+    pages: core.pages,
+    brain,
+    settings,
+    claudeWiring,
+    telegram,
+    hotkey: () => tellStatus,
+    systemDark: () => nativeTheme.shouldUseDarkColors,
+    onboarding,
+  });
   clippy = createClippyWindow({
     loadPos: () => settings.get().windowPos,
     savePos: (windowPos) => {
@@ -101,7 +128,18 @@ async function main(): Promise<void> {
     hideOnFullscreen: () => settings.get().hideOnFullscreen,
   });
   const win = clippy.win;
-  ipc = registerIpc(backend, win);
+  // Pad pages popped out onto the desktop: their windows follow the store (page:changed).
+  const pageWindows: PageWindows = createPageWindows({
+    pages: core.pages,
+    bus,
+    quitting: () => quitting,
+    // Painted before the renderer has its settings, so a dark theme never flashes classic yellow.
+    theme: () => resolveTheme(settings.get(), nativeTheme.shouldUseDarkColors),
+  });
+  // Kept past the note's window closing: on quit every window closes at once, and a page window's
+  // last save (or its "(your version)" copy) must still reach the store. Removed once stopped.
+  const rendererIpc = registerIpc(backend, win, { allowSender: (sender) => pageWindows.owns(sender), disposeOnClose: false });
+  ipc = rendererIpc;
   win.webContents.setAudioMuted(!settings.get().soundEnabled);
   // Closing the window (Alt+F4) only hides Clippy; Quit is in the tray.
   win.on('close', (e) => {
@@ -129,6 +167,12 @@ async function main(): Promise<void> {
   };
   applyTellHotkey(settings.get().tellHotkey);
 
+  // The pages that were out on the desktop when the app last closed come back where they were.
+  pageWindows.restoreAll();
+
+  // Windows switching light/dark reaches every window (the note and popped-out pages) at once.
+  const stopSystemTheme = forwardSystemTheme(nativeTheme, () => BrowserWindow.getAllWindows());
+
   const tray: ClippyTray = createTray({
     onShow: showClippy,
     muted: () => !settings.get().soundEnabled,
@@ -139,6 +183,9 @@ async function main(): Promise<void> {
   });
 
   settings.onChange((next, prev) => {
+    // Every window shows the new theme (and the rest) at once, wherever the change came from.
+    // (Never the encrypted Telegram token: `forRenderer` drops it, as for getSettings.)
+    broadcast('settings:changed', forRenderer(next));
     if (next.autoStart !== prev.autoStart) applyLoginItem(next);
     if (next.tellHotkey !== prev.tellHotkey) applyTellHotkey(next.tellHotkey);
     if (next.soundEnabled !== prev.soundEnabled) {
@@ -157,15 +204,21 @@ async function main(): Promise<void> {
   });
 
   // Orderly shutdown: stop the relay, Telegram and the brain, then the core (API, scheduler, database).
+  // `will-quit` comes after every window has closed, so their last saves were sent before it, and the
+  // core still takes them until it stops; only then are the IPC handlers removed.
   let stopped = false;
   app.on('will-quit', (e) => {
     if (stopped) return;
     e.preventDefault();
     quitting = true;
     tellHotkey?.dispose();
+    stopSystemTheme();
+    pageWindows.dispose();
     phoneGate.stop();
     watcher.stop();
+    onboarding.stop();
     brief.stop();
+    pageArchiver.stop();
     relay.stop();
     // Aborts the long-poll in flight; never wait long for an update being handled.
     const telegramStopped = Promise.race([telegram.stop(), new Promise((r) => setTimeout(r, 2000))]);
@@ -175,6 +228,7 @@ async function main(): Promise<void> {
       .then(() => core.stop())
       .catch((err) => console.error('[clippy] core stop failed:', err))
       .finally(() => {
+        rendererIpc.dispose();
         stopped = true;
         app.quit();
       });

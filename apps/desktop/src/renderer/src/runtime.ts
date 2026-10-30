@@ -5,9 +5,12 @@
  * never show fake notes: it reports the backend as missing instead.
  */
 import type { ClippyWindowApi } from '@clippy/shared/ipc';
+import { ChecklistItem } from '@clippy/shared/schemas';
+import { ThemeId } from '@clippy/shared/theme';
 import type { ClippyWindowShell } from '../../main/window/windowApi';
 import { chooseBackend } from './backendChoice';
 import { createMockBackend, type MockBackend } from './mock/mockBackend';
+import { SAMPLE_ORDERS, SAMPLE_WATCHES } from './mock/sampleData';
 
 export interface Runtime {
   api: ClippyWindowApi;
@@ -44,7 +47,18 @@ export function resolveRuntime(search: string = location.search): Runtime | unde
   if (choice === 'missing') return undefined;
   let api: ClippyWindowApi;
   if (choice === 'mock') {
-    const backend = createMockBackend({ firstRun: new URLSearchParams(search).has('firstrun') });
+    const params = new URLSearchParams(search);
+    // `?theme=night` previews a theme; `?telegram=1` a paired Telegram; `?done=connect,answer` Getting started partly ticked.
+    const theme = ThemeId.safeParse(params.get('theme'));
+    const done = (params.get('done') ?? '').split(',').filter((d): d is ChecklistItem => ChecklistItem.safeParse(d).success);
+    const backend = createMockBackend({
+      firstRun: params.has('firstrun'),
+      ...(theme.success && { theme: theme.data }),
+      ...(params.has('telegram') && { telegram: { chatId: 123456789, chatName: 'You' } }),
+      orders: SAMPLE_ORDERS,
+      watches: SAMPLE_WATCHES,
+      onboarding: { done },
+    });
     window.clippyMock = backend;
     api = backend;
   } else {
