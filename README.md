@@ -13,12 +13,13 @@ you have been away from the PC for a few minutes (Settings → Phone → Send to
 at once), and you can answer, or just chat with him, from your phone. When you go away, only notes
 that have waited less than an hour are sent; older ones stay on the desk.
 
-<img src="docs/screenshots/expanded-notes.png" width="300" alt="The sticky note with agent messages"> <img src="docs/screenshots/first-run.png" width="300" alt="The first-run wizard">
+<img src="docs/screenshots/expanded-notes.png" width="300" alt="The sticky note with agent messages"> <img src="docs/screenshots/expanded-pad.png" width="300" alt="The Pad"> <img src="docs/screenshots/expanded-settings.png" width="300" alt="The Settings menu"> <img src="docs/screenshots/first-run.png" width="300" alt="The welcome, first step">
 
 - **Agents talk to Clippy through an MCP server** (`clippy`): `leave_message`, `remind_me`
   (ISO time, optional RRULE), `ask_user` (blocks until you answer, 10 minutes by default),
   `check_reply`, `list_reminders`, `cancel_reminder`, `list_pending_asks`, `answer_pending`,
-  and the Pad tools `write_page`, `read_page`, `list_pages` (below).
+  and the Pad tools `write_page`, `read_page` and `list_pages` (below; `archive_page` is Clippy's
+  alone).
 - **A Claude Code hook** leaves a note when an agent finishes or needs your permission.
   "Agent finished" notes only interrupt you when you have been away from the PC (no keyboard or
   mouse input) for a while: Settings → Phone → "I count as away after N
@@ -35,15 +36,16 @@ that have waited less than an hour are sent; older ones stay on the desk.
   an app or the PC, below). Of the `clippy` tools
   it gets all but `ask_user` and `check_reply` (a brain turn waiting for your answer would hold
   up every chat turn behind it), so when it needs something from you it simply asks in its reply.
-  It also has twelve tools no agent sees: `list_notes`, `recent_activity`, `snooze_note`,
-  `dismiss_note`, `set_look` (colour themes, below), `archive_page` and the standing-order and watch tools below. Tell him "not now, bring it back after
+  It also has fifteen tools no agent sees: `list_notes`, `recent_activity`, `snooze_note`,
+  `dismiss_note`, `set_look` (colour themes, below), `archive_page` and the standing-order, watch and restart tools below. Tell him "not now, bring it back after
   lunch" and he snoozes the newest unread note; ask "what happened while I was at lunch?" or
   "what's waiting on me?" and he summarises.
 - **The Pad** is a set of pages you keep (a scratch page, a shopping list, a call to make), unlike
   notes, which you dismiss. Clippy writes them for you ("jot down: call Dave about the invoice",
   "add milk to my shopping page", "what did I write about the deploy?"), and agents can leave
-  you one to keep, such as a checklist or a summary, with `write_page`. An agent can only change
-  the pages it wrote itself; yours, and other agents', are refused. If Clippy or an agent changes a
+  you one to keep, such as a checklist or a summary, with `write_page` (`read_page` and `list_pages`
+  read them; only Clippy can `archive_page`). An agent can only change the pages it wrote itself;
+  yours, and other agents', are refused, while Clippy can change any page. If Clippy or an agent changes a
   page while you are typing in it, your save is refused rather than overwriting theirs (so nothing
   is silently lost). A page written by someone else counts as new until you open it. Pages nobody
   has changed for 30 days are archived (not pinned ones, or ones popped out on the desktop); you
@@ -57,6 +59,8 @@ that have waited less than an hour are sent; older ones stay on the desk.
   puts it back in the Pad (the page stays, so there is nothing to clean up; "Un-pin" in the Pad
   does the same). Pinned-out pages come back where you left them after a restart, moved onto your
   screen if that monitor is gone, and they follow the theme.
+
+  <img src="docs/screenshots/pad-popout.png" width="300" alt="A Pad page pinned out on the desktop">
 - **Colour themes**: the note can be classic yellow, mint, blush, sky or peach, or one of two dark
   ones, night and chalkboard (Clippy gets a soft rim light on those). "Follow Windows dark mode"
   switches to your chosen dark theme while Windows is dark and back again, within a second and
@@ -167,12 +171,13 @@ npm run package
   4. **Try it**: a practice question ("Tea or coffee?") on a real question card. Tap an answer; it
      stays on the note and goes nowhere. Then the Tell Clippy hotkey, and **Finish** opens the Pad.
 - **Getting started** sits at the top of the Pad ("Getting started 📎 3/7") until you have done
-  all seven things on it or closed it with ×: connect Claude Code, answer a question, tell Clippy
-  something, snooze a note, set a standing order, pin a page to the desktop, get a morning brief.
+  all seven things on it or closed it with ×: connect Claude Code, answer a question, tell Clippy something with the hotkey,
+  snooze a note, set a standing order, pin a page to the desktop, get a morning brief.
   Each ticks itself when you do it; the ones left say how. For the first two weeks Clippy also
   drops a few one-time **tips** in his speech bubble (at most one an hour, never over a new
-  message's line; off in Settings → Look → Show tips). Existing installs skip the welcome but get
-  the list and the tips.
+  message's line; off in Settings → Look → Show tips). Existing installs don't see the new
+  welcome by themselves (Settings → Windows & hotkeys → **Run the welcome again**), but they get
+  the list and the tips for 14 days.
 - Uninstall from Windows Settings → Apps. To clean Claude Code up too, run
   `node scripts/install-claude-wiring.ts uninstall` from a checkout first (see below; it finds
   the entries by name and marker, wherever they point). Your notes and settings in
@@ -199,9 +204,10 @@ The wiring does three things, all at user scope:
    install adds it.
 3. Appends a one-line hint to `~/.claude/CLAUDE.md` telling agents to use the Clippy tools (and
    `write_page` for something to keep, like a checklist). Running it again brings an older hint up
-   to date in place.
+   to date in place, so **if you installed before the Pad, run Connect Claude Code… once more** to
+   give agents the new hint about `write_page`.
 
-From the app: the first-run wizard, or Settings → Claude Code → **Connect Claude Code…**. It
+From the app: the welcome, or Settings → Claude Code → **Connect Claude Code…**. It
 always shows the dry run first.
 
 From a checkout (registers the repo's `apps/*/dist` builds instead; run `npm run build` first):
@@ -367,7 +373,7 @@ local API), `brain\` (the brain's MCP config) and `hook-state.json`.
 | --- | --- |
 | SmartScreen blocks the installer | It is unsigned: More info → Run anyway. |
 | Agents don't see the Clippy tools | Start a **new** Claude Code session. Check `claude mcp list` shows `clippy`. Re-run Connect Claude Code. Make sure `node --version` works in a new terminal (Node 24+). |
-| "Claude Code was not found" in the wizard | Install Claude Code and run `claude` once to sign in; or set `CLIPPY_CLAUDE_PATH`. |
+| "Claude Code was not found" in the welcome | Install Claude Code and run `claude` once to sign in; or set `CLIPPY_CLAUDE_PATH`. |
 | An agent says Clippy isn't running | The MCP server starts the app from `%LOCALAPPDATA%\Programs\professor-clippy\`; if you installed elsewhere, set `CLIPPY_APP_PATH` for the MCP server, or start Clippy yourself. |
 | No notes when an agent finishes | Settings → Claude Code → Claude Code hook must be on, and the hook installed (Connect Claude Code). New sessions only. While you are at the PC they go straight to History (see "I count as away after" in Settings → Phone; 0 = always pop up). |
 | Chat says Clippy can't answer / not logged in | Run `claude` in a terminal and sign in; the brain uses that login. |

@@ -44,6 +44,22 @@
     "at": 0
   },
   {
+    "name": "expanded-pad",
+    "query": "mock=1&mode=expanded&tab=pad&done=connect,answer",
+    "width": 428,
+    "height": 688,
+    "js": "(() => { const f = document.querySelector('#root > div'); f.style.outline = 'none'; f.style.right = '24px'; f.style.bottom = '24px'; })()",
+    "at": 0
+  },
+  {
+    "name": "pad-popout",
+    "query": "mock=1&page=Scratch",
+    "width": 300,
+    "height": 260,
+    "settleMs": 900,
+    "at": 0
+  },
+  {
     "name": "expanded-inbox-zero",
     "query": "mock=1&mode=expanded",
     "width": 428,
