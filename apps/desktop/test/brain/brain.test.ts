@@ -9,6 +9,7 @@ import {
   BRAIN_ERRORS,
   DISALLOWED_TOOLS,
   SESSION_KV_KEY,
+  nowLine,
   type BrainOptions,
 } from '../../src/main/brain/brain';
 import { PERSONA } from '../../src/main/brain/persona';
@@ -17,6 +18,10 @@ import { fakeRunner, fixture, type ScriptedRun } from './fixtures';
 
 const PONG_SESSION = '27cd1719-270d-4ff7-b798-5c362f340594';
 const TOOL_SESSION = '5b0c3a52-8f8e-4d7a-9a51-2f3c1e0d9a11';
+
+/** Fixed clock for every brain in these tests. */
+const NOW = new Date(2026, 9, 30, 14, 5).getTime(); // 30 Oct 2026, 14:05 local
+const NOW_LINE = nowLine(NOW);
 
 describe('Brain', () => {
   let store: Store;
@@ -39,6 +44,7 @@ describe('Brain', () => {
       cwd: 'C:/Users/someone',
       env: { PATH: 'x', ELECTRON_RUN_AS_NODE: '1' },
       log: () => {},
+      now: () => NOW,
       ...extra,
     });
     return { b, fake };
@@ -72,7 +78,8 @@ describe('Brain', () => {
     const reply = await b.ask('What reminders do I have?');
 
     const call = fake.calls[0]!;
-    expect(call.stdin).toBe('What reminders do I have?');
+    expect(call.stdin).toBe(`${NOW_LINE}
+What reminders do I have?`);
     expect(call.cwd).toBe('C:/Users/someone');
     expect(call.env.CLIPPY_BRAIN).toBe('1');
     expect(call.env.ELECTRON_RUN_AS_NODE).toBeUndefined();
@@ -120,13 +127,29 @@ describe('Brain', () => {
     await b.ask('from my phone', { channel: 'whatsapp' });
     const second = fake.calls[1]!;
     expect(second.args[second.args.indexOf('--resume') + 1]).toBe(PONG_SESSION);
-    expect(second.stdin).toBe('[via WhatsApp] from my phone');
+    expect(second.stdin).toBe(`${NOW_LINE}
+[via WhatsApp] from my phone`);
+  });
+
+  it('starts every prompt with the local time and UTC offset, before the channel tag', async () => {
+    const { b, fake } = brain([{ stdout: fixture('pong') }]);
+    await b.ask('not now', { channel: 'whatsapp' });
+    // Rebuilt from Date's own parts, so the expectation holds in any time zone.
+    const d = new Date(NOW);
+    const off = -d.getTimezoneOffset();
+    const hh = String(Math.floor(Math.abs(off) / 60)).padStart(2, '0');
+    const mm = String(Math.abs(off) % 60).padStart(2, '0');
+    const expected = `[Now: Fri 2026-10-30 14:05, UTC${off < 0 ? '-' : '+'}${hh}:${mm}]`;
+    expect(fake.calls[0]!.stdin).toBe(`${expected}
+[via WhatsApp] not now`);
+    expect(PERSONA).toMatch(/starts with a \[Now: \.\.\.\] line/);
   });
 
   it('prefixes Telegram turns, and the persona covers both phone channels without double quotes', async () => {
     const { b, fake } = brain([{ stdout: fixture('pong') }]);
     await b.ask('from my phone', { channel: 'telegram' });
-    expect(fake.calls[0]!.stdin).toBe('[via Telegram] from my phone');
+    expect(fake.calls[0]!.stdin).toBe(`${NOW_LINE}
+[via Telegram] from my phone`);
     expect(PERSONA).toMatch(/\[via WhatsApp\] or \[via Telegram\]/);
     expect(PERSONA).toMatch(/on the phone \(WhatsApp\/Telegram\)/);
     expect(PERSONA).not.toMatch(/"|%/);
@@ -137,11 +160,14 @@ describe('Brain', () => {
     const first = b.ask('one');
     const second = b.ask('two');
     await new Promise((r) => setTimeout(r, 10));
-    expect(fake.calls.map((c) => c.stdin)).toEqual(['one']); // two waits for one
+    expect(fake.calls.map((c) => c.stdin)).toEqual([`${NOW_LINE}
+one`]); // two waits for one
     expect(b.busy).toBe(true);
     fake.release();
     const [r1, r2] = await Promise.all([first, second]);
-    expect(fake.calls.map((c) => c.stdin)).toEqual(['one', 'two']);
+    expect(fake.calls.map((c) => c.stdin)).toEqual([`${NOW_LINE}
+one`, `${NOW_LINE}
+two`]);
     expect(r1.message?.body).toBe('pong');
     expect(r2.message?.body).toBe('Ahem.\n\nYou have no reminders.');
     // One thinking..idle span for the whole queue.

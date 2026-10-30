@@ -69,6 +69,19 @@ export interface BrainReply {
   error?: string;
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** The user's local time and UTC offset as the brain's first prompt line, e.g. `[Now: Fri 2026-10-30 14:05, UTC+01:00]`. */
+export function nowLine(ms: number): string {
+  const d = new Date(ms);
+  const offsetMin = -d.getTimezoneOffset();
+  const abs = Math.abs(offsetMin);
+  const date = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const offset = `UTC${offsetMin < 0 ? '-' : '+'}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
+  return `[Now: ${WEEKDAYS[d.getDay()]} ${date} ${pad2(d.getHours())}:${pad2(d.getMinutes())}, ${offset}]`;
+}
+
 export interface BrainOptions {
   store: Store;
   /** Push an event to the renderer (no-op if there is no window). */
@@ -85,6 +98,8 @@ export interface BrainOptions {
   /** Extra CLI arguments (manual smoke tests, e.g. `--max-turns 1`). */
   extraArgs?: string[];
   log?: (message: string, err?: unknown) => void;
+  /** Clock for the `[Now: ...]` line that starts every prompt (tests fix it). Default `Date.now`. */
+  now?: () => number;
 }
 
 interface Turn {
@@ -191,7 +206,8 @@ export class Brain {
 
   async #turn(turn: Turn): Promise<BrainReply> {
     const generation = this.#generation;
-    const prompt = CHANNEL_PREFIX[turn.channel] + turn.text;
+    const prompt = `${nowLine((this.#opts.now ?? Date.now)())}
+${CHANNEL_PREFIX[turn.channel]}${turn.text}`;
     const sessionId = this.#opts.store.getKv(SESSION_KV_KEY);
     let outcome = await this.#run(prompt, sessionId);
     // A resumed session that no longer exists (deleted, or another machine): start afresh once.
