@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WritePageResult } from '@clippy/shared/ipc';
 import type { Page } from '@clippy/shared/schemas';
-import { createSaveController, SAVE_DELAY_MS } from '../../src/renderer/src/note/pageSave';
+import { createSaveController, SAVE_DELAY_MS, SAVE_MAX_WAIT_MS } from '../../src/renderer/src/note/pageSave';
 
 const T0 = 1_000_000;
 
@@ -89,6 +89,26 @@ describe('page save controller', () => {
     expect(server.calls).toEqual([{ text: 'hey', base: T0 }]);
     expect(ctl.state).toBe('saved');
     expect(ctl.savedAt).toBe(42);
+  });
+
+  it('steady typing with no 400 ms pause still saves once the first unsaved edit is 2 s old', async () => {
+    expect(SAVE_MAX_WAIT_MS).toBe(2000);
+    const start = Date.now();
+    const savedAt: number[] = [];
+    const server = fakeServer();
+    const save = vi.fn(async (text: string, base: number) => {
+      savedAt.push(Date.now() - start);
+      return server.save(text, base);
+    });
+    const ctl = createSaveController({ text: 'hello', base: T0, save });
+    // A keystroke every 300 ms for 2.5 s: the 400 ms pause never comes.
+    for (let t = 0; t <= 2400; t += 300) {
+      ctl.edit(`hello ${t}`);
+      await vi.advanceTimersByTimeAsync(300);
+    }
+    expect(savedAt.length).toBeGreaterThanOrEqual(1);
+    expect(savedAt[0]).toBeLessThanOrEqual(2000);
+    expect(server.calls[0]!.text).toBe('hello 1800');
   });
 
   it('flush() saves at once and resolves only after the save has landed (blur, page switch, collapse, quit)', async () => {
@@ -245,40 +265,66 @@ describe('page save controller', () => {
   describe('leaving (quit, window closed, page switch)', () => {
     it('saves what is typed, and there is nothing to keep as a copy', async () => {
       const { server, ctl } = setup();
+      const onCopy = vi.fn();
       ctl.edit('typed');
-      expect(ctl.leave()).toBeUndefined();
+      ctl.leave(onCopy);
       await vi.waitFor(() => expect(server.current.body).toBe('typed'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onCopy).not.toHaveBeenCalled();
     });
 
-    it('during a conflict hands back the typed text once, to keep as a copy (quit then unmount makes one copy)', async () => {
+    it('during a conflict hands the typed text to onCopy once, to keep as a copy (quit then unmount makes one copy)', async () => {
       const { server, ctl } = setup();
+      const onCopy = vi.fn();
       server.theirs({ body: 'from Clippy' });
       ctl.edit('mine, typed before the quit');
       await ctl.flush();
       expect(ctl.state).toBe('conflict');
-      expect(ctl.leave()).toBe('mine, typed before the quit'); // beforeunload
-      expect(ctl.leave()).toBeUndefined(); // the unmount after it
+      ctl.leave(onCopy); // beforeunload
+      ctl.leave(onCopy); // the unmount after it
+      expect(onCopy).toHaveBeenCalledOnce();
+      expect(onCopy).toHaveBeenCalledWith('mine, typed before the quit');
       expect(server.current.body).toBe('from Clippy');
     });
 
-    it('hands back a fresh copy if more was typed after the last one', async () => {
+    it('hands over a fresh copy if more was typed after the last one', async () => {
       const { server, ctl } = setup();
+      const onCopy = vi.fn();
       server.theirs({ body: 'from Clippy' });
       ctl.edit('mine');
       await ctl.flush();
-      expect(ctl.leave()).toBe('mine');
+      ctl.leave(onCopy);
       ctl.edit('mine, and more');
-      expect(ctl.leave()).toBe('mine, and more');
-      expect(ctl.leave()).toBeUndefined();
+      ctl.leave(onCopy);
+      ctl.leave(onCopy);
+      expect(onCopy.mock.calls).toEqual([['mine'], ['mine, and more']]);
     });
 
     it('has nothing to copy once the conflict is settled', async () => {
       const { server, ctl } = setup();
+      const onCopy = vi.fn();
       server.theirs({ body: 'from Clippy' });
       ctl.edit('mine');
       await ctl.flush();
       await ctl.resolve('theirs');
-      expect(ctl.leave()).toBeUndefined();
+      ctl.leave(onCopy);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onCopy).not.toHaveBeenCalled();
+    });
+
+    it('a save refused as it leaves (someone wrote meanwhile, editor already gone) still hands the typed text to onCopy, once', async () => {
+      const { server, ctl } = setup();
+      const onCopy = vi.fn();
+      ctl.edit('mine, the last words');
+      ctl.remote(server.theirs({ body: 'from Clippy' }));
+      ctl.leave(onCopy); // beforeunload: its flush comes back refused
+      ctl.leave(onCopy); // the unmount after it
+      await vi.waitFor(() => expect(onCopy).toHaveBeenCalled());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onCopy).toHaveBeenCalledOnce();
+      expect(onCopy).toHaveBeenCalledWith('mine, the last words');
+      expect(ctl.state).toBe('conflict');
+      expect(server.current.body).toBe('from Clippy');
     });
   });
 

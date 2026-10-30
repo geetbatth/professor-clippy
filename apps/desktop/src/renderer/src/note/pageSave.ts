@@ -1,8 +1,9 @@
 /**
  * Saving a page's text as the user types, without React, so the edge cases are testable.
  *
- * Saves wait `SAVE_DELAY_MS` after the last keystroke; `flush()` saves at once (the editor calls
- * it on blur, page switch, tab switch, collapse and `beforeunload`), so at most the last 400 ms of
+ * Saves wait `SAVE_DELAY_MS` after the last keystroke, but never more than `SAVE_MAX_WAIT_MS` after
+ * the first unsaved one (so steady typing saves too); `flush()` saves at once (the editor calls it
+ * on blur, page switch, tab switch, collapse and `beforeunload`), so at most the last 400 ms of
  * typing can be lost. Every save carries `base`, the `updatedAt` the editor last saw: if Clippy or
  * an agent changed the page since, the store refuses it and hands back their version. The typed
  * text then stays put (state `conflict`) until the user picks "Keep mine" or "Use theirs".
@@ -12,6 +13,8 @@ import type { Page } from '@clippy/shared/schemas';
 
 /** How long typing must pause before the text is saved, ms. */
 export const SAVE_DELAY_MS = 400;
+/** Typing that never pauses that long still saves once its first unsaved keystroke is this old, ms. */
+export const SAVE_MAX_WAIT_MS = 2000;
 
 /**
  * `saved`: the store has the text. `dirty`: typed, not saved yet (or the last save failed).
@@ -27,7 +30,9 @@ export interface SaveControllerOptions {
   save(text: string, base: number): Promise<WritePageResult>;
   /** Default `SAVE_DELAY_MS`. */
   delayMs?: number;
-  /** Clock for `savedAt` (default `Date.now`). */
+  /** Default `SAVE_MAX_WAIT_MS`. */
+  maxWaitMs?: number;
+  /** Clock for `savedAt` and the longest wait (default `Date.now`). */
   now?: () => number;
   /** Start a timer; returns its cancel (default `setTimeout`). */
   setTimer?: (fn: () => void, ms: number) => () => void;
@@ -59,10 +64,11 @@ export interface SaveController {
   remote(page: Page): void;
   /**
    * The editor is going away (`beforeunload`, unmount): save what is typed. During a conflict
-   * nothing may save, so it returns the typed text for the editor to keep as a copy; only once
-   * per text, so a quit followed by an unmount makes one copy. Otherwise undefined.
+   * nothing may save, so the typed text goes to `onCopy` for the editor to keep as a copy, at once,
+   * or once that last save comes back refused (someone wrote meanwhile). Only once per text, so a
+   * quit followed by an unmount makes one copy.
    */
-  leave(): string | undefined;
+  leave(onCopy?: (text: string) => void): void;
 }
 
 const defaultTimer = (fn: () => void, ms: number) => {
@@ -72,6 +78,7 @@ const defaultTimer = (fn: () => void, ms: number) => {
 
 export function createSaveController(opts: SaveControllerOptions): SaveController {
   const delayMs = opts.delayMs ?? SAVE_DELAY_MS;
+  const maxWaitMs = opts.maxWaitMs ?? SAVE_MAX_WAIT_MS;
   const now = opts.now ?? Date.now;
   const setTimer = opts.setTimer ?? defaultTimer;
   let text = opts.text;
@@ -88,6 +95,8 @@ export function createSaveController(opts: SaveControllerOptions): SaveControlle
   let cancelTimer: (() => void) | undefined;
   /** The typed text last handed out by `leave()` during this conflict. */
   let copied: string | undefined;
+  /** When the oldest edit not yet on its way to the store was typed. */
+  let dirtySince: number | undefined;
 
   const changed = () => opts.onChange?.();
 
@@ -96,17 +105,31 @@ export function createSaveController(opts: SaveControllerOptions): SaveControlle
     cancelTimer = undefined;
   }
 
+  /** Save after the usual pause, or sooner if the first unsaved edit is about to be `maxWaitMs` old. */
   function schedule(): void {
     stopTimer();
-    cancelTimer = setTimer(() => {
-      cancelTimer = undefined;
-      if (!saving) void saveOnce();
-    }, delayMs);
+    const left = dirtySince === undefined ? delayMs : dirtySince + maxWaitMs - now();
+    cancelTimer = setTimer(
+      () => {
+        cancelTimer = undefined;
+        if (!saving) void saveOnce();
+      },
+      Math.max(0, Math.min(delayMs, left)),
+    );
+  }
+
+  /** Hand the typed text over as a copy, unless that exact text already was. */
+  function copyOnce(onCopy: ((text: string) => void) | undefined): void {
+    if (!conflict || text === copied) return;
+    copied = text;
+    onCopy?.(text);
   }
 
   /** One save of the current text (retried on top of a change that left the text alone). */
   function saveOnce(): Promise<void> {
-    if (conflict || text === serverText) return Promise.resolve();
+    if (conflict) return Promise.resolve();
+    dirtySince = undefined;
+    if (text === serverText) return Promise.resolve();
     saving = true;
     changed();
     const run = async () => {
@@ -199,7 +222,10 @@ export function createSaveController(opts: SaveControllerOptions): SaveControlle
     edit(next) {
       if (next === text) return;
       text = next;
-      if (!conflict) schedule();
+      if (!conflict) {
+        dirtySince ??= now();
+        schedule();
+      }
       changed();
     },
     async flush() {
@@ -219,6 +245,7 @@ export function createSaveController(opts: SaveControllerOptions): SaveControlle
       const theirs = conflict;
       conflict = undefined;
       copied = undefined;
+      dirtySince = undefined;
       base = theirs.updatedAt;
       serverText = theirs.body;
       if (choice === 'theirs') {
@@ -232,14 +259,10 @@ export function createSaveController(opts: SaveControllerOptions): SaveControlle
       await this.flush();
     },
     remote,
-    leave() {
-      if (!conflict) {
-        void this.flush();
-        return undefined;
-      }
-      if (text === copied) return undefined;
-      copied = text;
-      return text;
+    leave(onCopy) {
+      if (conflict) return copyOnce(onCopy);
+      // The last save may yet come back refused, after the editor has gone: copy then.
+      void this.flush().then(() => copyOnce(onCopy));
     },
   };
 }

@@ -392,13 +392,15 @@ the Pad's and the archived pages and keeps them live from `page:changed` / `page
 "📎 Clippy" / "🤖 sender · project" badges, "made by ..." / "edited ..."). `note/PageEditor.tsx` is one
 page, self-contained (props: the page, the api, callbacks) so a page window can reuse it. Its text
 goes through `createSaveController` (`note/pageSave.ts`, pure, injectable timer): saves wait 400 ms
-after the last keystroke, `flush()` saves at once (blur, unmount on page / tab switch or collapse,
+after the last keystroke but at most 2 s after the first unsaved one (`SAVE_MAX_WAIT_MS`, so steady
+typing saves too), `flush()` saves at once (blur, unmount on page / tab switch or collapse,
 `beforeunload`), and every save sends `baseUpdatedAt`. A refusal whose page has the same text as the
 editor last saved (only the title, colour or pin moved) is retried on the new base; otherwise the
 state is `conflict`: the typed text stays, nothing saves, and the banner's Keep mine saves it on top
 of theirs, Use theirs takes theirs. Leaving in `conflict` (unmount, or `beforeunload` on quit or
 window close, where React does not unmount) keeps the typed text as a new page "<title> (your
-version)", once per text (`leave()`), so a quit and the unmount after it make one copy. Someone else's change while nothing is unsaved shows at once. Title,
+version)", once per text (`leave(onCopy)`), so a quit and the unmount after it make one copy; so
+does a last save that `leave` starts and that comes back refused after the editor has gone. Someone else's change while nothing is unsaved shows at once. Title,
 colour and pin are separate `writePage` calls without a base, after a `flush()`. Opening a page (or
 a change arriving while it is open) calls `markPageSeen`. While a page has focus or a conflict,
 auto-collapse waits (`onActive`, the Tell box's rule). A page's own colour is `data-page-color` on

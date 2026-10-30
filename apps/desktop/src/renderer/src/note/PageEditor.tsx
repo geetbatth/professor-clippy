@@ -85,9 +85,11 @@ export function PageEditor({ api, page, selectTitle = false, onActive, onArchive
   // not unmount, so `beforeunload` too): save what's typed.
   useEffect(() => {
     const leave = () => {
-      // Left without settling a conflict: their version stays on the page, the typed text becomes a copy (once).
-      const copy = ctl.leave();
-      if (copy !== undefined) void api.createPage({ title: yourVersionTitle(currentRef.current.title), body: copy });
+      // Left without settling a conflict (or the last save comes back refused after we've gone):
+      // their version stays on the page, the typed text becomes a copy (once).
+      ctl.leave((copy) => {
+        api.createPage({ title: yourVersionTitle(currentRef.current.title), body: copy }).catch(() => {}); // nowhere left to say so
+      });
       const t = titleRef.current.trim();
       if (t && t !== currentRef.current.title) api.writePage(page.id, { title: t }).catch(() => {}); // gone meanwhile: nothing to rename
     };
