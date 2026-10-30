@@ -24,3 +24,8 @@ textarea {
 body.mock-desk {
   background: radial-gradient(circle at 30% 20%, #5a83a8, #2b4560 70%);
 }
+/* Click-through: a hit-tested element (Clippy's sprite) the cursor is over but not on, e.g. between
+   his wheels. Presses fall through to whatever is underneath (see hooks/useClickThrough.ts). */
+[data-hit-miss] {
+  pointer-events: none !important;
+}

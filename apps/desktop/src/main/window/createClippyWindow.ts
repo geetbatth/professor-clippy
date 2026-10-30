@@ -1,7 +1,8 @@
 /**
  * The always-on-top, frameless, transparent Professor Clippy window.
  *
- * - Two sizes (`WINDOW_SIZES`), switched by the renderer over `window:mode`.
+ * - Two sizes (`WINDOW_SIZES`, the expanded one capped to the work area's height), switched by
+ *   the renderer over `window:mode`.
  * - Dragged from a renderer drag handle (`window:drag*`); main moves the window to follow the cursor.
  * - Position (of mini Clippy) is loaded/saved through injected `loadPos`/`savePos`, clamped to a visible display.
  * - Transparent areas let clicks through: it starts ignoring the mouse (with forwarding,
@@ -21,6 +22,7 @@ import {
   type DisplayArea,
   type Point,
   type Rect,
+  windowSize,
 } from './geometry';
 import { isWindowMode, WINDOW_SIZES, WindowChannels, type CursorPoint, type WindowMode } from './windowApi';
 
@@ -140,7 +142,7 @@ export function createClippyWindow(opts: ClippyWindowOptions): ClippyWindow {
       else if (ignore === false) win.setIgnoreMouseEvents(false);
     },
     [WindowChannels.dragStart]: () => {
-      drag = { cursor: screen.getCursorScreenPoint(), bounds: { ...win.getBounds(), ...WINDOW_SIZES[mode] }, moved: false };
+      drag = { cursor: screen.getCursorScreenPoint(), bounds: { ...win.getBounds(), ...windowSize(mode, anchorArea()) }, moved: false };
     },
     [WindowChannels.dragMove]: () => {
       if (!drag) return;
@@ -156,9 +158,9 @@ export function createClippyWindow(opts: ClippyWindowOptions): ClippyWindow {
       drag = undefined;
       // A click is not a move: don't persist (or clamp) anything.
       if (!moved) return;
-      const b = { ...win.getBounds(), ...WINDOW_SIZES[mode] };
-      const area = pickDisplay(b, allDisplays()).workArea;
-      const clamped = clampToArea(b, area);
+      const at = win.getBounds();
+      const area = pickDisplay(at, allDisplays()).workArea;
+      const clamped = clampToArea({ ...at, ...windowSize(mode, area) }, area);
       win.setBounds(clamped);
       setAnchor(mode === 'mini' ? clamped : miniFromExpanded(clamped, area));
     },

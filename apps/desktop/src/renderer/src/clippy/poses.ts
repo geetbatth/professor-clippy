@@ -159,13 +159,18 @@ export const LEAN_REACH_PX = 260;
 /** Reading the note (below and to his left): a slight lean towards it. */
 export const READ_LEAN_DEG = -3;
 
+/** Whether he leans towards the cursor in this mood (the resting ones); otherwise he keeps still. */
+export function leansToCursor(mood: Mood): boolean {
+  return mood === 'idle' || mood === 'blink' || mood === 'read';
+}
+
 /**
  * How far he leans (degrees, + = clockwise, towards the right): towards the cursor while
  * resting, plus a tilt towards the note while reading. `dx` is the cursor's horizontal distance
  * from his body centre (px), or undefined when there is no cursor.
  */
 export function leanFor(mood: Mood, dx: number | undefined): number {
-  if (mood !== 'idle' && mood !== 'blink' && mood !== 'read') return 0;
+  if (!leansToCursor(mood)) return 0;
   const cursor = dx === undefined ? 0 : Math.max(-1, Math.min(1, dx / LEAN_REACH_PX)) * MAX_LEAN_DEG;
   const lean = (mood === 'read' ? READ_LEAN_DEG : 0) + cursor;
   return Math.round(lean * 100) / 100;

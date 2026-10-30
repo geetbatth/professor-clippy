@@ -7,6 +7,7 @@ import {
   miniFromExpanded,
   pickDisplay,
   resolveMiniPos,
+  windowSize,
   type DisplayArea,
 } from '../../src/main/window/geometry';
 import { WINDOW_SIZES } from '../../src/main/window/windowApi';
@@ -86,5 +87,29 @@ describe('expand / collapse', () => {
 
   it('clamps near the left edge too', () => {
     expect(expandedFromMini({ x: 0, y: 0 }, primary.workArea)).toMatchObject({ x: 0, y: 0 });
+  });
+});
+
+describe('windowSize', () => {
+  // 1366x768 at 125% leaves about 574 DIPs of work area; 1600x900 at 150%, 560.
+  const small = { x: 0, y: 0, width: 1093, height: 574 };
+  const tiny = { x: 0, y: 0, width: 1066, height: 560 };
+
+  it('is WINDOW_SIZES on a roomy work area', () => {
+    expect(windowSize('expanded', primary.workArea)).toEqual(expanded);
+    expect(windowSize('mini', primary.workArea)).toEqual(mini);
+  });
+
+  it('caps the expanded height to a short work area (never the width, never mini)', () => {
+    expect(windowSize('expanded', small)).toEqual({ width: expanded.width, height: 574 });
+    expect(windowSize('expanded', tiny)).toEqual({ width: expanded.width, height: 560 });
+    expect(windowSize('mini', tiny)).toEqual(mini);
+  });
+
+  it('keeps the whole expanded window on a short work area, Clippy still in the top-right corner', () => {
+    const corner = defaultMiniPos(tiny);
+    const e = expandedFromMini(corner, tiny);
+    expect(e).toEqual({ x: corner.x + mini.width - expanded.width, y: 0, width: expanded.width, height: 560 });
+    expect(miniFromExpanded(e, tiny)).toEqual({ x: corner.x, y: 0 });
   });
 });

@@ -1,9 +1,9 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type PointerEventHandler } from 'react';
 import type { CursorPoint } from '../../../main/window/windowApi';
-import { setHitTest } from '../hooks/useClickThrough';
+import { requestHitRecheck, setHitTest } from '../hooks/useClickThrough';
 import { maskHit } from './alphaMask';
 import type { Mood } from './mood';
-import { BLUEPRINT_GLOW, leanFor, motionFor, poseRect, POSES, spotOn, spriteFor, STAGE, type Pose } from './poses';
+import { BLUEPRINT_GLOW, leanFor, leansToCursor, motionFor, poseRect, POSES, spotOn, spriteFor, STAGE, type Pose } from './poses';
 import { SPRITE_URLS, spriteMask } from './sprites';
 import './Clippy.css';
 
@@ -52,7 +52,10 @@ const GLOW_STYLE: CSSProperties = (() => {
 const ZZZ_SPOT = spotOn('mini', 0.86, 0.06);
 const ZZZ_STYLE: CSSProperties = { left: pct(ZZZ_SPOT.x), top: pct(ZZZ_SPOT.y) };
 
-/** Horizontal distance (px) from his body centre to the cursor, measured after layout. */
+/**
+ * Horizontal distance (px) from his body centre to the cursor, measured after layout. With no
+ * cursor (he isn't leaning, or motion is reduced) it reads no layout and doesn't re-render.
+ */
 function useCursorDx(root: HTMLDivElement | null, look: CursorPoint | null | undefined): number | undefined {
   const [dx, setDx] = useState<number>();
   useLayoutEffect(() => {
@@ -66,6 +69,29 @@ function useCursorDx(root: HTMLDivElement | null, look: CursorPoint | null | und
   return dx;
 }
 
+/**
+ * A client point as fractions of `pose`'s sprite box, undoing the stage's transforms (the lean
+ * and the motion: rotations, hops, scales), not just their axis-aligned bounding box.
+ */
+function spriteFraction(img: HTMLImageElement, pose: Pose, x: number, y: number): { fx: number; fy: number } | undefined {
+  const root = img.closest('.clippy');
+  if (!root) return undefined;
+  const chain: Element[] = [];
+  for (let el = img.parentElement; el && el !== root; el = el.parentElement) chain.unshift(el);
+  // Each layer fills the stage, so their transforms compose in the stage's own coordinates.
+  let m = new DOMMatrix();
+  for (const el of chain) {
+    const cs = getComputedStyle(el);
+    if (cs.transform === 'none') continue;
+    const [ox = 0, oy = 0] = cs.transformOrigin.split(' ').map(parseFloat);
+    m = m.translate(ox, oy).multiply(new DOMMatrix(cs.transform)).translate(-ox, -oy);
+  }
+  const box = root.getBoundingClientRect();
+  const p = m.inverse().transformPoint(new DOMPoint(x - box.left, y - box.top));
+  const r = poseRect(pose);
+  return { fx: (p.x / box.width - r.left) / r.width, fy: (p.y / box.height - r.top) / r.height };
+}
+
 /** One sprite of the stack; only the current pose is visible. Clicks pass through its transparent pixels. */
 function Sprite({ pose, active }: { pose: Pose; active: boolean }) {
   const ref = useRef<HTMLImageElement>(null);
@@ -73,10 +99,11 @@ function Sprite({ pose, active }: { pose: Pose; active: boolean }) {
     const img = ref.current;
     if (!img) return;
     setHitTest(img, (x, y) => {
+      if (img.dataset.active !== 'true') return false;
       const mask = spriteMask(pose);
       if (!mask) return true;
-      const r = img.getBoundingClientRect();
-      return maskHit(mask, (x - r.left) / r.width, (y - r.top) / r.height);
+      const f = spriteFraction(img, pose, x, y);
+      return f !== undefined && maskHit(mask, f.fx, f.fy);
     });
     return () => setHitTest(img, undefined);
   }, [pose]);
@@ -103,7 +130,10 @@ export function Clippy({ mood, big = false, seq = 0, look, mini = false, title, 
   const motionRef = useRef<HTMLDivElement>(null);
   const pose = spriteFor(mood, big, mini);
   const motion = motionFor(mood, big);
-  const lean = leanFor(mood, useCursorDx(root, look));
+  const lean = leanFor(mood, useCursorDx(root, leansToCursor(mood) ? look : null));
+
+  // A new pose (or mode) changes what's solid under a cursor that hasn't moved.
+  useLayoutEffect(() => requestHitRecheck(), [pose, mini]);
 
   // Replay the one-shot motion when a new transient starts, even if it's the same as the last.
   const firstSeq = useRef(seq);

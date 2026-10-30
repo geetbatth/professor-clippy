@@ -112,6 +112,20 @@ describe('createClippyWindow', () => {
     expect(win.bounds).toEqual({ x: 1000, y: 100, ...WINDOW_SIZES.mini });
   });
 
+  it('fits the expanded window to a short work area, also after dragging it', () => {
+    h.state.displays = [{ id: 1, workArea: { x: 0, y: 0, width: 1093, height: 574 } }];
+    const { win, send } = setup();
+    send(WindowChannels.mode, 'expanded');
+    expect(win.bounds).toMatchObject({ y: 0, width: WINDOW_SIZES.expanded.width, height: 574 });
+    h.state.cursor = { x: 900, y: 50 };
+    send(WindowChannels.dragStart);
+    h.state.cursor = { x: 700, y: 250 };
+    send(WindowChannels.dragMove);
+    expect(win.bounds.height).toBe(574);
+    send(WindowChannels.dragEnd);
+    expect(win.bounds).toMatchObject({ y: 0, height: 574 });
+  });
+
   it('drags with the cursor, clamps on release and saves the position', () => {
     const { win, send, savePos } = setup({ x: 1000, y: 100, displayId: 1 });
     h.state.cursor = { x: 1050, y: 150 };

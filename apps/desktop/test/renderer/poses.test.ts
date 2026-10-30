@@ -3,6 +3,7 @@ import { WINDOW_SIZES } from '../../src/main/window/windowApi';
 import { MOODS, type Mood } from '../../src/renderer/src/clippy/mood';
 import {
   leanFor,
+  leansToCursor,
   MAX_LEAN_DEG,
   motionFor,
   POSE_TWEAKS,
@@ -96,6 +97,9 @@ describe('leanFor', () => {
   it('tilts towards the note while reading', () => {
     expect(leanFor('read', undefined)).toBe(READ_LEAN_DEG);
     expect(leanFor('read', 10_000)).toBe(READ_LEAN_DEG + MAX_LEAN_DEG);
+  });
+  it('only the resting moods lean (so the cursor feed can stop otherwise)', () => {
+    expect(MOODS.filter(leansToCursor).sort()).toEqual(['blink', 'idle', 'read']);
   });
   it('keeps still during antics and sleep', () => {
     for (const mood of ['sleep', 'wake', 'jump', 'tapGlass', 'think', 'celebrate'] as const) expect(leanFor(mood, 200)).toBe(0);

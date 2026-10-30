@@ -73,7 +73,8 @@ npm run package
 
 Electron-builder may download its NSIS and signing tools on the first run (into its cache); that
 is normal. The app icon is `apps/desktop/build/icon.svg` (a head-and-goggles crop of the idle
-sprite on a sticky note), rasterised to `icon.png` (512 px) and `icon.ico` (16–256 px) by
+sprite on a sticky note), rasterised to `icon.png` (512 px), `icon.ico` (16–256 px) and the tray
+icon (`apps/desktop/src/main/trayIconImages.ts`) by
 `node apps/desktop/scripts/launch-electron.mjs apps/desktop/scripts/make-icons.mjs`; rerun that
 only after editing the SVG or the idle sprite.
 

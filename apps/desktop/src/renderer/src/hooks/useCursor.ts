@@ -4,10 +4,15 @@ import type { ClippyWindowShell, CursorPoint } from '../../../main/window/window
 /**
  * Where the mouse is, in window coordinates: from main's global cursor feed (so Clippy can
  * lean towards it anywhere on screen), and from local mouse moves (browser preview). One update per frame.
+ * While `enabled` is false it doesn't listen at all (and returns null), so nothing re-renders.
  */
-export function useCursor(shell: ClippyWindowShell): CursorPoint | null {
+export function useCursor(shell: ClippyWindowShell, enabled = true): CursorPoint | null {
   const [point, setPoint] = useState<CursorPoint | null>(null);
   useEffect(() => {
+    if (!enabled) {
+      setPoint(null);
+      return;
+    }
     let pending: CursorPoint | null = null;
     let frame = 0;
     const push = (p: CursorPoint) => {
@@ -27,6 +32,6 @@ export function useCursor(shell: ClippyWindowShell): CursorPoint | null {
       window.removeEventListener('mousemove', onMove);
       cancelAnimationFrame(frame);
     };
-  }, [shell]);
+  }, [shell, enabled]);
   return point;
 }

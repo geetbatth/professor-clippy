@@ -2,7 +2,7 @@
 import { WorkerToPc } from '@clippy/shared/relay';
 import { runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { env, exports } from 'cloudflare:workers';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ClippyDO, REMINDER_MAX_ATTEMPTS, REMINDER_RETRY_DELAYS_MS } from '../src/do';
 import { nextOccurrence } from '../src/recurrence';
 import { type WaMessage, mockGraph, sentText, signBody, webhookPayload } from './helpers';
@@ -89,6 +89,19 @@ async function connectPc(): Promise<PcSocket> {
   sockets.push(ws);
   return { ws, frames, ack: (ids) => ws.send(JSON.stringify({ type: 'ack', ids })) };
 }
+
+// No test may reach the network, even a stray alarm firing between tests after the mocks are
+// restored: `fetch` is a guard that throws, and `mockGraph()` spies on top of it, so
+// `vi.restoreAllMocks()` puts the guard (not the real fetch) back.
+const realFetch = globalThis.fetch;
+beforeAll(() => {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    throw new Error(`unmocked fetch in a test: ${input instanceof Request ? input.url : String(input)}`);
+  }) as typeof fetch;
+});
+afterAll(() => {
+  globalThis.fetch = realFetch;
+});
 
 beforeEach(async () => {
   await inDO(async (_i, s) => {
@@ -365,6 +378,10 @@ describe('reminders', () => {
     expect(await reminderRow('d')).toMatchObject({ due_at: future, dtstart: future });
     await pcCall('/reminders/d', 'PUT', { body: 'Stretch!', dueAt: due, rrule: 'FREQ=WEEKLY', tz: LA });
     expect(await reminderRow('d')).toMatchObject({ due_at: due, rrule: 'FREQ=WEEKLY' });
+
+    // `d` is now due in the past, so its armed alarm would fire after this test (into a later one).
+    expect((await pcCall('/reminders/d', 'DELETE')).status).toBe(204);
+    expect(await alarmAt()).toBeNull();
   });
 
   it("anchors the rule at startAt, so COUNT counts from the PC's original start", async () => {

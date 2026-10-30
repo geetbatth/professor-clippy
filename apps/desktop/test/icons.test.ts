@@ -1,7 +1,8 @@
-/** The committed app icons (made by scripts/make-icons.mjs from build/icon.svg) are what electron-builder needs. */
+/** The committed app and tray icons (made by scripts/make-icons.mjs from build/icon.svg). */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { TRAY_ICON_IMAGES } from '../src/main/trayIconImages';
 
 const build = join(import.meta.dirname, '..', 'build');
 const PNG_SIGNATURE = '89504e470d0a1a0a';
@@ -33,5 +34,16 @@ describe('app icons', () => {
       sizes.push(declared);
     }
     expect(sizes).toEqual(expect.arrayContaining([16, 24, 32, 48, 64, 128, 256]));
+  });
+});
+
+describe('tray icon', () => {
+  it('has a PNG per display scale, 16 DIP each (from the same art, by make-icons.mjs)', () => {
+    expect(TRAY_ICON_IMAGES.map((i) => i.scaleFactor)).toEqual(expect.arrayContaining([1, 1.5, 2]));
+    for (const { scaleFactor, dataURL } of TRAY_ICON_IMAGES) {
+      expect(dataURL.startsWith('data:image/png;base64,')).toBe(true);
+      const size = 16 * scaleFactor;
+      expect(pngSize(Buffer.from(dataURL.split(',')[1]!, 'base64'))).toEqual({ width: size, height: size });
+    }
   });
 });

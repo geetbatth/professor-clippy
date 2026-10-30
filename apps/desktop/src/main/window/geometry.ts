@@ -3,7 +3,7 @@
  * No Electron imports, so it is unit-testable.
  */
 import type { WindowPos } from '@clippy/shared/settings';
-import { WINDOW_SIZES } from './windowApi';
+import { WINDOW_SIZES, type WindowMode } from './windowApi';
 
 export interface Point {
   x: number;
@@ -83,11 +83,20 @@ export function resolveMiniPos(
 }
 
 /**
+ * The window size for `mode` on a work area: `WINDOW_SIZES`, except that the expanded window is
+ * never taller than the work area (small or high-DPI screens); the note shrinks and scrolls.
+ */
+export function windowSize(mode: WindowMode, area: Rect): { width: number; height: number } {
+  const s = WINDOW_SIZES[mode];
+  return mode === 'expanded' ? { width: s.width, height: Math.min(s.height, Math.floor(area.height)) } : { ...s };
+}
+
+/**
  * Expanded bounds for a mini window at `mini`: top-right corners line up, so Clippy
  * stays put (he sits in the expanded layout's top-right corner), then clamped.
  */
 export function expandedFromMini(mini: Point, area: Rect): Rect {
-  const e = WINDOW_SIZES.expanded;
+  const e = windowSize('expanded', area);
   const m = WINDOW_SIZES.mini;
   return clampToArea({ x: mini.x + m.width - e.width, y: mini.y, ...e }, area);
 }

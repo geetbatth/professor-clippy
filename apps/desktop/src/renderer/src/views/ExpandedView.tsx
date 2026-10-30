@@ -8,7 +8,8 @@ import './ExpandedView.css';
  */
 export function ExpandedView({ clippy, bubble, note }: { clippy: ReactNode; bubble: ReactNode; note: ReactNode }) {
   return (
-    <div className="expanded" style={WINDOW_SIZES.expanded}>
+    // Full window height: main caps it to the work area on small screens, and the note shrinks.
+    <div className="expanded" style={{ width: WINDOW_SIZES.expanded.width, height: '100%' }}>
       {note}
       {bubble}
       <div className="expanded-clippy" style={WINDOW_SIZES.mini}>
