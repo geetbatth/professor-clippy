@@ -14,7 +14,8 @@ export interface TellHotkey {
 
 /**
  * Register `accelerator` to call `onPress`. `''` means off. Electron throws on a malformed
- * accelerator and returns false when another app already owns it; both come back as `ok: false`.
+ * accelerator ("isn't a valid shortcut") and returns false when another app already owns it
+ * ("another app may be using it"); both come back as `ok: false` with that message.
  */
 export function registerTellHotkey(
   accelerator: string,
@@ -26,7 +27,7 @@ export function registerTellHotkey(
   try {
     registered = shortcuts.register(accelerator, onPress);
   } catch {
-    registered = false;
+    return { ok: false, error: `"${accelerator}" isn't a valid shortcut`, dispose() {} };
   }
   if (!registered) {
     return { ok: false, error: `Couldn't register ${accelerator} (another app may be using it)`, dispose() {} };

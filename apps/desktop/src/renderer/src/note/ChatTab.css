@@ -33,10 +33,10 @@
   margin: 3px 0;
 }
 .chat-hint li::before {
-  content: 'C';
+  content: '\201C';
 }
 .chat-hint li::after {
-  content: 'D';
+  content: '\201D';
 }
 .chat-line {
   max-width: 82%;

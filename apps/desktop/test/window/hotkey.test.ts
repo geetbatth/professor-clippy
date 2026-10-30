@@ -39,13 +39,13 @@ describe('registerTellHotkey', () => {
     expect(result).toMatchObject({ ok: false, error: "Couldn't register Alt+T (another app may be using it)" });
   });
 
-  it('reports a failure, not a crash, when Electron throws on a malformed accelerator', () => {
+  it('reports an invalid shortcut, not a crash, when Electron throws on a malformed accelerator', () => {
     const shortcuts = fakeShortcuts();
     shortcuts.register.mockImplementation(() => {
       throw new TypeError('Invalid accelerator');
     });
     const result = registerTellHotkey('Banana+', vi.fn(), shortcuts);
-    expect(result).toMatchObject({ ok: false, error: "Couldn't register Banana+ (another app may be using it)" });
+    expect(result).toMatchObject({ ok: false, error: `"Banana+" isn't a valid shortcut` });
     expect(() => result.dispose()).not.toThrow();
   });
 
