@@ -192,14 +192,11 @@ local API), `brain\` (the brain's MCP config) and `hook-state.json`.
 
 ## Known limitations & security notes
 
-- **Prompt injection.** Clippy's brain can read files in your home folder (and anywhere else
-  Claude Code's Read tool can reach) and fetch web pages, by design (decision 11). A crafted
-  WhatsApp message or agent message could try to talk it into reading something private and
-  sending it out, for example by fetching a URL with the data in it. Only your own number can
-  reach the Worker, and only local processes can post to Clippy, but anything an agent relays
-  (web pages, issue text, email) reaches the brain too. If that worries you, remove `WebFetch`
-  (and `WebSearch`) from `ALLOWED_TOOLS` and `BUILTIN_TOOLS` in
-  `apps/desktop/src/main/brain/brain.ts` and rebuild.
+- **Prompt injection.** Clippy's brain can read files in your home folder (your choice, decision 11)
+  and search the web, but it can't open web pages: `WebFetch` is blocked, because fetching a URL
+  with data in it is the easiest way for a crafted WhatsApp or agent message to send a file out.
+  Search queries are still a narrow channel; to close it too, remove `WebSearch` from
+  `ALLOWED_TOOLS` and `BUILTIN_TOOLS` in `apps/desktop/src/main/brain/brain.ts` and rebuild.
 - **Meta's test number.** It can only message the numbers you verify (up to 5), shows as a test
   sender, and Meta can change or limit test numbers at any time. Outside the 24 h window it can
   only send the approved template.

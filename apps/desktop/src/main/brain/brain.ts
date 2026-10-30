@@ -36,10 +36,14 @@ export const BRAIN_CLIPPY_TOOLS = [
 export const BRAIN_BLOCKED_CLIPPY_TOOLS = ['ask_user', 'check_reply'] as const;
 const mcp = (tools: readonly string[]) => tools.map((t) => `mcp__clippy__${t}`);
 /** Allowed tools (the CLI accepts space-separated lists). */
-export const ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', ...mcp(BRAIN_CLIPPY_TOOLS)].join(' ');
-export const DISALLOWED_TOOLS = ['Edit', 'Write', 'Bash', 'NotebookEdit', ...mcp(BRAIN_BLOCKED_CLIPPY_TOOLS)].join(' ');
-/** Built-in tools that exist at all for the brain (so PowerShell, Agent etc. aren't even offered). */
-export const BUILTIN_TOOLS = 'Read,Glob,Grep,WebSearch,WebFetch';
+export const ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'WebSearch', ...mcp(BRAIN_CLIPPY_TOOLS)].join(' ');
+export const DISALLOWED_TOOLS = ['Edit', 'Write', 'Bash', 'NotebookEdit', 'WebFetch', ...mcp(BRAIN_BLOCKED_CLIPPY_TOOLS)].join(' ');
+/**
+ * Built-in tools that exist at all for the brain (so PowerShell, Agent etc. aren't even offered).
+ * No WebFetch: with Read over the home folder, fetching an arbitrary URL is the easiest way for a
+ * prompt-injected message to send a file out.
+ */
+export const BUILTIN_TOOLS = 'Read,Glob,Grep,WebSearch';
 /** A turn that runs longer than this is killed. */
 export const DEFAULT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
 

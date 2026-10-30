@@ -82,13 +82,13 @@ describe('Brain', () => {
     expect(flag('--append-system-prompt')).toBe(PERSONA);
     expect(flag('--mcp-config')).toBe('C:/data/brain/brain-mcp.json');
     expect(flag('--allowedTools')).toBe(
-      'Read Glob Grep WebSearch WebFetch mcp__clippy__leave_message mcp__clippy__remind_me mcp__clippy__list_reminders ' +
+      'Read Glob Grep WebSearch mcp__clippy__leave_message mcp__clippy__remind_me mcp__clippy__list_reminders ' +
         'mcp__clippy__cancel_reminder mcp__clippy__list_pending_asks mcp__clippy__answer_pending',
     );
     expect(flag('--allowedTools')).toBe(ALLOWED_TOOLS);
-    expect(flag('--disallowedTools')).toBe('Edit Write Bash NotebookEdit mcp__clippy__ask_user mcp__clippy__check_reply');
+    expect(flag('--disallowedTools')).toBe('Edit Write Bash NotebookEdit WebFetch mcp__clippy__ask_user mcp__clippy__check_reply');
     expect(flag('--disallowedTools')).toBe(DISALLOWED_TOOLS);
-    expect(flag('--tools')).toBe('Read,Glob,Grep,WebSearch,WebFetch');
+    expect(flag('--tools')).toBe('Read,Glob,Grep,WebSearch');
     expect(flag('--permission-mode')).toBe('dontAsk');
     expect(flag('--settings')).toBe('C:/data/brain/brain-settings.json');
     expect(args).toContain('--strict-mcp-config');

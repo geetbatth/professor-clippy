@@ -54,10 +54,11 @@ describe.skipIf(process.env.CLIPPY_REAL_CLAUDE !== '1')('Brain with the real cla
       expect(store.getKv(SESSION_KV_KEY)).toMatch(/^[0-9a-f-]{36}$/);
       expect(init.mcp_servers).toEqual([expect.objectContaining({ name: 'clippy', status: 'connected' })]);
       expect(init.permissionMode).toBe('dontAsk');
-      expect(init.tools).toEqual(expect.arrayContaining(['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'mcp__clippy__leave_message']));
+      expect(init.tools).toEqual(expect.arrayContaining(['Read', 'Glob', 'Grep', 'WebSearch', 'mcp__clippy__leave_message']));
       expect(init.tools).not.toEqual(expect.arrayContaining(['mcp__clippy__ask_user']));
       expect(init.tools).not.toEqual(expect.arrayContaining(['mcp__clippy__check_reply']));
       expect(init.tools).not.toEqual(expect.arrayContaining(['Bash']));
+      expect(init.tools).not.toEqual(expect.arrayContaining(['WebFetch']));
       expect(init.tools).not.toEqual(expect.arrayContaining(['Edit']));
       expect(init.tools).not.toEqual(expect.arrayContaining(['Write']));
     } finally {

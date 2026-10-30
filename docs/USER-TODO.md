@@ -81,11 +81,11 @@ From `apps\worker` in the repo:
 
 ## Known limitations & security notes
 
-- **Prompt injection.** Clippy's brain can read files in your home folder and fetch web pages
-  (your choice, decision 11). A crafted WhatsApp or agent message could try to get it to read
-  something private and send it out, for example inside a URL it fetches. If that worries you,
-  remove `WebFetch` (and `WebSearch`) from `ALLOWED_TOOLS` and `BUILTIN_TOOLS` in
-  `apps/desktop/src/main/brain/brain.ts` and rebuild.
+- **Prompt injection.** Clippy's brain can read files in your home folder (your choice, decision 11)
+  and search the web, but it can't open web pages: `WebFetch` is blocked, because fetching a URL
+  with data in it is the easiest way for a crafted WhatsApp or agent message to send a file out.
+  Search queries are still a narrow channel; to close it too, remove `WebSearch` from
+  `ALLOWED_TOOLS` and `BUILTIN_TOOLS` in `apps/desktop/src/main/brain/brain.ts` and rebuild.
 - **Meta's test number** only messages verified numbers (up to 5), shows as a test sender, may be
   limited or changed by Meta, and outside the 24 h window can only send the approved template.
 - **The installer is unsigned**, hence the SmartScreen warning.
