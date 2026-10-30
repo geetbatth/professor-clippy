@@ -17,6 +17,7 @@ describe('Settings', () => {
       tellHotkey: 'Control+Alt+Space',
       hideOnFullscreen: true,
       autoStart: true,
+      allowPowerActions: false,
       firstRunDone: false,
       quietDefaultsApplied: false,
     });
@@ -62,6 +63,16 @@ describe('Settings: tellHotkey', () => {
     expect(Settings.parse({ tellHotkey: '' }).tellHotkey).toBe('');
     expect(Settings.safeParse({ tellHotkey: 'x'.repeat(61) }).success).toBe(false);
     expect(SettingsPatch.parse({ tellHotkey: 'Alt+T' })).toEqual({ tellHotkey: 'Alt+T' });
+  });
+});
+
+describe('Settings: allowPowerActions', () => {
+  it('is off by default, patchable, and must be a boolean', () => {
+    expect(Settings.parse({}).allowPowerActions).toBe(false);
+    expect(Settings.parse({ allowPowerActions: true }).allowPowerActions).toBe(true);
+    expect(Settings.safeParse({ allowPowerActions: 'yes' }).success).toBe(false);
+    expect(SettingsPatch.parse({ allowPowerActions: true })).toEqual({ allowPowerActions: true });
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { allowPowerActions: true }).allowPowerActions).toBe(true);
   });
 });
 

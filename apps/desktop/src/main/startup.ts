@@ -9,7 +9,8 @@
  *    handed over here, reading the orders from the core once that exists;
  * 3. then **synchronously**, with no `await` in between: the brain, the phone gate, the watcher, the relay and
  *    Telegram, which subscribe to the bus (the gate first: the two channels mirror on the gate's
- *    `message:mirror`, not on `message:new`); Telegram is then handed the catch-up messages, and
+ *    `message:mirror`, not on `message:new`); Telegram is then handed the catch-up messages,
+ *    restart requests left from before are expired (so the phone copies are updated too), and
  *    the morning brief starts (a late start sends it at once, to listening channels). An agent
  *    (often the MCP server that just launched the app) can post as soon as `/health`
  *    answers; its request is only handled on a later turn of the event loop, by which time
@@ -25,6 +26,7 @@ import { writeBrainFiles, type McpConfigInput } from './brain/mcpConfig';
 import type { Message } from '@clippy/shared';
 import { createOrderMatcher } from './orders';
 import { PhoneGate, type PhoneGateOptions } from './phoneGate';
+import type { PowerExecutor } from './power/executor';
 import { RelayManager, type RelayManagerOptions } from './relay';
 import { SettingsStore, type SecretBox } from './settings';
 import { TelegramManager, type TelegramManagerOptions } from './telegram';
@@ -56,6 +58,11 @@ export interface StartServicesOptions {
   idleSeconds?: () => number;
   /** Phone gate tick (test seam). */
   phoneGate?: Pick<PhoneGateOptions, 'clock' | 'tickMs'>;
+  /**
+   * What restarting an app or the PC runs on (the Windows one in the app). Default: one that
+   * refuses everything, so tests never touch a real process.
+   */
+  powerExecutor?: PowerExecutor;
   /** Morning brief clock (test seam). */
   brief?: Pick<BriefSchedulerOptions, 'clock'>;
   /** Telegram test seams (fake Bot API server, short timings). */
@@ -102,6 +109,8 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
         return orders.length === 0 ? undefined : matcher(input.question, input.options, orders);
       },
       ...(idleSeconds && { isUserActive: () => idleSeconds() < settings.get().awayThresholdS }),
+      allowPowerActions: () => settings.get().allowPowerActions,
+      ...(options.powerExecutor && { powerExecutor: options.powerExecutor }),
       ...(options.version !== undefined && { version: options.version }),
     });
   } finally {
@@ -154,6 +163,9 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
   });
   telegram.apply();
   telegram.replay(early);
+  // Restart questions from before this start must not look live: answered "Expired" now that
+  // Telegram listens (its copy loses its buttons); nothing is run.
+  core.power.expireLeftovers();
   // The morning brief is a note from Clippy too, and if it is due now (a late start) it is sent
   // here, once the relay and Telegram are listening for what the gate mirrors.
   const brief = new BriefScheduler({ ...options.brief, store: core.store, settings: () => settings.get() });

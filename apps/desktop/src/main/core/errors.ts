@@ -4,7 +4,7 @@
  */
 export class CoreError extends Error {
   constructor(
-    readonly status: 400 | 404 | 409,
+    readonly status: 400 | 403 | 404 | 409,
     message: string,
   ) {
     super(message);
@@ -16,6 +16,13 @@ export class CoreError extends Error {
 export class ValidationError extends CoreError {
   constructor(message: string) {
     super(400, message);
+  }
+}
+
+/** The caller may not do this (a setting is off, or only the user may). */
+export class ForbiddenError extends CoreError {
+  constructor(message: string) {
+    super(403, message);
   }
 }
 

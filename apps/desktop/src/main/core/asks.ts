@@ -16,6 +16,12 @@ export interface AsksOptions {
   clock?: Clock;
 }
 
+/**
+ * Checks an answer before it is stored; throws (e.g. a `ForbiddenError`) to refuse it. Power
+ * actions use one so Clippy's brain (`via: 'clippy'`) can never confirm a restart.
+ */
+export type AnswerGuard = (ask: Message, via: AnsweredVia) => void;
+
 interface Waiter {
   resolve(result: AskResult): void;
 }
@@ -25,6 +31,7 @@ export class Asks {
   readonly #bus: Bus;
   readonly #clock: Clock;
   readonly #waiters = new Map<string, Set<Waiter>>();
+  readonly #guards = new Set<AnswerGuard>();
 
   constructor(options: AsksOptions) {
     this.#store = options.store;
@@ -87,13 +94,20 @@ export class Asks {
     });
   }
 
+  /** Add a check every answer must pass (see {@link AnswerGuard}); returns its remover. */
+  guard(check: AnswerGuard): () => void {
+    this.#guards.add(check);
+    return () => this.#guards.delete(check);
+  }
+
   /**
-   * Answer an ask. Throws NotFoundError for an unknown id and ConflictError if
-   * it was already answered.
+   * Answer an ask. Throws NotFoundError for an unknown id, ConflictError if
+   * it was already answered, and whatever a guard throws to refuse it.
    */
   answer(id: string, answer: string, via: AnsweredVia): AskResult {
     const ask = this.#getAsk(id);
     if (ask.answer !== undefined) throw new ConflictError(`Ask ${id} was already answered`);
+    for (const check of this.#guards) check(ask, via);
     const message = this.#store.updateMessage(id, {
       answer,
       answeredVia: via,

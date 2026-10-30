@@ -5,6 +5,8 @@
 import { mkdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { appDataDir, dbPath, portPath, tokenPath } from '@clippy/shared';
+import { PowerActions } from '../power/actions';
+import type { PowerExecutor } from '../power/executor';
 import { startApi, type ApiDeps, type ApiServer } from './api';
 import { Asks } from './asks';
 import { Bus } from './bus';
@@ -32,6 +34,10 @@ export interface StartCoreOptions {
   matchOrder?: ApiDeps['matchOrder'];
   /** Longest an ask waits for `matchOrder` (see `ApiDeps.matchOrderTimeoutMs`). */
   matchOrderTimeoutMs?: number;
+  /** The `allowPowerActions` setting (restart an app or the PC on request). Default: always off. */
+  allowPowerActions?: () => boolean;
+  /** What power actions run on. Default: one that refuses everything (tests never touch a real process). */
+  powerExecutor?: PowerExecutor;
 }
 
 export interface Core {
@@ -39,6 +45,8 @@ export interface Core {
   bus: Bus;
   scheduler: Scheduler;
   asks: Asks;
+  /** Restart requests the user confirms (see `power/actions.ts`). Its leftovers are expired by `startServices`. */
+  power: PowerActions;
   api: ApiServer;
   /** Port the local API listens on (also written to the port file). */
   port: number;
@@ -60,6 +68,15 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
   const store = new Store({ path: file(dbPath), bus, clock });
   const scheduler = new Scheduler({ store, bus, clock });
   const asks = new Asks({ store, bus, clock });
+  const power = new PowerActions({
+    store,
+    bus,
+    asks,
+    clock,
+    allowed: options.allowPowerActions ?? (() => false),
+    ...(options.powerExecutor && { executor: options.powerExecutor }),
+    log: (message, err) => console.error(`[clippy] ${message}`, err),
+  });
 
   let api: ApiServer;
   try {
@@ -68,6 +85,7 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
       store,
       scheduler,
       asks,
+      power,
       token,
       version: options.version ?? 'dev',
       portFile: file(portPath),
@@ -77,6 +95,7 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
     });
   } catch (err) {
     scheduler.stop();
+    power.dispose();
     store.close();
     throw err;
   }
@@ -87,12 +106,14 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
     bus,
     scheduler,
     asks,
+    power,
     api,
     port: api.port,
     token,
     stop() {
       stopping ??= (async () => {
         scheduler.stop();
+        power.dispose();
         asks.dispose();
         await api.close();
         store.close();

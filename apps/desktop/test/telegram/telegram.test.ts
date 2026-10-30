@@ -11,7 +11,9 @@ import { SettingsStore } from '../../src/main/settings';
 import { MAX_WRONG_CODES, PAIRING_KV_KEY, TelegramManager } from '../../src/main/telegram';
 import { MISSED_NOTE } from '../../src/main/telegram/format';
 import { OFFSET_KV_PREFIX } from '../../src/main/telegram/telegram';
+import { PowerActions } from '../../src/main/power/actions';
 import { alwaysMirror } from '../alwaysMirror';
+import { actions as fakeActions, CHROME_PATH, fakeExecutor } from '../power/fakeExecutor';
 import { FakeTelegram, fakeSecrets, guardFetch, waitFor } from './fakeTelegram';
 
 const ME = 4242;
@@ -449,6 +451,58 @@ describe('Telegram: answering asks', () => {
     await ctx.manager.channel!.idle();
     await new Promise((r) => setTimeout(r, 50));
     expect(ctx.fake.sentTexts.filter((t) => t.includes('Too late'))).toEqual([]);
+  });
+});
+
+describe('Telegram: restart questions (power actions)', () => {
+  /** PowerActions over this test's store, with a fake executor: nothing real is touched. */
+  function power() {
+    const fake = fakeExecutor();
+    const actionsService = new PowerActions({ store: ctx.store, bus: ctx.bus, asks: ctx.asks, allowed: () => true, executor: fake });
+    cleanups.push(() => actionsService.dispose());
+    return { fake, power: actionsService };
+  }
+
+  it('shows Restart / Cancel buttons; a tap on Restart answers via telegram and runs it', async () => {
+    ctx = await setup({ chatId: ME });
+    const { fake, power: p } = power();
+    const { id } = await p.requestRestartApp('chrome');
+    const tgMsgId = await waitFor(() => ctx.store.getMessage(id)?.tgMsgId, 3000, 'the question');
+    expect(String(lastSend().text)).toMatch(/^🔴 ❓ Restart Google Chrome \(chrome\.exe, 3 processes\)\?/);
+    expect(lastSend().reply_markup).toEqual({
+      inline_keyboard: [[{ text: 'Restart', callback_data: `a:${id}:0` }], [{ text: 'Cancel', callback_data: `a:${id}:1` }]],
+    });
+    ctx.fake.tap(`a:${id}:0`, tgMsgId);
+    await waitFor(() => ctx.asks.result(id).status === 'answered', 3000, 'the answer');
+    expect(ctx.asks.result(id)).toMatchObject({ answer: 'Restart', answeredVia: 'telegram' });
+    await p.settled();
+    expect(fakeActions(fake)).toContain(`launch ${CHROME_PATH} | --profile-directory=Default`);
+    await waitFor(() => ctx.fake.of('editMessageText').length === 1, 3000, 'the buttons removed');
+  });
+
+  it('a typed reply (yes) to the question answers it via telegram too', async () => {
+    ctx = await setup({ chatId: ME });
+    const { fake, power: p } = power();
+    const { id } = await p.requestRestartPc();
+    const tgMsgId = await waitFor(() => ctx.store.getMessage(id)?.tgMsgId, 3000, 'the question');
+    ctx.fake.text('yes', { replyTo: tgMsgId });
+    await waitFor(() => ctx.asks.result(id).status === 'answered', 3000, 'the answer');
+    expect(ctx.asks.result(id)).toMatchObject({ answer: 'yes', answeredVia: 'telegram' });
+    await p.settled();
+    expect(fakeActions(fake)).toEqual(['shutdown /r /t 60 /c Professor Clippy is restarting your PC because you asked him to.']);
+    expect(ctx.asked).toEqual([]); // an answer, not a brain turn
+  });
+
+  it('a leftover expired on start loses its buttons in Telegram', async () => {
+    ctx = await setup({ chatId: ME });
+    const { fake, power: p } = power();
+    const { id } = await p.requestRestartPc();
+    await waitFor(() => ctx.store.getMessage(id)?.tgMsgId, 3000, 'the question');
+    p.expireLeftovers();
+    await waitFor(() => ctx.fake.of('editMessageText').length === 1, 3000, 'the edit');
+    expect(ctx.fake.of('editMessageText')[0]).toMatchObject({ reply_markup: { inline_keyboard: [] } });
+    expect(String(ctx.fake.of('editMessageText')[0]!.text)).toMatch(/Answered: Expired/);
+    expect(fakeActions(fake)).toEqual([]);
   });
 });
 

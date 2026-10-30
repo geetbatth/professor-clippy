@@ -57,6 +57,11 @@ const fields = {
   hideOnFullscreen: z.boolean(),
   /** Launch at Windows login. */
   autoStart: z.boolean(),
+  /**
+   * Clippy's brain may ask to restart an app or the PC (`restart_app`, `restart_computer`). Each
+   * request is still a question the user must confirm with a tap; the brain can never confirm it.
+   */
+  allowPowerActions: z.boolean(),
   /** Base URL of the Cloudflare relay Worker (WhatsApp mirroring off when unset). */
   workerUrl: z.url(),
   /** Bearer secret for the relay Worker. */
@@ -108,6 +113,7 @@ export const Settings = z.object({
   tellHotkey: fields.tellHotkey.default('Control+Alt+Space'),
   hideOnFullscreen: fields.hideOnFullscreen.default(true),
   autoStart: fields.autoStart.default(true),
+  allowPowerActions: fields.allowPowerActions.default(false),
   workerUrl: fields.workerUrl.optional(),
   workerSecret: fields.workerSecret.optional(),
   windowPos: fields.windowPos.optional(),
@@ -143,6 +149,7 @@ export const SettingsPatch = z.object({
   tellHotkey: fields.tellHotkey.optional(),
   hideOnFullscreen: fields.hideOnFullscreen.optional(),
   autoStart: fields.autoStart.optional(),
+  allowPowerActions: fields.allowPowerActions.optional(),
   workerUrl: fields.workerUrl.nullable().optional(),
   workerSecret: fields.workerSecret.nullable().optional(),
   windowPos: fields.windowPos.nullable().optional(),

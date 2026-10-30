@@ -5,7 +5,7 @@
  * `port` file. Every request needs `Authorization: Bearer <token>` (token from
  * the `token` file); otherwise 401. Request/response bodies are JSON.
  * Errors are `{ error: string }` with a 4xx/5xx status (400 invalid input,
- * 401 bad/missing token, 404 unknown id).
+ * 401 bad/missing token, 403 not allowed, 404 unknown id).
  */
 import { z } from 'zod';
 import { AnsweredVia, Timestamp } from './schemas';
@@ -39,6 +39,11 @@ export interface RouteDef {
  * - `listWatches` → Watch[] (active ones, oldest first)
  * - `addWatch` (body NewWatchInput) → Watch (201)
  * - `cancelWatch` → 204, no body
+ * - `restartApp` (body RestartAppBody) → PowerRequestResult (202): a question the user must confirm
+ * - `restartPc` (body RestartPcBody) → PowerRequestResult (202): likewise
+ * - `listApps` → OpenApp[] (windowed apps)
+ *
+ * The three power routes answer 403 while the `allowPowerActions` setting is off.
  */
 export const Routes = {
   health: { method: 'GET', path: '/health' },
@@ -59,6 +64,9 @@ export const Routes = {
   listWatches: { method: 'GET', path: '/watches' },
   addWatch: { method: 'POST', path: '/watches' },
   cancelWatch: { method: 'DELETE', path: '/watches/:id' },
+  restartApp: { method: 'POST', path: '/power/restart-app' },
+  restartPc: { method: 'POST', path: '/power/restart-pc' },
+  listApps: { method: 'GET', path: '/power/apps' },
 } as const satisfies Record<string, RouteDef>;
 
 /** Fill a route's `:id` placeholder (URL-encoded). */
@@ -96,6 +104,49 @@ export type SnoozeBody = z.infer<typeof SnoozeBody>;
 /** `POST /asks/:id/answer` body. */
 export const AnswerAskBody = z.object({ answer: z.string().min(1), via: AnsweredVia });
 export type AnswerAskBody = z.infer<typeof AnswerAskBody>;
+
+/**
+ * An app name as `restart_app` takes it: the exe name with or without `.exe` (`chrome`,
+ * `Code.exe`). Letters, digits, spaces and `_ . ( ) + -` only, so it never needs quoting.
+ */
+export const AppName = z
+  .string()
+  .trim()
+  .regex(/^[\w .()+-]{1,100}$/, 'Use the program name, e.g. chrome or notepad.exe');
+
+/** Why the user wants it, in their words; shown on the confirmation question. */
+const PowerReason = z.string().trim().min(1).max(300);
+
+/** `POST /power/restart-app` body. */
+export const RestartAppBody = z.object({ name: AppName, reason: PowerReason.optional() });
+export type RestartAppBody = z.infer<typeof RestartAppBody>;
+
+/** `POST /power/restart-pc` body. */
+export const RestartPcBody = z.object({ reason: PowerReason.optional() });
+export type RestartPcBody = z.infer<typeof RestartPcBody>;
+
+/**
+ * A restart request, posted to the user as a question. Nothing happens until they tap Restart
+ * (on the desk or a phone); the request answers at once and never waits for that.
+ */
+export const PowerRequestResult = z.object({
+  /** Id of the confirmation question (an ask). */
+  id: z.string(),
+  status: z.literal('awaiting-confirmation'),
+  /** The question the user is asked. */
+  question: z.string(),
+});
+export type PowerRequestResult = z.infer<typeof PowerRequestResult>;
+
+/** A running app with a window (`GET /power/apps`). */
+export const OpenApp = z.object({
+  /** Process name without `.exe`, e.g. `chrome`. */
+  name: z.string(),
+  pid: z.number().int(),
+  /** Its main window's title (may be empty). */
+  title: z.string(),
+});
+export type OpenApp = z.infer<typeof OpenApp>;
 
 /** Error response body for any non-2xx status. */
 export const ApiError = z.object({ error: z.string() });

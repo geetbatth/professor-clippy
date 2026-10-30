@@ -1,7 +1,8 @@
 /**
  * Files the brain's `claude` run is pointed at:
- * - `brain-mcp.json` (`--mcp-config`): the built clippy MCP server, with `CLIPPY_SENDER=clippy-brain`
- *   and `CLIPPY_HOME` = this app's data dir, so it reaches this app's local API.
+ * - `brain-mcp.json` (`--mcp-config`): the built clippy MCP server, with `CLIPPY_SENDER=clippy-brain`,
+ *   `CLIPPY_HOME` = this app's data dir, so it reaches this app's local API, and
+ *   `CLIPPY_POWER_TOOLS=1`, so the brain (and no other agent) gets the restart request tools.
  * - `brain-settings.json` (`--settings`): `disableAllHooks`, so the user's Claude Code hooks
  *   (including Clippy's own Stop hook) don't fire for Clippy's turns.
  */
@@ -50,7 +51,7 @@ export interface McpConfigInput {
 }
 
 export function buildMcpConfig(input: McpConfigInput): { mcpServers: Record<string, unknown> } {
-  const env: Record<string, string> = { CLIPPY_SENDER: BRAIN_SENDER, CLIPPY_HOME: input.dataDir };
+  const env: Record<string, string> = { CLIPPY_SENDER: BRAIN_SENDER, CLIPPY_HOME: input.dataDir, CLIPPY_POWER_TOOLS: '1' };
   if (!input.nodePath) env.ELECTRON_RUN_AS_NODE = '1';
   return {
     mcpServers: {

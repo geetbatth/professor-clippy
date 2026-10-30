@@ -106,6 +106,12 @@ function fakeApi() {
       }
       case `POST /asks/${ASK_ID}/answer`:
         return send(200, { id: ASK_ID, status: 'answered', answer: body.answer, answeredVia: body.via });
+      case 'POST /power/restart-app':
+        return send(202, { id: ASK_ID, status: 'awaiting-confirmation', question: `Restart ${body.name}?` });
+      case 'POST /power/restart-pc':
+        return send(202, { id: ASK_ID, status: 'awaiting-confirmation', question: 'Restart your PC?' });
+      case 'GET /power/apps':
+        return send(200, [{ name: 'chrome', pid: 42, title: 'Inbox' }]);
       case 'GET /broken':
         return send(200, { not: 'a message' });
       default:
@@ -224,6 +230,28 @@ describe('ClippyClient requests', () => {
       answeredVia: 'clippy',
     });
     expect(last()).toMatchObject({ path: `/asks/${ASK_ID}/answer`, body: { answer: 'no', via: 'clippy' } });
+  });
+});
+
+describe('ClippyClient power requests', () => {
+  it('requests an app restart, with and without a reason', async () => {
+    await expect(client.restartApp('chrome', 'it froze')).resolves.toEqual({
+      id: ASK_ID,
+      status: 'awaiting-confirmation',
+      question: 'Restart chrome?',
+    });
+    expect(last()).toMatchObject({ method: 'POST', path: '/power/restart-app', body: { name: 'chrome', reason: 'it froze' } });
+    await client.restartApp('notepad');
+    expect(last().body).toEqual({ name: 'notepad' });
+  });
+
+  it('requests a PC restart and lists open apps', async () => {
+    await expect(client.restartPc()).resolves.toMatchObject({ status: 'awaiting-confirmation' });
+    expect(last()).toMatchObject({ method: 'POST', path: '/power/restart-pc', body: {} });
+    await client.restartPc('updates');
+    expect(last().body).toEqual({ reason: 'updates' });
+    await expect(client.listOpenApps()).resolves.toEqual([{ name: 'chrome', pid: 42, title: 'Inbox' }]);
+    expect(last()).toMatchObject({ method: 'GET', path: '/power/apps' });
   });
 });
 

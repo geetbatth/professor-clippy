@@ -10,6 +10,7 @@ import { Store } from '../src/main/core/store';
 import { MISSED_NOTE } from '../src/main/telegram/format';
 import { fakeRunner, type ScriptedRun } from './brain/fixtures';
 import { FakeClock } from './core/fakeClock';
+import { actions, fakeExecutor } from './power/fakeExecutor';
 import { FakeTelegram, fakeSecrets, guardFetch, waitFor } from './telegram/fakeTelegram';
 
 
@@ -32,6 +33,30 @@ describe('startServices', () => {
     await services?.core.stop();
     services = undefined;
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+
+  it('power actions follow the allowPowerActions setting, and leftovers are expired on the next start', async () => {
+    const fake = fakeExecutor();
+    const start = () =>
+      startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: quietBrief(), brain: { emit: () => {} }, powerExecutor: fake });
+    services = await start();
+    await expect(services.core.power.requestRestartPc()).rejects.toThrow(/turned off/);
+    await services.settings.update({ allowPowerActions: true });
+    const { id } = await services.core.power.requestRestartApp('chrome');
+    expect(services.core.asks.result(id).status).toBe('pending');
+
+    // Clippy quits and starts again: the old question is closed, and nothing runs.
+    services.phoneGate.stop();
+    services.watcher.stop();
+    services.brief.stop();
+    services.relay.stop();
+    await services.telegram.stop();
+    services.brain.dispose();
+    await services.core.stop();
+    services = await start();
+    expect(services.core.asks.result(id)).toMatchObject({ status: 'answered', answer: 'Expired' });
+    await services.core.power.settled();
+    expect(actions(fake)).toEqual([]);
   });
 
   it('has the relay listening before the first API request can be handled', async () => {

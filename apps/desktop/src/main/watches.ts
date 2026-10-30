@@ -13,14 +13,18 @@ import { BRAIN_SENDER, type Message, type Watch } from '@clippy/shared';
 import type { Bus } from './core/bus';
 import { systemClock, type Clock } from './core/clock';
 import type { Store } from './core/store';
+import { POWER_SENDER } from './power/actions';
 
 /** Sender of the nudge notes (Clippy's own). */
 const NUDGE_SENDER = 'clippy';
 const NUDGE_TITLE = '⏰ Nudge';
 
-/** The watches a new message triggers: Clippy's own notes (nudges, and the brain's) never do, chat and reminders never do. */
+/**
+ * The watches a new message triggers: Clippy's own notes and questions (nudges, the brain's,
+ * restart confirmations) never do, chat and reminders never do.
+ */
 export function matchWatches(watches: Watch[], m: Pick<Message, 'kind' | 'project' | 'event' | 'sender'>): Watch[] {
-  if (m.sender === NUDGE_SENDER || m.sender === BRAIN_SENDER || (m.kind !== 'note' && m.kind !== 'ask')) return [];
+  if (m.sender === NUDGE_SENDER || m.sender === BRAIN_SENDER || m.sender === POWER_SENDER || (m.kind !== 'note' && m.kind !== 'ask')) return [];
   const project = m.project?.toLowerCase();
   return watches.filter((w) => {
     if (w.project !== undefined && !project?.includes(w.project.toLowerCase())) return false;

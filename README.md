@@ -30,7 +30,8 @@ that have waited less than an hour are sent; older ones stay on the desk.
   taken by another app, Settings says so.
 - **Clippy's own chat brain** is Claude Code running headless with your Claude Code login (no
   API key). It can read files and search the web, manage your messages and reminders, and
-  answer agents' questions for you; it cannot edit files or run commands. Of the `clippy` tools
+  answer agents' questions for you; it cannot edit files or run commands (beyond asking to restart
+  an app or the PC, below). Of the `clippy` tools
   it gets all but `ask_user` and `check_reply` (a brain turn waiting for your answer would hold
   up every chat turn behind it), so when it needs something from you it simply asks in its reply.
   It also has ten tools no agent sees: `list_notes`, `recent_activity`, `snooze_note`,
@@ -53,6 +54,18 @@ that have waited less than an hour are sent; older ones stay on the desk.
   nudge is a loud note from Clippy, so it reaches your phone when you are away like any other.
   Finished watches need the Claude Code hook switched on in Settings, since the hook is what
   reports that an agent finished.
+- **Restarting an app or the PC** (off by default: Settings → "Let Clippy restart apps and the
+  PC"). Tell him "Chrome is frozen, restart it" or "restart my PC" (on the desk, Telegram or
+  WhatsApp) and he posts an urgent question, e.g. "Restart Google Chrome (chrome.exe, 12
+  processes)? Unsaved work in it may be lost.", with Restart and Cancel buttons. Nothing happens
+  until **you** tap Restart (or answer yes) on the note or your phone; Clippy can't answer it for
+  you, and an unanswered request expires after 10 minutes. Restarting an app closes every process
+  of that exe and starts it again from its own path with its original command line (apps that
+  restart themselves, like Explorer, are left to it). Windows' own processes, apps running as
+  administrator and Clippy himself are refused. A PC restart happens 60 seconds after you confirm,
+  with a "Cancel restart" button meanwhile. Each outcome leaves a short "🔁 Restart" note. Only
+  Clippy's brain gets these tools (`list_open_apps`, `restart_app`, `restart_computer`), not your
+  other agents.
 - **A morning brief** (Settings → Morning brief; 09:00 on weekdays by default) is one loud note
   from Clippy: today's reminders, the questions waiting on you, your unread notes, and what the
   agents did overnight per project. A quiet day gets a single "Clear day" line. If the PC was off at
@@ -315,6 +328,11 @@ local API), `brain\` (the brain's MCP config) and `hook-state.json`.
   with data in it is the easiest way for a crafted WhatsApp or agent message to send a file out.
   Search queries are still a narrow channel; to close it too, remove `WebSearch` from
   `ALLOWED_TOOLS` and `BUILTIN_TOOLS` in `apps/desktop/src/main/brain/brain.ts` and rebuild.
+- **Restart requests are user-confirmed by design.** A file, web page or agent message could try
+  to talk the brain into restarting something, so the brain can only *ask*: the restart runs only
+  after your own tap on the desk, in Telegram or on WhatsApp. An answer from Clippy
+  (`answer_pending`) and any answer through the local API are refused for these questions. Turning
+  the setting off stops new requests and any not yet confirmed.
 - **Meta's test number.** It can only message the numbers you verify (up to 5), shows as a test
   sender, and Meta can change or limit test numbers at any time. Outside the 24 h window it can
   only send the approved template.

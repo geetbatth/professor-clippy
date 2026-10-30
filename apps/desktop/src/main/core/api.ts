@@ -8,6 +8,8 @@
  * - `GET /asks/:id?wait=<s>` long-polls. `wait` must be a non-negative number of
  *   seconds (anything else is a 400); values above `MAX_LONG_POLL_S` are clamped
  *   to it. Missing/empty `wait` means 0 (answer immediately).
+ * - `/power/*` only ever posts a question (202); a restart runs once the user confirms it on the
+ *   desk or a phone. `POST /asks/:id/answer` refuses (403) to answer such a confirmation.
  */
 import { timingSafeEqual } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
@@ -23,14 +25,17 @@ import {
   NewReminderInput,
   NewStandingOrderInput,
   NewWatchInput,
+  RestartAppBody,
+  RestartPcBody,
   Routes,
   SnoozeBody,
   type Health,
   type RouteDef,
 } from '@clippy/shared';
 import { z } from 'zod';
+import { ONLY_USER_CONFIRMS_MESSAGE, POWER_OFF_MESSAGE, type PowerActions } from '../power/actions';
 import type { Asks } from './asks';
-import { CoreError, NotFoundError, ValidationError } from './errors';
+import { CoreError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { writeAtomic } from './files';
 import type { Scheduler } from './scheduler';
 import type { Store } from './store';
@@ -44,6 +49,8 @@ export interface ApiDeps {
   store: Store;
   scheduler: Scheduler;
   asks: Asks;
+  /** Restart requests (`/power/*`). Absent: those routes answer 403 as if the setting were off. */
+  power?: PowerActions;
   /** Bearer token every request must present. */
   token: string;
   /** Reported by `GET /health`. */
@@ -132,6 +139,9 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       Routes.answerAsk,
       async ({ req, id }) => {
         const { answer, via } = await body(req, AnswerAskBody);
+        // Only the user confirms a restart, and their taps arrive in-process (desk, Telegram,
+        // WhatsApp). This API serves agents, so it never confirms one, whatever `via` it claims.
+        if (deps.power?.isConfirmation(id)) throw new ForbiddenError(ONLY_USER_CONFIRMS_MESSAGE);
         return ok(asks.answer(id, answer, via));
       },
     ],
@@ -147,6 +157,15 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       },
     ],
     [Routes.cancelWatch, ({ id }) => (found(store.cancelWatch(id), 'watch', id), { status: 204 })],
+    [
+      Routes.restartApp,
+      async ({ req }) => {
+        const { name, reason } = await body(req, RestartAppBody);
+        return { status: 202, body: await power().requestRestartApp(name, reason) };
+      },
+    ],
+    [Routes.restartPc, async ({ req }) => ({ status: 202, body: await power().requestRestartPc((await body(req, RestartPcBody)).reason) })],
+    [Routes.listApps, async () => ok(await power().listApps())],
   ]);
 
   return (req, res) => {
@@ -164,6 +183,11 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       send(res, reply);
     })();
   };
+
+  function power(): PowerActions {
+    if (!deps.power) throw new ForbiddenError(POWER_OFF_MESSAGE);
+    return deps.power;
+  }
 
   /** A standing order's answer to a new ask, if one is found in time. Never rejects. */
   async function matchStandingOrder(input: NewAskInput): Promise<{ orderId: string; answer: string } | undefined> {

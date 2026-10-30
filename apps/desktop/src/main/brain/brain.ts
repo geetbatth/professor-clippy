@@ -23,6 +23,10 @@ export const SESSION_KV_KEY = 'brainSessionId';
  * until the user answers, and a brain turn waiting for an answer would stall every turn
  * queued behind it (the user's answer would itself be a queued turn). The brain asks in its
  * reply text instead (see the persona).
+ *
+ * `list_open_apps`, `restart_app` and `restart_computer` only *request* a restart: the user
+ * confirms it with a tap, and the brain cannot (decision "PC control" 1). They exist only with
+ * `CLIPPY_POWER_TOOLS=1`, which `buildMcpConfig` sets for the brain alone.
  */
 export const BRAIN_CLIPPY_TOOLS = [
   'leave_message',
@@ -41,6 +45,9 @@ export const BRAIN_CLIPPY_TOOLS = [
   'watch_for',
   'list_watches',
   'cancel_watch',
+  'list_open_apps',
+  'restart_app',
+  'restart_computer',
 ] as const;
 /** clippy MCP tools the brain must never see (removed from its context, not just denied). */
 export const BRAIN_BLOCKED_CLIPPY_TOOLS = ['ask_user', 'check_reply'] as const;

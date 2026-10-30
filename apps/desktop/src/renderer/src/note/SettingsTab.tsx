@@ -20,6 +20,7 @@ const TOGGLES: readonly { key: Toggle; label: string; hint: string }[] = [
   { key: 'briefWeekdaysOnly', label: 'Weekdays only', hint: 'Even a professor rests at the weekend. Applies to the morning brief.' },
   { key: 'hideOnFullscreen', label: 'Hide during fullscreen apps', hint: 'Games, films and presentations stay Clippy-free.' },
   { key: 'autoStart', label: 'Start with Windows', hint: 'Clippy turns up for work when you do.' },
+  { key: 'allowPowerActions', label: 'Let Clippy restart apps and the PC', hint: 'Clippy still asks you to tap Restart first.' },
 ];
 
 /** Every `Settings` option: toggles, the default ask wait, standing orders, WhatsApp, Telegram, and Claude Code wiring. */

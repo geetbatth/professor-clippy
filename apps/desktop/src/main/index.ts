@@ -17,6 +17,7 @@ import { createClippyWindow, type ClippyWindow } from './window/createClippyWind
 import { registerTellHotkey, type TellHotkey } from './window/hotkey';
 import { registerIpc, type ClippyIpc } from './window/registerIpc';
 import { WindowChannels } from './window/windowApi';
+import { createWindowsExecutor } from './power/executor';
 import { electronSecretBox } from './secrets';
 import { runInstallInUtilityProcess } from './wiringProcess';
 
@@ -69,6 +70,8 @@ async function main(): Promise<void> {
     secrets: electronSecretBox,
     // Away-only notes (the hook's "agent finished") stay quiet while the user is at the PC.
     idleSeconds: () => powerMonitor.getSystemIdleTime(),
+    // Restarting an app or the PC, once the user has confirmed it (and only with the setting on).
+    powerExecutor: createWindowsExecutor(),
     // A fake Bot API for trying Telegram out without the real one: dev (unpackaged) builds only.
     // The installed app always talks to https://api.telegram.org, whatever the environment says.
     ...(!app.isPackaged && process.env.CLIPPY_TELEGRAM_API && { telegram: { baseUrl: process.env.CLIPPY_TELEGRAM_API } }),

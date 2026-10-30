@@ -8,7 +8,7 @@ npm workspaces monorepo (Node 24, npm 11, TypeScript strict, ESM, Vitest).
 | --- | --- | --- |
 | `packages/shared` | `@clippy/shared` | Every shared contract: zod schemas and types, settings, local API routes, data-dir paths, `ClippyClient`, Electron IPC contract, Worker relay protocol. TypeScript source only (no build step). |
 | `apps/desktop` | `@clippy/desktop` | Electron + electron-vite + React. Hosts the local API (127.0.0.1), SQLite store, scheduler and Clippy's brain. The character (`src/renderer/src/clippy/`) is a set of painted robot sprites driven by a pure mood state machine (`mood.ts`): `poses.ts` maps moods to sprites and aligns them on one stage, CSS does the motion, and clicks pass through his transparent pixels (alpha masks built when the sprites are preloaded). |
-| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Ten extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`, `watch_for`, `list_watches`, `cancel_watch`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. |
+| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Ten extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`, `watch_for`, `list_watches`, `cancel_watch`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. Three more (`list_open_apps`, `restart_app`, `restart_computer`) need env `CLIPPY_POWER_TOOLS=1`, also set only for the brain (see "Restarting apps and the PC"). |
 | `apps/hook` | `@clippy/hook` | Claude Code hook; posts a note when an agent finishes or needs permission. Built like `apps/mcp`. |
 | `apps/worker` | `@clippy/worker` | Cloudflare Worker plus one SQLite-backed Durable Object (`ClippyDO`, binding `CLIPPY`) relaying WhatsApp Cloud API traffic. |
 | `scripts/` | | Repo scripts: the Claude Code wiring (`install-claude-wiring.ts`, also bundled into the app for "Connect Claude Code"), SQLite smoke test, run-in-Electron helper. |
@@ -170,6 +170,46 @@ brief is unsent and still inside the catch-up window, the next timer tick (at mo
 wake from sleep may send it. "Waiting on you" counts only asks that are unanswered and not done
 (one dismissed on the desk is not waiting). Unread notes from `clippy` / `clippy-brain` are not counted
 either, so yesterday's unread brief cannot stop a "Clear day" line.
+
+## Restarting apps and the PC
+
+Opt-in (setting `allowPowerActions`, default off), requested by the brain, confirmed by the user.
+`PowerActions` (`main/power/actions.ts`) is created in `startCore` next to `Asks` (as
+`core.power`) and serves `POST /power/restart-app` `{name, reason?}`, `POST /power/restart-pc`
+`{reason?}` and `GET /power/apps` (`ClippyClient.restartApp` / `restartPc` / `listOpenApps`). With
+the setting off each is a `ForbiddenError` (403). A request never runs anything: it posts an urgent
+ask from `Professor Clippy` with options Restart / Cancel and answers 202 `{ id, status:
+'awaiting-confirmation', question }` at once (brain turns are queued, so nothing may wait for the
+user). On `ask:answered` for one of its asks: Restart (or yes / y / ok, trimmed, any case) runs it,
+anything else cancels, a request over 10 minutes old only leaves an "expired" note, and an answer
+`via: 'clippy'` is ignored. Every outcome is a `🔁 Restart` note from `clippy`.
+
+Only the user confirms. An `Asks` guard (`Asks.guard`) refuses `via: 'clippy'` for an open
+confirmation (`ForbiddenError`, "Only you can confirm a restart: …"), so the brain's
+`answer_pending` gets a 403; `POST /asks/:id/answer` also refuses any answer to one, whatever `via`
+it claims, since the user's own taps all arrive in-process (desk IPC, Telegram, WhatsApp). Pending
+requests are kept in kv `powerRequests`; each has an expiry timer, and `startServices` calls
+`core.power.expireLeftovers()` once Telegram is subscribed, which answers the leftovers "Expired"
+(after forgetting them, so nothing runs) and so updates the desk note and the phone copies.
+
+The machine side is a `PowerExecutor` (`main/power/executor.ts`), injected so tests use an
+in-memory fake (`test/power/fakeExecutor.ts`); `startCore`'s default refuses everything, and
+`main/index.ts` passes `createWindowsExecutor()`. It runs `%SystemRoot%` PowerShell with
+`-NoProfile -NonInteractive -EncodedCommand` (constant scripts; the exe name, validated against
+`^[\w .()+-]{1,100}$`, goes in env `CLIPPY_POWER_TARGET`) for `Get-Process` (windowed apps) and
+`Get-CimInstance Win32_Process` (pid, parent pid, path, command line, file description), and
+`shutdown.exe /r /t 60 /c …` / `/a` via `execFile`. `power/apps.ts` restarts an app: it refuses
+Windows' critical processes, Clippy's own tree and a process without an `ExecutablePath` (elevated
+or system), terminates every match with `process.kill`, waits 1.5 s, and unless new instances
+appeared by themselves (Explorer) relaunches the root instance (whose parent is not a match) with
+`spawn` (detached, `stdio: 'ignore'`, `windowsVerbatimArguments`, `argv0` = the quoted path, the
+rest of its command line verbatim, no `ELECTRON_*` / `CLIPPY_*` variables). A confirmed PC restart
+posts a second ask, "Restarting your PC in 60 seconds." with option Cancel restart; answering it
+from anywhere (Clippy included) runs `shutdown /a`.
+
+The MCP server registers `list_open_apps`, `restart_app` and `restart_computer` only when env
+`CLIPPY_POWER_TOOLS` is `1`, which `buildMcpConfig` sets for the brain alone; they are in
+`BRAIN_CLIPPY_TOOLS`. The brain still has no Bash or PowerShell.
 
 ## Storage
 

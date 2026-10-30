@@ -37,7 +37,7 @@ describe('MCP config for the brain', () => {
           type: 'stdio',
           command: 'C:/node/node.exe',
           args: ['C:/app/mcp/index.js'],
-          env: { CLIPPY_SENDER: 'clippy-brain', CLIPPY_HOME: 'C:/data' },
+          env: { CLIPPY_SENDER: 'clippy-brain', CLIPPY_HOME: 'C:/data', CLIPPY_POWER_TOOLS: '1' },
         },
       },
     });

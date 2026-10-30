@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Routes, routePath } from '../src/api';
+import { RestartAppBody, RestartPcBody, Routes, routePath } from '../src/api';
 
 describe('Routes', () => {
   it('matches the local API contract exactly', () => {
@@ -23,7 +23,27 @@ describe('Routes', () => {
       'GET /watches',
       'POST /watches',
       'DELETE /watches/:id',
+      'POST /power/restart-app',
+      'POST /power/restart-pc',
+      'GET /power/apps',
     ]);
+  });
+});
+
+describe('power bodies', () => {
+  it('takes an exe name with or without .exe, trimmed, and refuses anything that would need quoting', () => {
+    expect(RestartAppBody.parse({ name: ' chrome ' })).toEqual({ name: 'chrome' });
+    expect(RestartAppBody.parse({ name: 'Code.exe', reason: 'it froze' })).toEqual({ name: 'Code.exe', reason: 'it froze' });
+    expect(RestartAppBody.parse({ name: 'Notepad++ (x86)' }).name).toBe('Notepad++ (x86)');
+    for (const name of ['', 'a'.repeat(101), 'chrome"; calc', 'C:\\Windows\\explorer.exe', '$(calc)', 'a&b', 'a|b', "it's"]) {
+      expect(RestartAppBody.safeParse({ name }).success, name).toBe(false);
+    }
+    expect(RestartAppBody.safeParse({ name: 'x', reason: 'r'.repeat(301) }).success).toBe(false);
+  });
+
+  it('restart-pc takes an optional reason', () => {
+    expect(RestartPcBody.parse({})).toEqual({});
+    expect(RestartPcBody.parse({ reason: 'updates' })).toEqual({ reason: 'updates' });
   });
 });
 

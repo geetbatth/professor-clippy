@@ -29,6 +29,8 @@ export async function startFakeApi(appDataDir?: string) {
   const orders: StandingOrder[] = [];
   const watches: Watch[] = [];
   const waiters = new Map<string, Array<() => void>>();
+  /** What `/power/*` answers: 'on' (the setting is on) or 'off' (403, as the app does). */
+  const power = { mode: 'on' as 'on' | 'off' };
 
   const askResult = (m: Message): AskResult =>
     m.answer === undefined
@@ -60,6 +62,25 @@ export async function startFakeApi(appDataDir?: string) {
 
     const [, a, id, action] = url.pathname.split('/');
     const route = `${req.method} /${a}${id ? (id === 'pending' ? '/pending' : '/:id') : ''}${action ? `/${action}` : ''}`;
+    if (a === 'power') {
+      if (power.mode === 'off') return send(403, { error: 'Restarting apps and the PC is turned off.' });
+      if (req.method === 'GET' && id === 'apps') return send(200, [{ name: 'chrome', pid: 4242, title: 'Inbox - Google Chrome' }]);
+      if (req.method === 'POST' && (id === 'restart-app' || id === 'restart-pc')) {
+        const question = id === 'restart-app' ? `Restart ${body.name}?` : 'Restart your PC?';
+        const m: Message = {
+          id: nextId(),
+          kind: 'ask',
+          body: question,
+          options: ['Restart', 'Cancel'],
+          sender: 'Professor Clippy',
+          urgent: true,
+          state: 'unread',
+          createdAt: Date.now(),
+        };
+        messages.push(m);
+        return send(202, { id: m.id, status: 'awaiting-confirmation', question });
+      }
+    }
     switch (route) {
       case 'GET /health':
         return send(200, { ok: true, version: '0.0.0-fake' });
@@ -212,6 +233,7 @@ export async function startFakeApi(appDataDir?: string) {
     reminders,
     orders,
     watches,
+    power,
     answer,
     close: () =>
       new Promise<void>((resolve) => {

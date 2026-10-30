@@ -63,3 +63,7 @@ Agreed in chat: Clippy should show things only when they need you, and "chat" is
 11. Claude decided: watches match the project name case-insensitively and by substring ("clippy" matches "professor-clippy"), fire once, and ignore Clippy's own notes.
 12. Claude decided: a missed morning brief is sent on a late start or wake if it's before 12:00 local or within 2 hours of the brief time, at most once a day.
 13. Claude decided: every brain turn starts with the local time and UTC offset, so relative times ("after lunch", "at 3") resolve correctly.
+
+## PC control — 2026-10-30
+
+1. PC control is opt-in, brain-requested and user-confirmed. Clippy's brain can ask to restart an app or the PC (`restart_app`, `restart_computer`, with `list_open_apps` to find the name) only while Settings → "Let Clippy restart apps and the PC" is on (off by default). A request is only a question with Restart and Cancel buttons; the restart runs after the user's own tap on the desk, in Telegram or on WhatsApp, never on an answer from Clippy (`answer_pending`) or through the local API, and a request expires after 10 minutes or when Clippy restarts. The brain reads files and web search results, so a prompt injection could ask it to restart things: it gets request tools only, still no Bash or PowerShell, and ordinary agents never see these tools.

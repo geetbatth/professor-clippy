@@ -4,7 +4,17 @@
  */
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import { ApiError, Health, MATCH_ORDER_TIMEOUT_MS, MAX_LONG_POLL_S, Routes, routePath, type RouteDef } from './api';
+import {
+  ApiError,
+  Health,
+  MATCH_ORDER_TIMEOUT_MS,
+  MAX_LONG_POLL_S,
+  OpenApp,
+  PowerRequestResult,
+  Routes,
+  routePath,
+  type RouteDef,
+} from './api';
 import { portPath, tokenPath } from './paths';
 import {
   AskResult,
@@ -52,6 +62,8 @@ export interface ClippyClientOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+/** The power routes look processes up with PowerShell first, which can take a few seconds. */
+const POWER_TIMEOUT_MS = 30_000;
 
 export class ClippyClient {
   readonly baseUrl: string;
@@ -202,6 +214,32 @@ export class ClippyClient {
   /** `DELETE /watches/:id`: cancel a watch. */
   async cancelWatch(id: string): Promise<void> {
     await this.#request(Routes.cancelWatch, { id });
+  }
+
+  /**
+   * `POST /power/restart-app`: ask the user to confirm restarting an app. Returns at once with the
+   * confirmation question; the app is only restarted if the user taps Restart.
+   */
+  restartApp(name: string, reason?: string): Promise<PowerRequestResult> {
+    return this.#request(Routes.restartApp, {
+      body: { name, ...(reason !== undefined && { reason }) },
+      schema: PowerRequestResult,
+      timeoutMs: Math.max(POWER_TIMEOUT_MS, this.#timeoutMs),
+    });
+  }
+
+  /** `POST /power/restart-pc`: ask the user to confirm restarting the PC. Returns at once. */
+  restartPc(reason?: string): Promise<PowerRequestResult> {
+    return this.#request(Routes.restartPc, {
+      body: reason === undefined ? {} : { reason },
+      schema: PowerRequestResult,
+      timeoutMs: Math.max(POWER_TIMEOUT_MS, this.#timeoutMs),
+    });
+  }
+
+  /** `GET /power/apps`: running apps that have a window. */
+  listOpenApps(): Promise<OpenApp[]> {
+    return this.#request(Routes.listApps, { schema: z.array(OpenApp), timeoutMs: Math.max(POWER_TIMEOUT_MS, this.#timeoutMs) });
   }
 
   async #request<T = undefined>(
