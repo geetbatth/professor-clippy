@@ -10,7 +10,7 @@
  * `color-mix(in srgb, var(--ink) 14%, transparent)`.
  *
  * Intentionally NOT themed: Clippy's own artwork (his shadow and glows), drop shadows, the
- * white ring and text on the red badges, the white switch knob, the dark "wiring log" panel,
+ * white ring and text on the red badges, the white switch knob while off, the dark "wiring log" panel,
  * the "Clippy is missing" screen (no theme applies there) and the dev gallery.
  */
 /* Classic: the original yellow sticky note. */

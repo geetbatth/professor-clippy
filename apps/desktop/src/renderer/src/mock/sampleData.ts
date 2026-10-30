@@ -1,6 +1,9 @@
-/** Sample data for the mock backend: messages (notes, a reminder, an ask with options, a chat, some history) and Pad pages. */
+/**
+ * Sample data for the mock backend: messages (notes, a reminder, an ask with options, a chat, some
+ * history) and Pad pages; and, for the preview's Settings, standing orders and watches.
+ */
 import { ulid } from 'ulid';
-import type { Message, Page } from '@clippy/shared/schemas';
+import type { Message, NewWatchInput, Page } from '@clippy/shared/schemas';
 
 const MIN = 60_000;
 
@@ -141,6 +144,15 @@ export function samplePages(now: number): Page[] {
     }),
   ];
 }
+
+/** Standing orders the preview starts with. */
+export const SAMPLE_ORDERS: readonly string[] = [
+  'When an agent asks which branch to use, answer: staging',
+  'When an agent asks whether to run the tests, answer: yes, all of them',
+];
+
+/** Watches the preview starts with. */
+export const SAMPLE_WATCHES: readonly NewWatchInput[] = [{ project: 'payments', event: 'finished', nudge: 'Deploy to production' }];
 
 /** Clippy's canned chat replies in mock mode. */
 export const MOCK_REPLIES: readonly string[] = [

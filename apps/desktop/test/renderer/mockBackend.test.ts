@@ -59,6 +59,13 @@ describe('mock backend', () => {
     await expect(b.cancelWatch(watch.id + 'x')).rejects.toThrow(/No watch/);
   });
 
+  it('can start with standing orders and watches (the preview\'s Settings)', async () => {
+    const b = createMockBackend({ orders: ['say yes', 'say no'], watches: [{ project: 'payments', nudge: 'Deploy' }] });
+    expect((await b.listOrders()).map((o) => o.text)).toEqual(['say yes', 'say no']);
+    expect(await b.listWatches()).toEqual([expect.objectContaining({ project: 'payments', event: 'finished', nudge: 'Deploy', active: true })]);
+    expect(await createMockBackend().listOrders()).toEqual([]);
+  });
+
   it('lists newest first', async () => {
     const unread = await createMockBackend().listMessages({ state: 'unread' });
     const times = unread.map((m) => m.createdAt);

@@ -118,7 +118,7 @@ gives focus back on Escape. Auto-collapse is held off while the box has focus or
 A standing order (`StandingOrder`, table `standing_orders`, schema version 5; routes `GET/POST
 /orders`, `DELETE /orders/:id`; IPC `listOrders` / `addOrder` / `cancelOrder`) is a sentence the user
 gave Clippy ("When an agent asks about X, answer: Y"), saved by the brain's `add_standing_order` tool
-or typed into Settings (`RulesSection`). `POST /asks` awaits `ApiDeps.matchOrder` before storing the
+or typed into Settings → Standing orders & watches (`RulesSection`). `POST /asks` awaits `ApiDeps.matchOrder` before storing the
 ask; a match goes to `Asks.create(input, { orderId, answer })`, which stores the ask already
 `done`, `answeredVia: 'clippy'` with `Message.orderId` (column `order_id`), so it never pops up,
 isn't mirrored to a phone (both channels skip answered asks) and the agent's long-poll answers
@@ -136,8 +136,8 @@ order id, and with options only an answer that is one of them (the option's own 
 A watch (`Watch`, table `watches`, schema version 6; routes `GET/POST /watches`, `DELETE
 /watches/:id`; IPC `listWatches` / `addWatch` / `cancelWatch`) is "when this agent finishes, remind
 me to Y": an optional project (matched as a case-insensitive substring of a message's `project`),
-an event (`finished` or `any`) and a nudge. The brain sets one with `watch_for`; Settings
-(`RulesSection`, "Waiting for") lists and cancels them. The hook now tags its notes with
+an event (`finished` or `any`) and a nudge. The brain sets one with `watch_for`; Settings →
+Standing orders & watches (`RulesSection`, "Waiting for") lists and cancels them. The hook now tags its notes with
 `Message.event` (`agent-finished` for Stop, `agent-needs-permission` for Notification; column
 `messages.event`), which is what `finished` waits for; `any` takes any note or question from the
 project, never a reminder or chat line. `Watcher` (`main/watches.ts`, started in `startServices`
@@ -262,7 +262,9 @@ the same tokens (`--paper-1`, `--ink`, `--card`, `--btn`, `--bubble`, ...; `clas
 `var(--token)`, with `color-mix(in srgb, var(--ink) N%, transparent)` for see-through shades.
 `test/renderer/theme.test.ts` checks every theme defines every token. Left as literal colours on
 purpose: Clippy's own artwork and shadows, drop shadows, the white on the red badges, the switch
-knob, the dark wiring-log panel, the "Clippy is missing" screen and the dev gallery.
+knob while off (on, it takes `--btn-ink`), the dark wiring-log panel, the "Clippy is missing"
+screen and the dev gallery. Settings → Look picks the three settings with paper chips
+(`ThemeSwatches`, `note/settings/LookSection.tsx`), saved and painted at once.
 
 `hooks/useTheme.ts` sets `data-theme` and `data-dark` on `<html>` (`themeAttrs`, `theme.ts`). Under
 `data-dark="true"` Clippy's sprite gets a rim light, and native controls turn dark. Windows' mode
@@ -274,6 +276,24 @@ three theme keys, at least one) saves through `ApiDeps.setLook`, which `startSer
 "go dark" works. The renderer re-reads the settings when the brain finishes a turn
 (`brain:state` idle), since that is when `set_look` may have changed them, and on
 `settings:changed`, which main sends to every window whenever the settings change.
+
+## Settings
+
+The note's tabs are Notes · Pad · Clippy · ⚙ Settings. Settings (`note/SettingsTab.tsx`) opens on
+`settings/SettingsMenu.tsx`: History, then the sections grouped How I behave (`alerts`, `phone`,
+`brief`), Agents (`claude`, `rules`) and This PC (`look`, `pc`), one component each in
+`note/settings/`. Each row's one-line summary is `sectionSummary(section, ctx)` (`summaries.ts`,
+pure and tested) over the settings plus what the menu reads when it opens: Telegram's status, the
+order, watch and History counts (the same `listMessages({state: 'done'})` History shows, chat left
+out; over 50 reads "50+", as History lists the latest 50) and the hotkey status. No IPC was added.
+The open section lives in `App` (`settingsSection`), so `openSettings(section?)` can deep-link
+from anywhere: the empty Notes tab's "History ›" opens `history`, which is the old History tab
+(`HistoryTab`). The ⚙ tab itself always opens on the menu. Each section keeps its own input state
+and commit helpers (ask wait, away time, hotkey, relay fields). In the Phone section, Telegram and
+the WhatsApp relay are rows that unfold their setup in place. "Run the welcome again" (Windows &
+hotkeys) saves `firstRunDone: false`, which brings back the first-run wizard; the version shown
+there is `apps/desktop/package.json`'s, imported at build time. Preview: `?mock=1&tab=settings&section=look`
+(`tab=history` still works, as Settings → History; `&telegram=1` pairs the mock's Telegram).
 
 ## Pages (the Pad)
 

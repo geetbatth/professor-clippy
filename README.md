@@ -7,9 +7,9 @@ steel canister stencilled "PROF. CLIPPY", with a paperclip head in mismatched go
 mortarboard, robot arms and caster wheels. Your AI agents (Claude Code and
 any other MCP client on this PC) leave him notes, reminders and questions; he pops up, wiggles,
 and waits until you deal with them. He is quiet by default: he only pops up for questions,
-reminders and urgent things (Settings → Pop up for → Everything changes that); other notes wait
+reminders and urgent things (Settings → Pop-ups & sounds → Pop up for → Everything changes that); other notes wait
 under his unread badge. Notes and questions are mirrored to your WhatsApp and/or Telegram once
-you have been away from the PC for a few minutes (Settings → Send to my phone → Always sends them
+you have been away from the PC for a few minutes (Settings → Phone → Send to my phone → Always sends them
 at once), and you can answer, or just chat with him, from your phone. When you go away, only notes
 that have waited less than an hour are sent; older ones stay on the desk.
 
@@ -21,11 +21,11 @@ that have waited less than an hour are sent; older ones stay on the desk.
   and the Pad tools `write_page`, `read_page`, `list_pages` (below).
 - **A Claude Code hook** leaves a note when an agent finishes or needs your permission.
   "Agent finished" notes only interrupt you when you have been away from the PC (no keyboard or
-  mouse input) for a while: Settings → "I count as away after N
+  mouse input) for a while: Settings → Phone → "I count as away after N
   min" (default 3; 0 = always). While you are at the PC they go quietly into History, with no
   pop-up, sound or WhatsApp/Telegram message. Permission requests always come through.
 - **Tell Clippy** is a one-line box under the notes (and a global hotkey, default
-  **Ctrl+Alt+Space**, Settings → "Tell Clippy hotkey"; empty = off). Press it from any app, type
+  **Ctrl+Alt+Space**, Settings → Windows & hotkeys → "Tell Clippy hotkey"; empty = off). Press it from any app, type
   "remind me at 3 to call Dave" and Enter; his reply shows under the box (× clears it). Escape
   tucks him away again. It is the same conversation as the **Clippy** tab. If the hotkey is
   taken by another app, Settings says so.
@@ -60,12 +60,13 @@ that have waited less than an hour are sent; older ones stay on the desk.
 - **Colour themes**: the note can be classic yellow, mint, blush, sky or peach, or one of two dark
   ones, night and chalkboard (Clippy gets a soft rim light on those). "Follow Windows dark mode"
   switches to your chosen dark theme while Windows is dark and back again, within a second and
-  without a restart. Tell him "go dark" or "make it mint" and he changes it (there is no picker in
-  Settings yet). In the browser preview, `?mock=1&theme=night` shows a theme.
+  without a restart. Pick one under Settings → Look (the paper chips apply at once; the dark paper
+  to follow Windows with shows once "Follow Windows dark mode" is on), or tell him "go dark" or
+  "make it mint" and he changes it. In the browser preview, `?mock=1&theme=night` shows a theme.
 - **Standing orders** answer agents' questions for you. Tell him "whenever an agent asks which
-  branch to use, say staging" (or add one under Settings → "Standing orders"; × cancels it) and
-  from then on a question that an order clearly covers is answered the moment it arrives, with no
-  pop-up: it goes straight into History as "Answered by standing order: ...". A one-shot Claude
+  branch to use, say staging" (or add one under Settings → Standing orders & watches → "Answer for
+  me"; × cancels it) and from then on a question that an order clearly covers is answered the
+  moment it arrives, with no pop-up: it goes straight into History as "Answered by standing order: ...". A one-shot Claude
   Code run (Haiku, no tools) judges whether an order covers the question; if none does, or it
   takes longer than 20 seconds, the question reaches you as usual. For a question with options,
   the answer must be one of them. Don't put secrets in standing orders: an agent's question could
@@ -74,12 +75,12 @@ that have waited less than an hour are sent; older ones stay on the desk.
   remind me to deploy" and the next time an agent working in a project whose folder name contains
   "payments" finishes (even when you were at the PC and the note went quietly into History),
   he leaves a note titled "⏰ Nudge" whose text is "deploy" plus a line like "(payments agent
-  finished)". It fires once. They are listed under Settings → "Waiting for" (× cancels one). The
-  nudge is a loud note from Clippy, so it reaches your phone when you are away like any other.
-  Finished watches need the Claude Code hook switched on in Settings, since the hook is what
-  reports that an agent finished.
-- **Restarting an app or the PC** (off by default: Settings → "Let Clippy restart apps and the
-  PC"). Tell him "Chrome is frozen, restart it" or "restart my PC" (on the desk, Telegram or
+  finished)". It fires once. They are listed under Settings → Standing orders & watches → "Waiting
+  for" (× cancels one). The nudge is a loud note from Clippy, so it reaches your phone when you are
+  away like any other. Finished watches need the Claude Code hook switched on (Settings → Claude
+  Code), since the hook is what reports that an agent finished.
+- **Restarting an app or the PC** (off by default: Settings → Windows & hotkeys → "Let Clippy
+  restart apps and the PC"). Tell him "Chrome is frozen, restart it" or "restart my PC" (on the desk, Telegram or
   WhatsApp) and he posts an urgent question, e.g. "Restart Google Chrome (chrome.exe, 12
   processes)? Unsaved work in it may be lost.", with Restart and Cancel buttons. Nothing happens
   until **you** tap Restart (or answer yes) on the note or your phone; Clippy can't answer it for
@@ -90,9 +91,9 @@ that have waited less than an hour are sent; older ones stay on the desk.
   with a "Cancel restart" button meanwhile. Each outcome leaves a short "🔁 Restart" note. Only
   Clippy's brain gets these tools (`list_open_apps`, `restart_app`, `restart_computer`), not your
   other agents.
-- **Approving agents' permission requests from your phone** (off by default: Settings →
-  "Approve agents' permission requests from your phone", under the Claude Code hook). While you
-  are away (the "I count as away after" time), a Claude Code agent that stops to ask "allow this
+- **Approving agents' permission requests from your phone** (off by default: Settings → Claude
+  Code → "Approve agents from my phone", which needs the Claude Code hook on). While you
+  are away (the "I count as away after" time, Settings → Phone), a Claude Code agent that stops to ask "allow this
   tool use?" puts the question on the note and on your phone instead, e.g. "🔐 payments wants
   permission / Run: npm publish", with Allow and Deny buttons; your tap answers the agent. A typed
   reply ("use pnpm instead") denies it and passes your words on to the agent. At the PC nothing
@@ -115,7 +116,11 @@ that have waited less than an hour are sent; older ones stay on the desk.
   (outbound only) and sends notes, reminders and questions to the one private chat you pair.
   It runs alongside WhatsApp; configure either or both.
 - Messages from agents are shown verbatim, with the sender and project. Dismissed messages go to
-  a searchable history (SQLite).
+  a searchable history (SQLite): Settings → History, or "History ›" under an empty Notes tab.
+- **Settings** (the ⚙ tab) opens on a short menu: History; how Clippy behaves (Pop-ups & sounds,
+  Phone, Morning brief); agents (Claude Code, Standing orders & watches); this PC (Look, Windows &
+  hotkeys). Each row says what it is set to now; "‹ Settings" goes back. Windows & hotkeys also
+  has **Run the welcome again** and the app version.
 
 Design decisions are in [DECISIONS.md](DECISIONS.md); the architecture is in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -157,7 +162,7 @@ npm run package
   2. Telegram (optional): paste your bot token and pair, or **Skip Telegram for now**.
   3. Sounds, unsolicited advice (off by default) and start with Windows.
   4. **Connect Claude Code**: shows exactly what would change (a dry run) and installs only when
-     you click **Looks good, install**. You can skip this and do it later from Settings.
+     you click **Looks good, install**. You can skip this and do it later from Settings → Claude Code.
 - Uninstall from Windows Settings → Apps. To clean Claude Code up too, run
   `node scripts/install-claude-wiring.ts uninstall` from a checkout first (see below; it finds
   the entries by name and marker, wherever they point). Your notes and settings in
@@ -199,7 +204,7 @@ node scripts/install-claude-wiring.ts uninstall           # reverses all three
 
 Add `--home <dir>` to work on `<dir>\.claude` instead of your real config (for trying it out).
 Start a new Claude Code session afterwards so it picks up the MCP server and the hint. The hook
-can be switched off in Clippy's Settings without uninstalling it.
+can be switched off in Clippy's Settings → Claude Code without uninstalling it.
 
 ## WhatsApp (Meta + Cloudflare Worker)
 
@@ -213,7 +218,7 @@ approved, `wrangler login`, set six secrets, `wrangler deploy`, point Meta's web
 How it behaves once connected:
 
 - Every agent note and question is sent to your WhatsApp (once you are away from the PC, unless
-  Settings → Send to my phone is "Always"; notes you deal with at the desk first are never sent, and a question left unanswered for
+  Settings → Phone → Send to my phone is "Always"; notes you deal with at the desk first are never sent, and a question left unanswered for
   half the time `ask_user` waits, 5 minutes by default, is sent even while you are at the PC).
   Within 24 h of your last WhatsApp
   message to Clippy it is plain text; otherwise it goes out as the approved `clippy_note`
@@ -225,7 +230,7 @@ How it behaves once connected:
   desktop shows them later as "missed while you were away". Reminders that already exist when you
   connect WhatsApp (or fix a wrong secret, or switch to another Worker) are synced then; any the
   Worker hasn't confirmed are filled in the next time the app starts.
-- **Disconnect** (Settings) or a new Worker URL takes your reminders off the old Worker: the app
+- **Disconnect** (Settings → Phone → WhatsApp relay) or a new Worker URL takes your reminders off the old Worker: the app
   deletes each one there (for up to 10 seconds) before letting go of it. See the limitations
   below for when that can't work.
 
@@ -236,7 +241,7 @@ your phone, and works alongside WhatsApp (or instead of it).
 
 1. In Telegram, talk to **@BotFather**: `/newbot`, pick a name and a username ending in `bot`.
    It gives you a token like `123456789:AAH…`.
-2. Clippy → Settings → **Telegram**: paste the token, **Save token**. The status line should say
+2. Clippy → Settings → Phone → **Telegram**: paste the token, **Save token**. The status line should say
    "Connected as @YourBot".
 3. Settings shows a 6-character code: send **`/start CODE`** to your bot from your own Telegram
    account. Clippy answers "Paired!" and Settings shows your first name. (Or type your numeric
@@ -285,7 +290,7 @@ keys already there:
 Start Clippy: on load it encrypts `telegramBotToken` into `telegramBotTokenEnc`, rewrites the
 file **without** the plaintext, and starts polling. With `telegramChatId` set, no pairing is
 needed (in a private chat the chat id is your Telegram user id; a numeric string works too).
-Without it, pair with the code from Settings. If the PC can't encrypt (no `safeStorage`), the
+Without it, pair with the code from Settings → Phone → Telegram. If the PC can't encrypt (no `safeStorage`), the
 plaintext is used as it is and left in the file.
 
 ## Development
@@ -301,7 +306,8 @@ npm run dev:renderer -w apps/desktop   # the UI alone in a browser, on a mock ba
 ```
 
 In the browser preview, add `?mock=1` for the mock backend, `&firstrun=1` for the wizard,
-`?mode=expanded&tab=chat` (or `tab=pad`) and so on for a given view, `?page=Scratch` for a
+`?mode=expanded&tab=chat` (or `tab=pad`) and so on for a given view (`tab=settings&section=look`
+opens a Settings section; `&telegram=1` pretends Telegram is paired), `?page=Scratch` for a
 pinned-out page's window, and `?gallery=1` for the
 character sheet (`&align=pairs` overlays each pose on idle, for tuning the pose table in
 `apps/desktop/src/renderer/src/clippy/poses.ts`). To retake the README screenshots, build, then run
@@ -352,16 +358,16 @@ local API), `brain\` (the brain's MCP config) and `hook-state.json`.
 | Agents don't see the Clippy tools | Start a **new** Claude Code session. Check `claude mcp list` shows `clippy`. Re-run Connect Claude Code. Make sure `node --version` works in a new terminal (Node 24+). |
 | "Claude Code was not found" in the wizard | Install Claude Code and run `claude` once to sign in; or set `CLIPPY_CLAUDE_PATH`. |
 | An agent says Clippy isn't running | The MCP server starts the app from `%LOCALAPPDATA%\Programs\professor-clippy\`; if you installed elsewhere, set `CLIPPY_APP_PATH` for the MCP server, or start Clippy yourself. |
-| No notes when an agent finishes | Settings → Claude Code hook must be on, and the hook installed (Connect Claude Code). New sessions only. While you are at the PC they go straight to History (see "Agent-finished pings" in Settings; 0 = always pop up). |
+| No notes when an agent finishes | Settings → Claude Code → Claude Code hook must be on, and the hook installed (Connect Claude Code). New sessions only. While you are at the PC they go straight to History (see "I count as away after" in Settings → Phone; 0 = always pop up). |
 | Chat says Clippy can't answer / not logged in | Run `claude` in a terminal and sign in; the brain uses that login. |
-| WhatsApp shows "off" in Settings | Both the Worker URL (https) and the secret must be saved. "saved" only means they are; it doesn't prove the Worker answers, so check `https://<worker>/health` answers `{"ok":true}`. |
+| WhatsApp shows "off" in Settings → Phone | Both the Worker URL (https) and the secret must be saved. "saved" only means they are; it doesn't prove the Worker answers, so check `https://<worker>/health` answers `{"ok":true}`. |
 | Nothing arrives on WhatsApp | The secret must equal the Worker's `PC_SECRET`; your number must be a verified recipient of the test number; outside the 24 h window the `clippy_note` template must be **Approved**. `npx wrangler tail` in `apps/worker` shows the Worker's logs. |
 | WhatsApp replies don't reach the PC | Meta's webhook must point at `<worker>/webhook` with your `VERIFY_TOKEN` and be subscribed to `messages`; `APP_SECRET` must be right (bad signatures are dropped). |
 | Telegram says "Error: Telegram rejected the bot token (401)" | The token is wrong or was revoked (@BotFather → `/revoke`). Paste the current one and Save token. |
 | Telegram says "409 Conflict" | Something else reads this bot's updates: another Clippy (another PC, or a dev build) with the same token, or a webhook set on the bot. One Clippy per bot; remove a webhook with the Bot API's `deleteWebhook`. |
-| Nothing arrives on Telegram | Settings must show "Paired with …" and **Send test** must work. If you typed the chat id in, send `/start` to the bot once from your account (a bot can't message someone who never started it). |
-| Clippy vanished | He hides while a fullscreen app is focused (Settings → Hide during fullscreen apps), and closing the window only hides him: use the tray icon → Show Clippy. |
-| Start fresh | Quit from the tray, then delete or rename `%APPDATA%\professor-clippy\`. Set `firstRunDone` to `false` in its `settings.json` to see the wizard again. |
+| Nothing arrives on Telegram | Settings → Phone → Telegram must show "Paired with …" and **Send test** must work. If you typed the chat id in, send `/start` to the bot once from your account (a bot can't message someone who never started it). |
+| Clippy vanished | He hides while a fullscreen app is focused (Settings → Pop-ups & sounds → Hide during fullscreen apps), and closing the window only hides him: use the tray icon → Show Clippy. |
+| Start fresh | Quit from the tray, then delete or rename `%APPDATA%\professor-clippy\`. To see the wizard again: Settings → Windows & hotkeys → **Run the welcome again**. |
 
 ## Known limitations & security notes
 

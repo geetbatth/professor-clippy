@@ -165,6 +165,22 @@
   color: color-mix(in srgb, var(--ink) 75%, transparent);
   font-size: 13px;
 }
+/* "History ›" under the empty state. */
+.empty-link {
+  margin-top: 6px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-ghost);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.empty-link:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+}
 .empty-title {
   margin: 0 0 4px;
   font: 700 22px 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;

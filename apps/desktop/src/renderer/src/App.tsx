@@ -16,10 +16,11 @@ import { useWindowDrag } from './hooks/useWindowDrag';
 import { alertLevel, loudCount } from './note/alertLevel';
 import { ChatTab } from './note/ChatTab';
 import { FirstRunWizard } from './note/FirstRunWizard';
-import { HistoryTab } from './note/HistoryTab';
 import { NotesTab } from './note/NotesTab';
 import { PadTab } from './note/PadTab';
 import { SettingsTab } from './note/SettingsTab';
+import { SECTIONS } from './note/settings/SettingsMenu';
+import type { SettingsSection } from './note/settings/summaries';
 import { StickyNote, type Tab } from './note/StickyNote';
 import { TellBox } from './note/TellBox';
 import { pickQuip, quipForMessage } from './quips/pickQuip';
@@ -32,14 +33,18 @@ import { SpeechBubble } from './views/SpeechBubble';
 
 /** The open note tucks itself away after this long with nothing to show and nobody about. */
 const AUTO_COLLAPSE_MS = 2 * 60_000;
-const TABS: readonly Tab[] = ['notes', 'pad', 'chat', 'history', 'settings'];
+const TABS: readonly Tab[] = ['notes', 'pad', 'chat', 'settings'];
 
 export function App({ runtime }: { runtime: Runtime }) {
   const { api, shell } = runtime;
-  // Dev/screenshot hooks: ?mode=expanded&tab=chat
+  // Dev/screenshot hooks: ?mode=expanded&tab=chat, ?tab=settings&section=look (tab=history is Settings → History)
   const params = useMemo(() => new URLSearchParams(location.search), []);
   const [mode, setModeState] = useState<WindowMode>(params.get('mode') === 'expanded' ? 'expanded' : 'mini');
-  const [tab, setTab] = useState<Tab>(TABS.find((t) => t === params.get('tab')) ?? 'notes');
+  const [tab, setTab] = useState<Tab>(params.get('tab') === 'history' ? 'settings' : (TABS.find((t) => t === params.get('tab')) ?? 'notes'));
+  /** The Settings section open (undefined: its menu). */
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(
+    params.get('tab') === 'history' ? 'history' : SECTIONS.find((s) => s.id === params.get('section'))?.id,
+  );
   const [quip, setQuip] = useState<string>();
   const [wiggle, setWiggle] = useState(0);
   /** The hotkey asked for the Tell Clippy box; cleared once it has taken focus. */
@@ -92,6 +97,14 @@ export function App({ runtime }: { runtime: Runtime }) {
       }),
     [shell],
   );
+  /** Show Settings, at `section` or (without one) its menu. Anything in the note can deep-link here. */
+  const openSettings = useCallback((section?: SettingsSection) => {
+    setSettingsSection(section);
+    setTab('settings');
+  }, []);
+  // The Settings tab itself always opens on the menu.
+  const pickTab = useCallback((t: Tab) => (t === 'settings' ? openSettings() : setTab(t)), [openSettings]);
+  const showHistory = useCallback(() => openSettings('history'), [openSettings]);
   const tellFocused = useCallback(() => setWantTellFocus(false), []);
   const setTellActive = useCallback((active: boolean) => {
     tellActive.current = active;
@@ -193,7 +206,7 @@ export function App({ runtime }: { runtime: Runtime }) {
         note={
           <StickyNote
             tab={tab}
-            onTab={setTab}
+            onTab={pickTab}
             unread={unread}
             padNew={pad.unseen}
             onCollapse={() => setMode('mini')}
@@ -208,6 +221,7 @@ export function App({ runtime }: { runtime: Runtime }) {
                 {tab === 'notes' && (
                   <NotesTab
                     stack={stack}
+                    onHistory={showHistory}
                     footer={
                       <TellBox
                         chat={chat}
@@ -222,8 +236,7 @@ export function App({ runtime }: { runtime: Runtime }) {
                 )}
                 {tab === 'pad' && <PadTab api={api} pad={pad} onActive={setPadActive} />}
                 {tab === 'chat' && <ChatTab chat={chat} />}
-                {tab === 'history' && <HistoryTab api={api} />}
-                {tab === 'settings' && <SettingsTab api={api} state={settingsState} />}
+                {tab === 'settings' && <SettingsTab api={api} state={settingsState} section={settingsSection} onSection={openSettings} />}
               </>
             )}
           </StickyNote>

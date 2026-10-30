@@ -42,7 +42,7 @@ async function capture(win: BrowserWindow, backend: ReturnType<typeof createMock
   await sleep(3000);
   await shot(win, dir, 'expanded-notes');
 
-  await js(`[...document.querySelectorAll('.note-tab')].find((b) => b.textContent.startsWith('Chat')).click()`);
+  await js(`[...document.querySelectorAll('.note-tab')].find((b) => b.textContent.startsWith('Clippy')).click()`);
   await sleep(400);
   await js(`(() => {
     const box = document.querySelector('.chat-input textarea');
@@ -52,7 +52,7 @@ async function capture(win: BrowserWindow, backend: ReturnType<typeof createMock
   })()`);
   await sleep(1500);
   await shot(win, dir, 'expanded-chat');
-  await js(`[...document.querySelectorAll('.note-tab')].find((b) => b.textContent.startsWith('Settings')).click()`);
+  await js(`[...document.querySelectorAll('.note-tab')].find((b) => b.textContent.includes('Settings')).click()`);
   await sleep(400);
   await shot(win, dir, 'expanded-settings');
 

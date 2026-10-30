@@ -6,8 +6,8 @@ import './RulesSection.css';
 const MAX_ORDER_LENGTH = 500;
 
 /**
- * Settings → what Clippy does on his own: the standing orders he answers agents' questions by, and
- * the agents he is waiting on to nudge you.
+ * Settings → Standing orders & watches: what Clippy does on his own, the standing orders he answers
+ * agents' questions by ("Answer for me"), and the agents he is waiting on to nudge you ("Waiting for").
  * Self-contained (it loads and saves through `api`), so another list can sit beside it.
  */
 export function RulesSection({ api }: { api: ClippyWindowApi }) {
@@ -61,7 +61,7 @@ function StandingOrders({ api }: { api: ClippyWindowApi }) {
 
   return (
     <fieldset className="setting-group">
-      <legend>Standing orders</legend>
+      <legend className="settings-label">Answer for me</legend>
       <span className="setting-hint">
         Tell me once how to answer an agent's question and I'll answer it for you from then on. Tell me in chat, or add one here.
       </span>
@@ -87,7 +87,7 @@ function StandingOrders({ api }: { api: ClippyWindowApi }) {
           className="field-input"
           value={text}
           maxLength={MAX_ORDER_LENGTH}
-          placeholder="When an agent asks about…, answer: …"
+          placeholder="Whenever an agent asks…"
           aria-label="New standing order"
           onChange={(e) => setText(e.target.value)}
         />
@@ -127,7 +127,7 @@ function WaitingFor({ api }: { api: ClippyWindowApi }) {
 
   return (
     <fieldset className="setting-group">
-      <legend>Waiting for</legend>
+      <legend className="settings-label">Waiting for</legend>
       <span className="setting-hint">
         Tell me "when the payments agent finishes, remind me to deploy" and I'll nudge you once it does.
       </span>

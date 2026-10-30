@@ -5,8 +5,11 @@ import { AskCard } from './AskCard';
 import { MessageCard } from './MessageCard';
 import './cards.css';
 
-/** The unread stack, newest first, with `footer` (the Tell Clippy box) pinned below it. */
-export function NotesTab({ stack, footer }: { stack: UnreadStack; footer?: ReactNode }) {
+/**
+ * The unread stack, newest first, with `footer` (the Tell Clippy box) pinned below it. With
+ * nothing unread, a "History ›" link (`onHistory`) leads to what has been dealt with.
+ */
+export function NotesTab({ stack, footer, onHistory }: { stack: UnreadStack; footer?: ReactNode; onHistory?: () => void }) {
   const now = useNow(30_000);
   return (
     <div className="notes">
@@ -15,6 +18,11 @@ export function NotesTab({ stack, footer }: { stack: UnreadStack; footer?: React
           <div className="empty">
             <p className="empty-title">Inbox zero!</p>
             <p>Not a single note. Professor Clippy is mildly impressed.</p>
+            {onHistory && (
+              <button type="button" className="empty-link" onClick={onHistory}>
+                History ›
+              </button>
+            )}
           </div>
         ) : (
           <NoteCards stack={stack} now={now} />

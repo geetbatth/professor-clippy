@@ -13,6 +13,7 @@ import {
   type AskResult,
   type Message,
   type MessageFilter,
+  type NewWatchInput,
   type Page,
   type StandingOrder,
   type Watch,
@@ -36,6 +37,9 @@ export interface MockOptions {
   theme?: ThemeId;
   /** Start with a Telegram bot token saved (and this chat paired, if given). */
   telegram?: { chatId?: number; chatName?: string };
+  /** Start with these standing orders and watches (none by default). */
+  orders?: readonly string[];
+  watches?: readonly NewWatchInput[];
 }
 
 export interface MockBackend extends ClippyWindowApi {
@@ -92,6 +96,20 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
   };
   const orders = new Map<string, StandingOrder>();
   const watches = new Map<string, Watch>();
+  function putOrder(text: string): StandingOrder {
+    const t = now();
+    const order: StandingOrder = { id: ulid(t), text, active: true, createdAt: t };
+    orders.set(order.id, order);
+    return { ...order };
+  }
+  function putWatch({ project, event, nudge }: NewWatchInput): Watch {
+    const t = now();
+    const watch: Watch = { id: ulid(t), ...(project !== undefined && { project }), event: event ?? 'finished', nudge, active: true, createdAt: t };
+    watches.set(watch.id, watch);
+    return { ...watch };
+  }
+  opts.orders?.forEach(putOrder);
+  opts.watches?.forEach(putWatch);
   const pages = new Map((opts.pages ?? samplePages(now())).map((p) => [p.id, { ...p }]));
   let previewed = false;
   let replyIndex = 0;
@@ -265,10 +283,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
       return [...orders.values()].filter((o) => o.active).map((o) => ({ ...o }));
     },
     async addOrder(text) {
-      const t = now();
-      const order: StandingOrder = { id: ulid(t), text, active: true, createdAt: t };
-      orders.set(order.id, order);
-      return { ...order };
+      return putOrder(text);
     },
     async cancelOrder(id) {
       const order = orders.get(id);
@@ -278,11 +293,8 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     async listWatches() {
       return [...watches.values()].filter((w) => w.active).map((w) => ({ ...w }));
     },
-    async addWatch({ project, event, nudge }) {
-      const t = now();
-      const watch: Watch = { id: ulid(t), ...(project !== undefined && { project }), event: event ?? 'finished', nudge, active: true, createdAt: t };
-      watches.set(watch.id, watch);
-      return { ...watch };
+    async addWatch(input) {
+      return putWatch(input);
     },
     async cancelWatch(id) {
       const watch = watches.get(id);

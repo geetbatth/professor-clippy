@@ -2,14 +2,14 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { DragHandle } from '../hooks/useWindowDrag';
 import './StickyNote.css';
 
-export type Tab = 'notes' | 'pad' | 'chat' | 'history' | 'settings';
+/** History is a section of Settings (`openSettings('history')`), not a tab of its own. */
+export type Tab = 'notes' | 'pad' | 'chat' | 'settings';
 
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: 'notes', label: 'Notes' },
   { id: 'pad', label: 'Pad' },
   { id: 'chat', label: 'Clippy' },
-  { id: 'history', label: 'History' },
-  { id: 'settings', label: 'Settings' },
+  { id: 'settings', label: '⚙ Settings' },
 ];
 
 export interface StickyNoteProps {

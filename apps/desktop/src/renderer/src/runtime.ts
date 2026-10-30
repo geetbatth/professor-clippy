@@ -9,6 +9,7 @@ import { ThemeId } from '@clippy/shared/theme';
 import type { ClippyWindowShell } from '../../main/window/windowApi';
 import { chooseBackend } from './backendChoice';
 import { createMockBackend, type MockBackend } from './mock/mockBackend';
+import { SAMPLE_ORDERS, SAMPLE_WATCHES } from './mock/sampleData';
 
 export interface Runtime {
   api: ClippyWindowApi;
@@ -46,9 +47,15 @@ export function resolveRuntime(search: string = location.search): Runtime | unde
   let api: ClippyWindowApi;
   if (choice === 'mock') {
     const params = new URLSearchParams(search);
-    // `?theme=night` previews a theme.
+    // `?theme=night` previews a theme; `?telegram=1` a paired Telegram.
     const theme = ThemeId.safeParse(params.get('theme'));
-    const backend = createMockBackend({ firstRun: params.has('firstrun'), ...(theme.success && { theme: theme.data }) });
+    const backend = createMockBackend({
+      firstRun: params.has('firstrun'),
+      ...(theme.success && { theme: theme.data }),
+      ...(params.has('telegram') && { telegram: { chatId: 123456789, chatName: 'You' } }),
+      orders: SAMPLE_ORDERS,
+      watches: SAMPLE_WATCHES,
+    });
     window.clippyMock = backend;
     api = backend;
   } else {

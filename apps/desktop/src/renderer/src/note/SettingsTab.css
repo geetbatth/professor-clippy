@@ -1,3 +1,4 @@
+/* Settings: the menu of sections, and one section open under "‹ Settings". */
 .settings {
   display: flex;
   flex-direction: column;
@@ -28,6 +29,13 @@
 .setting-hint {
   font-size: 11.5px;
   color: color-mix(in srgb, var(--ink) 72%, transparent);
+}
+/* A setting whose control sits under its text (the paper chips). */
+.setting--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  cursor: default;
 }
 .setting-number {
   display: flex;
@@ -74,8 +82,14 @@
 .switch:checked {
   background: var(--btn);
 }
+/* On, the knob takes the button's ink, so it shows on a light track in the dark themes too. */
 .switch:checked::after {
+  background: var(--btn-ink);
   transform: translateX(16px);
+}
+.switch:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .setting-group {
@@ -117,3 +131,156 @@
   background: var(--bad-bg);
 }
 
+
+/* The menu: small uppercase group labels, and a row per section. */
+.settings-label {
+  margin: 8px 2px 1px;
+  padding: 0;
+  font: 700 10.5px 'Segoe UI', sans-serif;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.settings-menu {
+  gap: 3px;
+}
+/* The same label as a fieldset's legend (Standing orders & watches). */
+.setting-group legend.settings-label {
+  margin-bottom: 0;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink-strong);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.settings-row:hover {
+  border-color: color-mix(in srgb, var(--ink) 35%, transparent);
+}
+.settings-row-icon {
+  flex: none;
+  width: 22px;
+  font-size: 16px;
+  text-align: center;
+}
+.settings-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.settings-row-title {
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--ink-label);
+}
+.settings-row-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.settings-row--open .settings-row-summary {
+  white-space: normal;
+}
+.settings-row-chevron {
+  flex: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ink-faint);
+  transition: transform 150ms;
+}
+.settings-row--open .settings-row-chevron {
+  transform: rotate(90deg);
+}
+.settings-row .relay-on,
+.settings-row .relay-off,
+.settings-row .tg-badge-error {
+  flex: none;
+}
+/* A row's setup, unfolded under it (Telegram, the WhatsApp relay). */
+.settings-unfold {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 6px;
+  padding: 8px;
+  border: 1px solid var(--card-border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  background: color-mix(in srgb, var(--card) 50%, transparent);
+}
+.settings-row--open {
+  border-radius: 8px 8px 0 0;
+}
+
+/* An open section: the way back, and its name in the note's handwriting. */
+.settings-back {
+  align-self: flex-start;
+  margin: 0;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-ghost);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.settings-back:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.settings-title {
+  margin: 0 2px 4px;
+  font: 700 19px 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;
+  color: var(--head);
+}
+
+/* Look: the paper chips. */
+.theme-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.theme-swatch {
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: 9px;
+  background: none;
+  cursor: pointer;
+}
+.theme-swatch[aria-checked='true'] {
+  border-color: var(--ink);
+}
+.theme-swatch-chip {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--ink) 35%, transparent);
+  border-radius: 6px;
+}
+
+/* Windows & hotkeys: "Run the welcome again" and the version. */
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+.settings-version {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
