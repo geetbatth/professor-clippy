@@ -186,6 +186,20 @@ describe('PhoneGate', () => {
     expect(mirrored.map((x) => x.id)).toEqual([r.id]);
   });
 
+  it('survives a closed store: logs once, never throws from the timer, and stops ticking once stopped', () => {
+    const logs: unknown[][] = [];
+    gate.stop();
+    gate = new PhoneGate({ bus, store, clock, isUserAway: () => away, mode: () => mode, log: (...args) => logs.push(args) });
+    gate.start();
+    note(); // held: the user is at the PC
+    store.close();
+    expect(() => clock.advance(TICK * 3)).not.toThrow();
+    expect(logs).toHaveLength(1);
+    expect(clock.pending).toBe(1); // still ticking while running
+    gate.stop();
+    expect(clock.pending).toBe(0);
+  });
+
   it('stops listening and ticking after stop()', () => {
     gate.stop();
     expect(clock.pending).toBe(0);

@@ -18,6 +18,7 @@ describe('startServices', () => {
     dir = mkdtempSync(join(tmpdir(), 'clippy-startup-'));
   });
   afterEach(async () => {
+    services?.phoneGate.stop();
     services?.relay.stop();
     await services?.telegram.stop();
     services?.brain.dispose();

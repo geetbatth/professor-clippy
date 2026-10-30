@@ -30,6 +30,8 @@ export interface PhoneGateOptions {
   tickMs?: number;
   /** A held ask this old (since it was created) goes to the phone even at the PC. Default 10 min. */
   askEscalateMs?: number;
+  /** Where a failed tick is reported (once). Default `console.warn`. */
+  log?: (message: string, err?: unknown) => void;
 }
 
 const DEFAULT_TICK_MS = 30_000;
@@ -42,6 +44,7 @@ export class PhoneGate {
   #unsubscribe: (() => void)[] = [];
   #timer: TimerHandle | undefined;
   #running = false;
+  #warned = false;
 
   constructor(options: PhoneGateOptions) {
     this.#o = options;
@@ -84,18 +87,27 @@ export class PhoneGate {
     else this.#held.add(m.id);
   }
 
+  /** Never throws: it runs from a timer, where an exception would be unhandled. */
   #tick(): void {
-    const open = this.#open();
-    const escalateMs = this.#o.askEscalateMs ?? DEFAULT_ASK_ESCALATE_MS;
-    for (const id of [...this.#held]) {
-      const m = this.#o.store.getMessage(id);
-      if (!m || m.state === 'done') this.#held.delete(id); // gone, dismissed or answered meanwhile
-      else if (m.state === 'unread' && (open || (m.kind === 'ask' && this.#clock.now() - m.createdAt >= escalateMs))) {
-        this.#held.delete(id);
-        this.#o.bus.emit('message:mirror', m);
-      } // snoozed: stays held until it wakes
+    try {
+      const open = this.#open();
+      const escalateMs = this.#o.askEscalateMs ?? DEFAULT_ASK_ESCALATE_MS;
+      for (const id of [...this.#held]) {
+        const m = this.#o.store.getMessage(id);
+        if (!m || m.state === 'done') this.#held.delete(id); // gone, dismissed or answered meanwhile
+        else if (m.state === 'unread' && (open || (m.kind === 'ask' && this.#clock.now() - m.createdAt >= escalateMs))) {
+          this.#held.delete(id);
+          this.#o.bus.emit('message:mirror', m);
+        } // snoozed: stays held until it wakes
+      }
+    } catch (err) {
+      // E.g. the store was closed under us. Say so once; keep ticking only while still running.
+      if (!this.#warned) {
+        this.#warned = true;
+        (this.#o.log ?? console.warn)('[clippy] phone gate tick failed:', err);
+      }
     }
-    this.#arm();
+    this.#arm(); // a no-op once stopped
   }
 
   #arm(): void {
