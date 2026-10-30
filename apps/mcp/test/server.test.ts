@@ -591,12 +591,35 @@ describe('pages', () => {
     expect(api.pages.find((p) => p.id === page.id)!.body).toBe('a\nb');
   });
 
-  it("write_page on someone else's page comes back as the 403 explanation", async () => {
+  it("write_page on someone else's page (by page_id) comes back as the 403 explanation", async () => {
     const { api } = await setup();
-    await seedPage(api, { title: 'My plans', body: 'mine', sender: 'you-via-app' });
-    const r = await call('write_page', { title: 'My plans', text: 'agent text' });
+    const page = await seedPage(api, { title: 'My plans', body: 'mine', sender: 'you-via-app' });
+    const r = await call('write_page', { title: 'My plans', text: 'agent text', page_id: page.id });
     expect(r.isError).toBe(true);
     expect(texts(r)[0]).toMatch(/403.*Only the person who wrote this page \(or you\) can change it/);
+  });
+
+  it("an agent's write_page by title finds only its own pages: the user's \"Notes for Friday\" is left alone and it gets its own \"Notes\"", async () => {
+    const { api } = await setup();
+    const users = await seedPage(api, { title: 'Notes for Friday', body: 'mine', sender: 'you-via-app' });
+    await seedPage(api, { title: 'Notes', body: 'theirs', sender: 'other-agent' });
+    const first = await call('write_page', { title: 'Notes', text: 'first' });
+    expect(first.isError).toBeFalsy();
+    const own = api.pages.find((p) => p.author === 'test-agent')!;
+    expect(own).toMatchObject({ title: 'Notes', body: 'first' });
+    expect((await call('write_page', { title: 'notes', text: 'second' })).isError).toBeFalsy();
+    expect(api.pages.find((p) => p.id === own.id)!.body).toBe('first\nsecond');
+    expect(api.pages.find((p) => p.id === users.id)!.body).toBe('mine');
+    expect(api.pages.find((p) => p.author === 'other-agent')!.body).toBe('theirs');
+    expect(api.pages).toHaveLength(3);
+  });
+
+  it("the brain's write_page by title finds any page, the user's too", async () => {
+    const { api } = await setup({ env: BRAIN });
+    const users = await seedPage(api, { title: 'Shopping', body: 'eggs', sender: 'you-via-app' });
+    expect((await call('write_page', { title: 'Shopping', text: 'milk' })).isError).toBeFalsy();
+    expect(api.pages).toHaveLength(1);
+    expect(api.pages.find((p) => p.id === users.id)!.body).toBe('eggs\nmilk');
   });
 
   it('read_page reads by title or id; list_pages lists id, title, first line, author and time, at most 50', async () => {

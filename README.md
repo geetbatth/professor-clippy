@@ -45,7 +45,9 @@ that have waited less than an hour are sent; older ones stay on the desk.
   "add milk to my shopping page", "what did I write about the deploy?"), and agents can leave
   you one to keep, such as a checklist or a summary, with `write_page` (`read_page` and `list_pages`
   read them; only Clippy can `archive_page`). An agent can only change the pages it wrote itself;
-  yours, and other agents', are refused, while Clippy can change any page. If Clippy or an agent changes a
+  yours, and other agents', are refused (asked for by title, it only finds its own, and starts its
+  own page if it has none), while Clippy can change any page. Any connected agent can read every
+  page on the Pad with `read_page` and `list_pages`, so don't keep secrets there. If Clippy or an agent changes a
   page while you are typing in it, your save is refused rather than overwriting theirs (so nothing
   is silently lost). A page written by someone else counts as new until you open it. Pages nobody
   has changed for 30 days are archived (not pinned ones, or ones popped out on the desktop); you

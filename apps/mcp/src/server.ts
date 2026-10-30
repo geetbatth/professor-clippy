@@ -327,7 +327,7 @@ export function createClippyServer(options: ClippyServerOptions = {}): McpServer
         'Use it for something worth keeping, such as a checklist, a summary or steps to follow, or when the user asks you to jot something down. ' +
         'mode append (default) adds the text as a new line to the page with this title (matched ignoring case, or a unique start of a title) ' +
         'or to page_id, and creates the page if there is none; replace overwrites that page; new always starts a new page. ' +
-        'You can only change pages you wrote yourself; pages the user or other agents wrote are refused.',
+        'You can only change pages you wrote yourself: a title finds only your own pages, and a page_id the user or another agent wrote is refused.',
       inputSchema: {
         title: PageTitle.describe('The page title, e.g. "Deploy checklist". Also how an existing page is found.'),
         text: PageBody.min(1).describe('The text to write, kept exactly as written.'),
@@ -337,7 +337,13 @@ export function createClippyServer(options: ClippyServerOptions = {}): McpServer
     },
     async ({ title, text, mode = 'append', page_id }) => {
       const page = await withClient(async (c) => {
-        const targetId = mode === 'new' ? undefined : (page_id ?? findPageByTitle(await c.listPages(), title)?.id);
+        // An agent can only change its own pages, so by title it only looks among those (and starts its
+        // own "Notes" rather than being refused the user's "Notes for Friday"); the brain looks at all.
+        const mine = async () => {
+          const pages = await c.listPages();
+          return sender() === BRAIN_SENDER ? pages : pages.filter((p) => p.author === sender());
+        };
+        const targetId = mode === 'new' ? undefined : (page_id ?? findPageByTitle(await mine(), title)?.id);
         if (targetId === undefined) return { page: await c.createPage({ title, body: text, sender: sender(), project }), created: true };
         const change = mode === 'replace' ? { body: text } : { append: text };
         return { page: await c.writePage(targetId, { ...change, sender: sender() }), created: false };

@@ -378,7 +378,8 @@ user): `listPages`, `getPage`, `createPage`, `writePage`, `markPageSeen`, `archi
 `restorePage`, `deletePage`, `popPage(id, popped)` (`setPopped`; the page windows follow, below).
 MCP, for every agent: `write_page` (`title`, `text`, `mode` new / append (default) / replace,
 `page_id`; append and replace write `page_id` or the page the title finds and create one if there
-is none), `read_page` (`page_id` or `title`), `list_pages` (`query`; id, title, first line, author,
+is none; an agent's title only finds pages whose `author` is its sender, the brain's any page),
+`read_page` (`page_id` or `title`), `list_pages` (`query`; id, title, first line, author,
 time; at most 50); brain-only: `archive_page`. The persona maps "jot down" to `write_page` new, "add
 X to my Y page" to append, "what did I write about" to `list_pages` + `read_page`, and never
 replaces a page the user wrote unless told to. The CLAUDE.md hint tells agents to leave a page to
