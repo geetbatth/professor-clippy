@@ -124,8 +124,8 @@ export function PhoneSection({ api, settings, update }: SectionProps) {
   );
 }
 
-/** The WhatsApp relay's Worker URL and secret, with Save and Disconnect. */
-function RelayFields({ settings, update }: Omit<SectionProps, 'api'>) {
+/** The WhatsApp relay's Worker URL and secret, with Save and Disconnect (here and in the welcome). */
+export function RelayFields({ settings, update }: Omit<SectionProps, 'api'>) {
   const [workerUrl, setWorkerUrl] = useState(settings.workerUrl ?? '');
   const [workerSecret, setWorkerSecret] = useState('');
   const [relayError, setRelayError] = useState<string>();

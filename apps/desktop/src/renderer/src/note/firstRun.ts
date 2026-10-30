@@ -1,8 +1,12 @@
 /** First-run wizard: its steps, and the checks on what the user types. */
 import type { Settings, SettingsPatch } from '@clippy/shared/settings';
 
-export type WizardStep = 'whatsapp' | 'telegram' | 'prefs' | 'claude';
-export const WIZARD_STEPS: readonly WizardStep[] = ['whatsapp', 'telegram', 'prefs', 'claude'];
+/**
+ * Connect Claude Code (what makes Clippy useful), how he looks, the phone (optional), then a
+ * practice question. Every step can be skipped.
+ */
+export type WizardStep = 'claude' | 'look' | 'phone' | 'tour';
+export const WIZARD_STEPS: readonly WizardStep[] = ['claude', 'look', 'phone', 'tour'];
 
 /** The step after `step`, or undefined after the last one. */
 export function nextStep(step: WizardStep): WizardStep | undefined {

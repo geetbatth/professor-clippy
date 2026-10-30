@@ -35,7 +35,7 @@ export function phoneChannels(settings: Settings, telegram: TelegramStatus | und
 }
 
 /** "Control+Alt+Space" as people write it: "Ctrl+Alt+Space". */
-const hotkeyLabel = (accelerator: string) => accelerator.replace(/\b(Control|CommandOrControl|CmdOrCtrl)\b/g, 'Ctrl');
+export const hotkeyLabel = (accelerator: string) => accelerator.replace(/\b(Control|CommandOrControl|CmdOrCtrl)\b/g, 'Ctrl');
 
 /** The summary line under a section's row in the Settings menu. */
 export function sectionSummary(section: SettingsSection, ctx: SummaryContext): string {

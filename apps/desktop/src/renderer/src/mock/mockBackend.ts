@@ -7,6 +7,7 @@ import { ulid } from 'ulid';
 import type { ClippyEvent, ClippyEventMap, ClippyWindowApi, TelegramStatus } from '@clippy/shared/ipc';
 import {
   appendToBody,
+  ChecklistItem,
   NewPageInput,
   PAGE_USER_AUTHOR,
   PageChange,
@@ -14,6 +15,7 @@ import {
   type Message,
   type MessageFilter,
   type NewWatchInput,
+  type OnboardingState,
   type Page,
   type StandingOrder,
   type Watch,
@@ -40,6 +42,8 @@ export interface MockOptions {
   /** Start with these standing orders and watches (none by default). */
   orders?: readonly string[];
   watches?: readonly NewWatchInput[];
+  /** Start the Getting started list / tips from here (default: nothing done yet, started now). */
+  onboarding?: Partial<OnboardingState>;
 }
 
 export interface MockBackend extends ClippyWindowApi {
@@ -111,12 +115,27 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
   opts.orders?.forEach(putOrder);
   opts.watches?.forEach(putWatch);
   const pages = new Map((opts.pages ?? samplePages(now())).map((p) => [p.id, { ...p }]));
+  let onboarding: OnboardingState = { startedAt: now(), done: [], dismissed: false, tipsShown: [], ...opts.onboarding };
   let previewed = false;
   let replyIndex = 0;
   const listeners = new Map<ClippyEvent, Set<(payload: never) => void>>();
 
   function emit<E extends ClippyEvent>(event: E, payload: ClippyEventMap[E]): void {
     for (const cb of listeners.get(event) ?? []) (cb as (p: ClippyEventMap[E]) => void)(payload);
+  }
+
+  /** Store and announce a new onboarding state (like main's `Onboarding`). */
+  function setOnboarding(next: OnboardingState): OnboardingState {
+    onboarding = next;
+    emit('onboarding:changed', structuredClone(next));
+    return structuredClone(next);
+  }
+
+  /** Tick a Getting started item, as main does when it sees the thing happen. */
+  function mark(item: ChecklistItem): OnboardingState {
+    if (onboarding.done.includes(item)) return structuredClone(onboarding);
+    const done = new Set([...onboarding.done, item]);
+    return setOnboarding({ ...onboarding, done: ChecklistItem.options.filter((i) => done.has(i)) });
   }
 
   function get(id: string): Message {
@@ -195,12 +214,14 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
       return update(id, { state: 'done', doneAt: now(), snoozedUntil: undefined });
     },
     async snooze(id, until) {
+      mark('snooze');
       return update(id, { state: 'snoozed', snoozedUntil: until });
     },
     async answerAsk(id, answer): Promise<AskResult> {
       const m = get(id);
       if (m.kind !== 'ask') throw new Error(`${id} is not an ask`);
       update(id, { answer, answeredVia: 'desk', state: 'done', doneAt: now() });
+      mark('answer');
       return { id, status: 'answered', answer, answeredVia: 'desk' };
     },
     async sendChat(text) {
@@ -255,6 +276,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
         };
       }
       if (!previewed) return { ok: false, log: [], error: 'Show the changes first (preview), then install.', warnings: [] };
+      mark('connect');
       return { ok: true, warnings: [], log: [`Installing Professor Clippy wiring (Claude config dir: ${config})`, 'Done.'] };
     },
     async telegramStatus() {
@@ -283,6 +305,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
       return [...orders.values()].filter((o) => o.active).map((o) => ({ ...o }));
     },
     async addOrder(text) {
+      mark('order');
       return putOrder(text);
     },
     async cancelOrder(id) {
@@ -356,7 +379,27 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     },
     async popPage(id, popped) {
       if (popped && getPage(id).archivedAt !== null) throw new Error('Restore the page before pinning it out.');
+      if (popped) mark('popout');
       return setPage(id, { popped });
+    },
+    async onboarding() {
+      return structuredClone(onboarding);
+    },
+    async markOnboarding(item) {
+      return mark(ChecklistItem.parse(item));
+    },
+    async dismissChecklist() {
+      return setOnboarding({ ...onboarding, dismissed: true });
+    },
+    async markTipShown(id) {
+      const tipsShown = onboarding.tipsShown.includes(id) ? onboarding.tipsShown : [...onboarding.tipsShown, id];
+      return setOnboarding({ ...onboarding, tipsShown, lastTipAt: now() });
+    },
+    async restartWelcome() {
+      const state = setOnboarding({ ...onboarding, dismissed: false });
+      settings = { ...settings, firstRunDone: false };
+      emit('settings:changed', { ...settings });
+      return state;
     },
     pushPage(input) {
       const existing = input.id === undefined ? undefined : pages.get(input.id);

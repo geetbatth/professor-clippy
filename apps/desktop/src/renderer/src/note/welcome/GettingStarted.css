@@ -1,0 +1,110 @@
+/* The Pad's Getting started row and page (welcome/GettingStarted.tsx). */
+.gs-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 0;
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.gs-row-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 4px 9px 11px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gs-count {
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--ok-step);
+  color: var(--ok);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+}
+.gs-row-close {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-right: 5px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.gs-row-close:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.gs-title {
+  margin: 0;
+  padding: 2px 2px 4px;
+  border-bottom: 2px dashed var(--line);
+  font: 700 17px 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;
+  color: var(--head);
+}
+/* Lined paper, like a page: every line of text sits on a rule. */
+.gs-list {
+  flex: 1;
+  margin: 4px 0 0;
+  padding: 0 2px;
+  list-style: none;
+  background: repeating-linear-gradient(180deg, transparent 0 21px, var(--line) 21px 22px);
+  line-height: 22px;
+}
+.gs-item {
+  display: flex;
+  gap: 6px;
+  color: var(--ink-strong);
+  font-size: 13.5px;
+}
+.gs-box {
+  flex: none;
+  width: 16px;
+  font-size: 14px;
+}
+.gs-item--done .gs-box {
+  color: var(--ok);
+}
+.gs-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.gs-label {
+  font-weight: 600;
+}
+.gs-item--done .gs-label {
+  font-weight: 400;
+  text-decoration: line-through;
+  color: var(--ink-soft);
+}
+.gs-how {
+  color: var(--ink-body);
+  font-size: 11.5px;
+}
+.gs-show {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink-ghost);
+  font: 600 11.5px 'Segoe UI', sans-serif;
+  cursor: pointer;
+}
+.gs-show:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}

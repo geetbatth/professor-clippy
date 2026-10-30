@@ -2,7 +2,7 @@
  * Typed in-process event bus for the core service. Main-process integration
  * (IPC push events, WhatsApp relay) subscribes here.
  */
-import type { AskResult, Message, Page, Reminder } from '@clippy/shared';
+import type { AskResult, Message, OnboardingState, Page, Reminder, StandingOrder } from '@clippy/shared';
 
 /** Event name → payload. */
 export interface CoreEventMap {
@@ -27,6 +27,10 @@ export interface CoreEventMap {
   'page:changed': Page;
   /** A page was deleted for good. */
   'page:deleted': { id: string };
+  /** A standing order was added (from Settings or by the brain). */
+  'order:added': StandingOrder;
+  /** The welcome's Getting started list or tips changed (see `main/onboarding.ts`). */
+  'onboarding:changed': OnboardingState;
 }
 
 export type CoreEvent = keyof CoreEventMap;

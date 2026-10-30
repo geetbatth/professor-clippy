@@ -61,6 +61,11 @@ function fakeBackend(): ClippyBackend {
     restorePage: vi.fn(async () => ({}) as never),
     deletePage: vi.fn(async () => {}),
     popPage: vi.fn(async () => ({}) as never),
+    onboarding: vi.fn(async () => ({}) as never),
+    markOnboarding: vi.fn(async () => ({}) as never),
+    dismissChecklist: vi.fn(async () => ({}) as never),
+    markTipShown: vi.fn(async () => ({}) as never),
+    restartWelcome: vi.fn(async () => ({}) as never),
   };
 }
 
@@ -116,6 +121,14 @@ describe('registerIpc', () => {
       await handlers.get(IpcInvoke[m])!(e, 'P1');
       expect(backend[m]).toHaveBeenCalledWith('P1');
     }
+    await handlers.get(IpcInvoke.markOnboarding)!(e, 'hotkey');
+    expect(backend.markOnboarding).toHaveBeenCalledWith('hotkey');
+    await handlers.get(IpcInvoke.markTipShown)!(e, 'pad-jot');
+    expect(backend.markTipShown).toHaveBeenCalledWith('pad-jot');
+    for (const m of ['onboarding', 'dismissChecklist', 'restartWelcome'] as const) {
+      await handlers.get(IpcInvoke[m])!(e);
+      expect(backend[m]).toHaveBeenCalledOnce();
+    }
   });
 
   it('rejects bad arguments before they reach the backend', () => {
@@ -144,6 +157,8 @@ describe('registerIpc', () => {
     expect(() => handlers.get(IpcInvoke.writePage)!(e, 'P1', { popped: true })).toThrow();
     expect(() => handlers.get(IpcInvoke.popPage)!(e, 'P1', 'yes')).toThrow();
     expect(() => handlers.get(IpcInvoke.listPages)!(e, { archived: 'true' })).toThrow();
+    expect(() => handlers.get(IpcInvoke.markOnboarding)!(e, 'everything')).toThrow();
+    expect(() => handlers.get(IpcInvoke.markTipShown)!(e, 'nag')).toThrow();
     expect(backend.snooze).not.toHaveBeenCalled();
     expect(backend.markDone).not.toHaveBeenCalled();
   });

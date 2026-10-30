@@ -1,29 +1,38 @@
 import { useEffect, useState } from 'react';
 import type { ClippyWindowApi } from '@clippy/shared/ipc';
-import type { Page } from '@clippy/shared/schemas';
+import type { OnboardingState, Page } from '@clippy/shared/schemas';
+import { DEFAULT_SETTINGS, type Settings } from '@clippy/shared/settings';
 import { PAGE_COLORS } from '@clippy/shared/theme';
 import { useNow } from '../hooks/useNow';
 import type { PadPages } from '../hooks/usePages';
 import { PageEditor } from './PageEditor';
 import { authorBadge, firstLine, padSections, pageMeta, searchPages } from './padList';
+import type { SettingsSection } from './settings/summaries';
 import { timeAgo } from './timeAgo';
+import { GettingStarted } from './welcome/GettingStarted';
+import { checklistProgress, showChecklist } from './welcome/tour';
 import './cards.css';
 import './PadTab.css';
 
 /** The title a new page starts with (selected, so typing replaces it). */
 const NEW_PAGE_TITLE = 'Untitled';
 
-type View = { kind: 'list' } | { kind: 'page'; page: Page; fresh: boolean } | { kind: 'archived' };
+type View = { kind: 'list' } | { kind: 'page'; page: Page; fresh: boolean } | { kind: 'archived' } | { kind: 'checklist' };
 
 export interface PadTabProps {
   api: ClippyWindowApi;
   pad: PadPages;
   /** True while a page has focus (or an unsettled conflict): the note must not tuck itself away. */
   onActive(active: boolean): void;
+  /** The welcome's Getting started list (its row tops the Pad until done or dismissed). */
+  onboarding?: OnboardingState | undefined;
+  settings?: Settings | undefined;
+  /** Open a Settings section (Getting started's "Show me ›"). */
+  onSettings?(section: SettingsSection): void;
 }
 
-/** The Pad: your pages (pinned, then recent), search, a new page, one page open, and the archive. */
-export function PadTab({ api, pad, onActive }: PadTabProps) {
+/** The Pad: Getting started, your pages (pinned, then recent), search, a new page, one page open, and the archive. */
+export function PadTab({ api, pad, onActive, onboarding, settings, onSettings }: PadTabProps) {
   const [view, setView] = useState<View>({ kind: 'list' });
   const [error, setError] = useState<string>();
   const openId = view.kind === 'page' ? view.page.id : undefined;
@@ -38,6 +47,11 @@ export function PadTab({ api, pad, onActive }: PadTabProps) {
       if (id === openId) setView({ kind: 'list' });
     });
   }, [api, openId]);
+
+  const dismissChecklist = () => {
+    setView({ kind: 'list' });
+    api.dismissChecklist().catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+  };
 
   const newPage = async () => {
     try {
@@ -66,12 +80,44 @@ export function PadTab({ api, pad, onActive }: PadTabProps) {
     );
   }
   if (view.kind === 'archived') return <ArchivedPages api={api} pages={pad.archived} onBack={() => setView({ kind: 'list' })} />;
+  if (view.kind === 'checklist' && onboarding) {
+    return (
+      <GettingStarted
+        state={onboarding}
+        settings={settings ?? DEFAULT_SETTINGS}
+        onBack={() => setView({ kind: 'list' })}
+        onSettings={(section) => onSettings?.(section)}
+        onDismiss={dismissChecklist}
+      />
+    );
+  }
   return (
-    <PageList pad={pad} error={error} onOpen={(page) => setView({ kind: 'page', page, fresh: false })} onNew={() => void newPage()} onArchived={() => setView({ kind: 'archived' })} />
+    <PageList
+      pad={pad}
+      error={error}
+      checklist={showChecklist(onboarding) ? onboarding : undefined}
+      onChecklist={() => setView({ kind: 'checklist' })}
+      onDismissChecklist={dismissChecklist}
+      onOpen={(page) => setView({ kind: 'page', page, fresh: false })}
+      onNew={() => void newPage()}
+      onArchived={() => setView({ kind: 'archived' })}
+    />
   );
 }
 
-function PageList({ pad, error, onOpen, onNew, onArchived }: { pad: PadPages; error?: string; onOpen(page: Page): void; onNew(): void; onArchived(): void }) {
+interface PageListProps {
+  pad: PadPages;
+  error?: string | undefined;
+  /** Getting started, while it should show. */
+  checklist: OnboardingState | undefined;
+  onChecklist(): void;
+  onDismissChecklist(): void;
+  onOpen(page: Page): void;
+  onNew(): void;
+  onArchived(): void;
+}
+
+function PageList({ pad, error, checklist, onChecklist, onDismissChecklist, onOpen, onNew, onArchived }: PageListProps) {
   const [q, setQ] = useState('');
   const now = useNow(30_000);
   const found = searchPages(pad.pages, q);
@@ -92,6 +138,7 @@ function PageList({ pad, error, onOpen, onNew, onArchived }: { pad: PadPages; er
         </button>
       </div>
       {error && <p className="card-error">{error}</p>}
+      {checklist && !q.trim() && <ChecklistRow state={checklist} onOpen={onChecklist} onDismiss={onDismissChecklist} />}
       {pad.loaded && found.length === 0 && (
         <div className="pad-empty">
           {q.trim() ? (
@@ -111,6 +158,24 @@ function PageList({ pad, error, onOpen, onNew, onArchived }: { pad: PadPages; er
           Archived · {pad.archived.length} ›
         </button>
       )}
+    </div>
+  );
+}
+
+/** "Getting started 📎  3/7", pinned above the pages; × puts it away. */
+function ChecklistRow({ state, onOpen, onDismiss }: { state: OnboardingState; onOpen(): void; onDismiss(): void }) {
+  const { done, total } = checklistProgress(state);
+  return (
+    <div className="card pad-card gs-row">
+      <button type="button" className="gs-row-open" onClick={onOpen}>
+        <span className="pad-card-title">Getting started 📎</span>
+        <span className="gs-count" aria-label={`${done} of ${total} done`}>
+          {done}/{total}
+        </span>
+      </button>
+      <button type="button" className="gs-row-close" aria-label="Hide Getting started" title="Hide this list" onClick={onDismiss}>
+        ×
+      </button>
     </div>
   );
 }

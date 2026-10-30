@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Message } from '@clippy/shared/schemas';
+import { PAGE_USER_AUTHOR, type Message } from '@clippy/shared/schemas';
 import type { Settings } from '@clippy/shared/settings';
 import type { WindowMode } from '../../main/window/windowApi';
 import { TrackingClippy } from './clippy/TrackingClippy';
@@ -8,9 +8,11 @@ import { useAdvice } from './hooks/useAdvice';
 import { useAutoCollapse } from './hooks/useAutoCollapse';
 import { useChat } from './hooks/useChat';
 import { useClickThrough } from './hooks/useClickThrough';
+import { useOnboarding } from './hooks/useOnboarding';
 import { usePages } from './hooks/usePages';
 import { useSettings } from './hooks/useSettings';
 import { useTheme } from './hooks/useTheme';
+import { useTips } from './hooks/useTips';
 import { useUnread } from './hooks/useUnread';
 import { useWindowDrag } from './hooks/useWindowDrag';
 import { alertLevel, loudCount } from './note/alertLevel';
@@ -23,6 +25,7 @@ import { SECTIONS } from './note/settings/SettingsMenu';
 import type { SettingsSection } from './note/settings/summaries';
 import { StickyNote, type Tab } from './note/StickyNote';
 import { TellBox } from './note/TellBox';
+import { TIP_SHOW_MS } from './note/welcome/tips';
 import { pickQuip, quipForMessage } from './quips/pickQuip';
 import type { Runtime } from './runtime';
 import { createSoundBoard } from './sound/sounds';
@@ -46,6 +49,8 @@ export function App({ runtime }: { runtime: Runtime }) {
     params.get('tab') === 'history' ? 'history' : SECTIONS.find((s) => s.id === params.get('section'))?.id,
   );
   const [quip, setQuip] = useState<string>();
+  /** A one-time tip in the bubble (a quip, which is about a new message, always wins). */
+  const [tip, setTip] = useState<string>();
   const [wiggle, setWiggle] = useState(0);
   /** The hotkey asked for the Tell Clippy box; cleared once it has taken focus. */
   const [wantTellFocus, setWantTellFocus] = useState(false);
@@ -69,6 +74,7 @@ export function App({ runtime }: { runtime: Runtime }) {
   const sounds = useMemo(() => createSoundBoard(() => soundOn.current), []);
   const chat = useChat(api);
   const pad = usePages(api);
+  const onboarding = useOnboarding(api);
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -83,7 +89,10 @@ export function App({ runtime }: { runtime: Runtime }) {
     (m: WindowMode) => {
       setModeState(m);
       shell.setMode(m);
-      if (m === 'mini') setQuip(undefined);
+      if (m === 'mini') {
+        setQuip(undefined);
+        setTip(undefined);
+      }
     },
     [shell],
   );
@@ -183,6 +192,43 @@ export function App({ runtime }: { runtime: Runtime }) {
   });
 
   const dismissQuip = useCallback(() => setQuip(undefined), []);
+  const dismissTip = useCallback(() => setTip(undefined), []);
+  // A quip (a new message, advice) takes the bubble from a tip for good.
+  useEffect(() => {
+    if (quip !== undefined) setTip(undefined);
+  }, [quip]);
+
+  // One-time tips: only into a free bubble on the open note, never over a quip or the welcome.
+  const quipRef = useRef(quip);
+  quipRef.current = quip;
+  const firstRunRef = useRef(firstRun);
+  firstRunRef.current = firstRun;
+  const showTip = useTips({
+    api,
+    onboarding,
+    showTips: settings?.showTips ?? false,
+    canShow: () => modeRef.current === 'expanded' && quipRef.current === undefined && !firstRunRef.current,
+    show: setTip,
+  });
+  // The user made a page (not Clippy or an agent): the pin-out tip may be due.
+  const userPages = pad.loaded ? [...pad.pages, ...pad.archived].filter((p) => p.author === PAGE_USER_AUTHOR).length : undefined;
+  const lastUserPages = useRef<number>(undefined);
+  useEffect(() => {
+    if (userPages === undefined) return;
+    const before = lastUserPages.current;
+    lastUserPages.current = userPages;
+    if (before !== undefined && userPages > before) showTip({ kind: 'page-created', userPages });
+  }, [userPages, showTip]);
+  const hotkeyTicked = useRef(false);
+  hotkeyTicked.current = onboarding?.done.includes('hotkey') ?? false;
+  const told = useCallback(
+    (text: string) => {
+      if (!hotkeyTicked.current) api.markOnboarding('hotkey').catch(() => {});
+      showTip({ kind: 'tell', text });
+    },
+    [api, showTip],
+  );
+  const finishWelcome = useCallback(() => setTab('pad'), []);
 
   const clippy = (
     <TrackingClippy
@@ -202,7 +248,13 @@ export function App({ runtime }: { runtime: Runtime }) {
     ) : (
       <ExpandedView
         clippy={clippy}
-        bubble={quip && <SpeechBubble text={quip} onDismiss={dismissQuip} />}
+        bubble={
+          quip !== undefined ? (
+            <SpeechBubble key="quip" text={quip} onDismiss={dismissQuip} />
+          ) : (
+            tip !== undefined && <SpeechBubble key="tip" text={tip} ms={TIP_SHOW_MS} onDismiss={dismissTip} />
+          )
+        }
         note={
           <StickyNote
             tab={tab}
@@ -215,7 +267,7 @@ export function App({ runtime }: { runtime: Runtime }) {
             tabs={!firstRun}
           >
             {firstRun ? (
-              <FirstRunWizard api={api} state={settingsState} />
+              <FirstRunWizard api={api} state={settingsState} onFinish={finishWelcome} />
             ) : (
               <>
                 {tab === 'notes' && (
@@ -230,11 +282,14 @@ export function App({ runtime }: { runtime: Runtime }) {
                         onFocused={tellFocused}
                         onActive={setTellActive}
                         onCollapse={() => setMode('mini')}
+                        onSend={told}
                       />
                     }
                   />
                 )}
-                {tab === 'pad' && <PadTab api={api} pad={pad} onActive={setPadActive} />}
+                {tab === 'pad' && (
+                  <PadTab api={api} pad={pad} onActive={setPadActive} onboarding={onboarding} settings={settings} onSettings={openSettings} />
+                )}
                 {tab === 'chat' && <ChatTab chat={chat} />}
                 {tab === 'settings' && <SettingsTab api={api} state={settingsState} section={settingsSection} onSection={openSettings} />}
               </>

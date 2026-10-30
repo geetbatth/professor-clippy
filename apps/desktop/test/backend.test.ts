@@ -9,6 +9,7 @@ import { Bus } from '../src/main/core/bus';
 import { ConflictError, NotFoundError } from '../src/main/core/errors';
 import { Pages } from '../src/main/core/pages';
 import { Store } from '../src/main/core/store';
+import { Onboarding } from '../src/main/onboarding';
 import { SettingsStore } from '../src/main/settings';
 
 describe('createBackend', () => {
@@ -23,6 +24,7 @@ describe('createBackend', () => {
   let settings: SettingsStore;
   let telegramCalls: unknown[][];
   let dark = false;
+  let onboarding: Onboarding;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'clippy-backend-'));
@@ -59,7 +61,20 @@ describe('createBackend', () => {
       sendTest: async () => ({ ok: false, error: 'not paired' }),
     };
     settings = await SettingsStore.load(join(dir, 'settings.json'));
-    backend = createBackend({ store, asks, pages, brain, settings, claudeWiring, telegram, hotkey: () => ({ accelerator: 'Alt+T', ok: false, error: 'taken' }), systemDark: () => dark });
+    onboarding = new Onboarding({ bus, store });
+    onboarding.start();
+    backend = createBackend({
+      store,
+      asks,
+      pages,
+      brain,
+      settings,
+      claudeWiring,
+      telegram,
+      hotkey: () => ({ accelerator: 'Alt+T', ok: false, error: 'taken' }),
+      systemDark: () => dark,
+      onboarding,
+    });
   });
   afterEach(() => {
     store.close();
@@ -108,7 +123,7 @@ describe('createBackend', () => {
     const secrets = { available: () => true, encrypt: (s: string) => `enc(${s})`, decrypt: (s: string) => s.slice(4, -1) };
     const withToken = await SettingsStore.load(join(dir, 'settings.json'), { secrets });
     await withToken.setTelegramToken('123456:AAHfakefakefakefakefakefake');
-    const b = createBackend({ store, asks, pages, brain: { ask: async () => ({}), newChat: () => {} }, settings: withToken, claudeWiring: { connect: async () => ({ ok: true, log: [], warnings: [] }) }, hotkey: () => ({ accelerator: '', ok: true }), systemDark: () => false, telegram: { status: () => ({ tokenSaved: true, state: 'off' }), setToken: async () => ({ tokenSaved: true, state: 'off' }), unpair: async () => ({ tokenSaved: true, state: 'off' }), sendTest: async () => ({ ok: true }) } });
+    const b = createBackend({ store, asks, pages, brain: { ask: async () => ({}), newChat: () => {} }, settings: withToken, claudeWiring: { connect: async () => ({ ok: true, log: [], warnings: [] }) }, hotkey: () => ({ accelerator: '', ok: true }), systemDark: () => false, onboarding, telegram: { status: () => ({ tokenSaved: true, state: 'off' }), setToken: async () => ({ tokenSaved: true, state: 'off' }), unpair: async () => ({ tokenSaved: true, state: 'off' }), sendTest: async () => ({ ok: true }) } });
     expect(withToken.get().telegramBotTokenEnc).toBeDefined();
     expect(await b.getSettings()).not.toHaveProperty('telegramBotTokenEnc');
     expect(await b.setSettings({ telegramChatId: 42 })).toMatchObject({ telegramChatId: 42 });
@@ -185,7 +200,25 @@ describe('createBackend', () => {
     expect(settings.get()).toBeDefined();
   });
 
-  it('forwards Connect Claude Code to the wiring', async () => {
+  it('forwards Connect Claude Code to the wiring; a successful install ticks Getting started', async () => {
     expect(await backend.connectClaude('preview')).toEqual({ ok: true, log: ['preview'], warnings: [] });
+    expect((await backend.onboarding()).done).toEqual([]);
+    await backend.connectClaude('install');
+    expect((await backend.onboarding()).done).toEqual(['connect']);
+  });
+
+  it('Getting started: ticks, dismisses, records tips, and runs the welcome again', async () => {
+    await settings.update({ firstRunDone: true });
+    expect(await backend.markOnboarding('hotkey')).toMatchObject({ done: ['hotkey'] });
+    expect(await backend.dismissChecklist()).toMatchObject({ dismissed: true });
+    expect(await backend.markTipShown('pad-jot')).toMatchObject({ tipsShown: ['pad-jot'] });
+    expect(await backend.restartWelcome()).toMatchObject({ done: ['hotkey'], dismissed: false, tipsShown: ['pad-jot'] });
+    expect(settings.get().firstRunDone).toBe(false);
+  });
+
+  it('answering from the desk ticks "Answer a question"', async () => {
+    const ask = store.createMessage({ kind: 'ask', body: 'Tea?', sender: 'agent' });
+    await backend.answerAsk(ask.id, 'Tea');
+    expect((await backend.onboarding()).done).toEqual(['answer']);
   });
 });

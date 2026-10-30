@@ -21,6 +21,10 @@ import type { Store } from './core/store';
 export const BRIEF_TITLE = '☀️ Morning brief';
 /** Sender of Clippy's own generated notes. */
 const BRIEF_SENDER = 'clippy';
+
+/** Is `m` a morning brief (Clippy's own note with the brief's title)? */
+export const isBriefNote = (m: Pick<Message, 'kind' | 'sender' | 'title'>): boolean =>
+  m.kind === 'note' && m.sender === BRIEF_SENDER && m.title === BRIEF_TITLE;
 /** A brief missed (PC asleep or app closed) is still sent this long after its time... */
 export const CATCH_UP_MS = 2 * 60 * 60 * 1000;
 /** ...or at any time before this local hour, whichever is later; after both the day is skipped. */

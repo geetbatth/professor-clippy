@@ -3,7 +3,8 @@
  * reminders, standing orders, watches, pages and a small key/value table.
  *
  * Message writes emit `message:new` / `message:updated` on the bus, so every
- * caller (local API, IPC backend, scheduler, relay) produces the same events.
+ * caller (local API, IPC backend, scheduler, relay) produces the same events; a new standing
+ * order emits `order:added`.
  */
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from 'node:sqlite';
 import type {
@@ -23,7 +24,7 @@ import type {
   WatchEvent,
 } from '@clippy/shared';
 import { monotonicFactory } from 'ulid';
-import type { Bus } from './bus';
+import type { Bus, CoreEventMap } from './bus';
 import { systemClock, type Clock } from './clock';
 
 /** Fields a caller supplies to create a message; id, createdAt and state are filled in. */
@@ -516,7 +517,9 @@ export class Store {
     this.#db
       .prepare('INSERT INTO standing_orders (id, text, active, created_at) VALUES (?, ?, 1, ?)')
       .run(id, text, this.#clock.now());
-    return this.#getOrder(id)!;
+    const order = this.#getOrder(id)!;
+    this.#emit('order:added', order);
+    return order;
   }
 
   /** Active standing orders, oldest first. */
@@ -677,11 +680,11 @@ export class Store {
     return row && toWatch(row);
   }
 
-  #emit<E extends 'message:new' | 'message:updated'>(event: E, message: Message): void {
+  #emit<E extends 'message:new' | 'message:updated' | 'order:added'>(event: E, payload: CoreEventMap[E]): void {
     const bus = this.#bus;
     if (!bus) return;
-    if (this.#deferred) this.#deferred.push(() => bus.emit(event, message));
-    else bus.emit(event, message);
+    if (this.#deferred) this.#deferred.push(() => bus.emit(event, payload));
+    else bus.emit(event, payload);
   }
 
   #migrate(): void {

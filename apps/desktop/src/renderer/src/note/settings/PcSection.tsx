@@ -50,8 +50,8 @@ export function PcSection({ api, settings, update }: SectionProps) {
       <ToggleSetting name="autoStart" settings={settings} update={update} />
       <ToggleSetting name="allowPowerActions" settings={settings} update={update} />
       <div className="settings-footer">
-        {/* Shows the first-run setup again (the note switches to it as soon as this is saved). */}
-        <button type="button" className="btn btn-option" onClick={() => void update({ firstRunDone: false })}>
+        {/* The welcome again (the note switches to it at once), and the Getting started list if it was dismissed. */}
+        <button type="button" className="btn btn-option" onClick={() => void api.restartWelcome()}>
           Run the welcome again
         </button>
         <span className="settings-version">Professor Clippy {version}</span>

@@ -332,6 +332,16 @@ describe('Store on disk', () => {
     store.close();
   });
 
+  it('emits order:added for a new standing order', () => {
+    const bus = new Bus();
+    const added: CoreEventMap['order:added'][] = [];
+    bus.on('order:added', (o) => added.push(o));
+    const store = new Store({ path: join(dir, 'order-event.db'), bus });
+    const order = store.insertOrder('say yes');
+    expect(added).toEqual([order]);
+    store.close();
+  });
+
   it('stores an ask that an order answered', () => {
     const clock = new FakeClock(T0);
     const store = new Store({ path: join(dir, 'auto.db'), clock });

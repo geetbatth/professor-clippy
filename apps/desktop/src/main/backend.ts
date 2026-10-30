@@ -9,6 +9,7 @@ import type { Pages } from './core/pages';
 import type { Store } from './core/store';
 import type { BrainReply, Channel } from './brain/brain';
 import type { ClaudeWiring } from './claudeWiring';
+import type { Onboarding } from './onboarding';
 import type { SettingsStore } from './settings';
 
 export interface BackendDeps {
@@ -26,6 +27,8 @@ export interface BackendDeps {
   hotkey: () => HotkeyStatus;
   /** Is Windows in dark mode now (Electron `nativeTheme.shouldUseDarkColors`)? */
   systemDark: () => boolean;
+  /** The welcome's Getting started list and tips. */
+  onboarding: Pick<Onboarding, 'state' | 'mark' | 'dismiss' | 'tipShown' | 'restartWelcome'>;
 }
 
 /** What Settings needs from the Telegram channel. */
@@ -42,7 +45,7 @@ export function forRenderer(settings: Settings): Settings {
   return rest;
 }
 
-export function createBackend({ store, asks, pages, brain, settings, claudeWiring, telegram, hotkey, systemDark }: BackendDeps): ClippyBackend {
+export function createBackend({ store, asks, pages, brain, settings, claudeWiring, telegram, hotkey, systemDark, onboarding }: BackendDeps): ClippyBackend {
   const found = <T>(value: T | undefined, id: string): T => {
     if (value === undefined) throw new NotFoundError(`No message ${id}`);
     return value;
@@ -81,7 +84,9 @@ export function createBackend({ store, asks, pages, brain, settings, claudeWirin
       return forRenderer(await settings.update(patch));
     },
     async connectClaude(step) {
-      return claudeWiring.connect(step);
+      const report = await claudeWiring.connect(step);
+      if (step === 'install' && report.ok) onboarding.mark('connect');
+      return report;
     },
     async telegramStatus() {
       return telegram.status();
@@ -152,6 +157,23 @@ export function createBackend({ store, asks, pages, brain, settings, claudeWirin
     async popPage(id, popped) {
       // Only records it (and emits page:changed); no window is opened here.
       return pages.setPopped(id, popped);
+    },
+    async onboarding() {
+      return onboarding.state();
+    },
+    async markOnboarding(item) {
+      return onboarding.mark(item);
+    },
+    async dismissChecklist() {
+      return onboarding.dismiss();
+    },
+    async markTipShown(id) {
+      return onboarding.tipShown(id);
+    },
+    async restartWelcome() {
+      const state = onboarding.restartWelcome();
+      await settings.update({ firstRunDone: false });
+      return state;
     },
   };
 }

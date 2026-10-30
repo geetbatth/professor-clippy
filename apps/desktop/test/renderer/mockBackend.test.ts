@@ -66,6 +66,26 @@ describe('mock backend', () => {
     expect(await createMockBackend().listOrders()).toEqual([]);
   });
 
+  it('keeps Getting started like main: ticks what happens, dismisses, records tips, runs the welcome again', async () => {
+    const b = createMockBackend({ onboarding: { done: ['brief'] } });
+    const changes: string[][] = [];
+    b.on('onboarding:changed', (s) => changes.push(s.done));
+    expect(await b.onboarding()).toEqual({ startedAt: NOW, done: ['brief'], dismissed: false, tipsShown: [] });
+    await b.addOrder('say yes');
+    await b.markOnboarding('hotkey');
+    await b.markOnboarding('hotkey');
+    expect(changes).toEqual([
+      ['order', 'brief'],
+      ['hotkey', 'order', 'brief'],
+    ]);
+    expect(await b.markTipShown('pad-jot')).toMatchObject({ tipsShown: ['pad-jot'], lastTipAt: NOW });
+    expect(await b.dismissChecklist()).toMatchObject({ dismissed: true });
+    const settings: boolean[] = [];
+    b.on('settings:changed', (s) => settings.push(s.firstRunDone));
+    expect(await b.restartWelcome()).toMatchObject({ dismissed: false, done: ['hotkey', 'order', 'brief'] });
+    expect(settings).toEqual([false]);
+  });
+
   it('lists newest first', async () => {
     const unread = await createMockBackend().listMessages({ state: 'unread' });
     const times = unread.map((m) => m.createdAt);

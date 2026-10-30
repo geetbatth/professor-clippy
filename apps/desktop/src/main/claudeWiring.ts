@@ -13,9 +13,10 @@
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import type { ClaudeWiringReport, ClaudeWiringStep } from '@clippy/shared';
-import { runWiring, type ClaudeRunner } from '../../../../scripts/install-claude-wiring';
+import { HOOK_MARKER, resolveConfigDir, runWiring, type ClaudeRunner } from '../../../../scripts/install-claude-wiring';
 import { cmdQuote, type ResolvedCommand } from './brain/runner';
 
 export interface WiringPaths {
@@ -158,4 +159,18 @@ export function createClaudeWiring(deps: ClaudeWiringDeps): ClaudeWiring {
       return { ...report, warnings };
     },
   };
+}
+
+/**
+ * Is Clippy's hook already in Claude Code's settings (Connect Claude Code was run before)? Only a
+ * look for the hook's marker in `<config dir>/settings.json`; false if it can't be read. Used to
+ * tick Getting started's "Connect Claude Code" for people who connected before the list existed.
+ */
+export async function claudeHooksInstalled(home?: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  const { configDir } = resolveConfigDir(home, env);
+  try {
+    return (await readFile(join(configDir, 'settings.json'), 'utf8')).includes(HOOK_MARKER);
+  } catch {
+    return false;
+  }
 }

@@ -291,9 +291,48 @@ from anywhere: the empty Notes tab's "History ›" opens `history`, which is the
 (`HistoryTab`). The ⚙ tab itself always opens on the menu. Each section keeps its own input state
 and commit helpers (ask wait, away time, hotkey, relay fields). In the Phone section, Telegram and
 the WhatsApp relay are rows that unfold their setup in place. "Run the welcome again" (Windows &
-hotkeys) saves `firstRunDone: false`, which brings back the first-run wizard; the version shown
+hotkeys) calls `restartWelcome` (below), which brings back the welcome; the version shown
 there is `apps/desktop/package.json`'s, imported at build time. Preview: `?mock=1&tab=settings&section=look`
 (`tab=history` still works, as Settings → History; `&telegram=1` pairs the mock's Telegram).
+
+## Welcome, Getting started and tips
+
+**The welcome** (`note/FirstRunWizard.tsx`, shown while `firstRunDone` is false; steps in
+`note/firstRun.ts`: `claude`, `look`, `phone`, `tour`). Every step can be skipped. Connect Claude
+Code is the existing `ConnectClaude` (with "Later" / "Next" in its row); How should I look? reuses
+Settings' `ThemeSwatches` and `ToggleSetting` (saved and painted at once); Want me on your phone?
+unfolds `TelegramSetup` or the Phone section's `RelayFields`. Try it renders `demoQuestion`
+(`note/welcome/tour.ts`) with the real `AskCard`; the answer only changes that local copy and ticks
+`answer` through `markOnboarding`: it is never stored, mirrored or sent to an agent. Finish saves
+`firstRunDone: true` and opens the Pad. An install that already had `firstRunDone` never sees it.
+
+**Getting started.** `Onboarding` (`main/onboarding.ts`, started in `startServices` after the
+watcher and before the morning brief, stopped on quit) keeps kv `onboarding` = `OnboardingState`
+(`@clippy/shared/schemas`: `startedAt`, `done: ChecklistItem[]`, `dismissed`, `tipsShown: TipId[]`,
+`lastTipAt`). Its first start sets `startedAt`, for new and existing installs alike. Items tick from
+the bus: `ask:answered` not `via: 'clippy'` → `answer`; `message:updated` to `snoozed` → `snooze`;
+`order:added` (now emitted by `Store.insertOrder`, so Settings and the brain both count) → `order`;
+`page:changed` with `popped` → `popout`; a new morning brief note (`isBriefNote`) → `brief`. The
+backend ticks `connect` when `connectClaude('install')` succeeds, and `main/index.ts` at start when
+`claudeHooksInstalled()` finds the hook's `--professor-clippy` marker in Claude Code's
+`settings.json`. The renderer ticks `hotkey` on any Tell box send. IPC: `onboarding`,
+`markOnboarding`, `dismissChecklist`, `markTipShown`, `restartWelcome` (the list back, ticks kept,
+then `firstRunDone: false`); every change is `onboarding:changed` to the note. The Pad
+(`PadTab`) shows a "Getting started 📎 N/7" row above the pages while `showChecklist` (not
+dismissed, not all done); it opens `note/welcome/GettingStarted.tsx`, the seven items on lined
+paper, ticked ones struck through, the rest with a one-line `howTo` and, where Settings has it, a
+"Show me ›" into that section.
+
+**Tips** (`note/welcome/tips.ts`, pure). `nextTip({ now, state, showTips, event })` gives a tip only
+with `showTips` on, before `startedAt` + 14 days, an hour after `lastTipAt`, and once each:
+`quiet-history` (an `agent-finished` note arrives already `done`), `standing-order` (exactly the
+third question the user answered today, `answeredToday`, with no standing orders), `pin-out` (the
+user's own pages go to two or more, unless a page was pinned out already) and `pad-jot` (a Tell box
+line that is not about the Pad, `aboutPage`). `hooks/useTips.ts` feeds it from `message:new`,
+`message:updated` and App (pages made, Tell box sends) and shows the tip in the speech bubble for
+12 s (`TIP_SHOW_MS`) only on the open note with no quip up and not in the welcome; otherwise it is
+not recorded, so a later moment can say it. A quip that arrives replaces a tip. Shown tips go back
+through `markTipShown`. Preview: `?mock=1&firstrun=1`, and `&done=connect,answer` to tick items.
 
 ## Pages (the Pad)
 

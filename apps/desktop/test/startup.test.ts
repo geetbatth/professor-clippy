@@ -27,6 +27,7 @@ describe('startServices', () => {
     services?.phoneGate.stop();
     services?.pageArchiver.stop();
     services?.watcher.stop();
+    services?.onboarding.stop();
     services?.brief.stop();
     services?.relay.stop();
     await services?.telegram.stop();
@@ -443,6 +444,8 @@ describe('startServices', () => {
     services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: { clock }, brain: { emit: () => {} } });
     const briefs = () => services!.core.store.listMessages({}).filter((m) => m.sender === 'clippy' && m.title === '☀️ Morning brief');
     expect(briefs()).toHaveLength(1);
+    // Getting started is listening before the brief starts, so a brief sent at start ticks it.
+    expect(services.onboarding.state().done).toEqual(['brief']);
     expect(clock.pending).toBe(1);
     await services.settings.update({ briefEnabled: false });
     expect(clock.pending).toBe(0);

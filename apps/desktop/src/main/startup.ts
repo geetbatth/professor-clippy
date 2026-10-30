@@ -7,7 +7,7 @@
  *    scheduler catch-up (reminders missed while the app was off) fires inside it, so the
  *    messages it creates are collected from the bus meanwhile. Its standing-order matcher is
  *    handed over here, reading the orders from the core once that exists;
- * 3. then **synchronously**, with no `await` in between: the brain, the phone gate, the watcher, the relay and
+ * 3. then **synchronously**, with no `await` in between: the brain, the phone gate, the watcher, onboarding, the relay and
  *    Telegram, which subscribe to the bus (the gate first: the two channels mirror on the gate's
  *    `message:mirror`, not on `message:new`); Telegram is then handed the catch-up messages,
  *    restart requests and phone approvals left from before are expired (so the phone copies are updated too), and
@@ -27,6 +27,7 @@ import { startStaleArchiver } from './core/pages';
 import { Brain, type BrainOptions } from './brain/brain';
 import { writeBrainFiles, type McpConfigInput } from './brain/mcpConfig';
 import type { Message } from '@clippy/shared';
+import { Onboarding } from './onboarding';
 import { createOrderMatcher } from './orders';
 import { PhoneGate, type PhoneGateOptions } from './phoneGate';
 import type { PowerExecutor } from './power/executor';
@@ -80,6 +81,8 @@ export interface Services {
   brain: Brain;
   phoneGate: PhoneGate;
   watcher: Watcher;
+  /** The welcome's Getting started list and tips; ticks items from the bus. */
+  onboarding: Onboarding;
   brief: BriefScheduler;
   /** Archives pages nobody changed for 30 days, at start and every 6 hours. */
   pageArchiver: { stop(): void };
@@ -157,6 +160,9 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
   // Nudges from watches are ordinary notes from Clippy, so they reach the gate like any other.
   const watcher = new Watcher({ bus, store: core.store });
   watcher.start();
+  // Getting started ticks itself as things happen (before the brief starts: a late brief ticks it too).
+  const onboarding = new Onboarding({ bus, store: core.store });
+  onboarding.start();
   const relay = new RelayManager({
     store: core.store,
     bus,
@@ -195,5 +201,5 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
       brief.reschedule();
     }
   });
-  return { core, settings, brain, phoneGate, watcher, brief, pageArchiver, relay, telegram };
+  return { core, settings, brain, phoneGate, watcher, onboarding, brief, pageArchiver, relay, telegram };
 }

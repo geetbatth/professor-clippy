@@ -331,3 +331,25 @@ export const MessageFilter = z.object({
   q: z.string().optional(),
 });
 export type MessageFilter = z.infer<typeof MessageFilter>;
+
+/** The Getting started list on the Pad: what a new user has tried (in the order it is listed). */
+export const ChecklistItem = z.enum(['connect', 'answer', 'hotkey', 'snooze', 'order', 'popout', 'brief']);
+export type ChecklistItem = z.infer<typeof ChecklistItem>;
+
+/** The one-time tips Clippy gives in his speech bubble during the first two weeks. */
+export const TipId = z.enum(['quiet-history', 'standing-order', 'pin-out', 'pad-jot']);
+export type TipId = z.infer<typeof TipId>;
+
+/**
+ * How far the user is with the welcome (kv `onboarding` in the desktop app): when this version
+ * first ran (tips stop 14 days later), the Getting started items done, whether the list was
+ * dismissed, the tips already given and when the last one was.
+ */
+export const OnboardingState = z.object({
+  startedAt: Timestamp,
+  done: z.array(ChecklistItem),
+  dismissed: z.boolean(),
+  tipsShown: z.array(TipId),
+  lastTipAt: Timestamp.optional(),
+});
+export type OnboardingState = z.infer<typeof OnboardingState>;

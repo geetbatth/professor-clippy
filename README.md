@@ -157,12 +157,22 @@ npm run package
   electron-builder before packaging.)
 - The built MCP server and hook ship inside the app, in `resources\mcp\index.js` and
   `resources\hook\index.js`; "Connect Claude Code" registers those installed paths.
-- On first start the note opens on a **first-run wizard**:
-  1. WhatsApp: paste your Worker URL and relay secret, or **Skip WhatsApp for now**.
-  2. Telegram (optional): paste your bot token and pair, or **Skip Telegram for now**.
-  3. Sounds, unsolicited advice (off by default) and start with Windows.
-  4. **Connect Claude Code**: shows exactly what would change (a dry run) and installs only when
-     you click **Looks good, install**. You can skip this and do it later from Settings → Claude Code.
+- On first start the note opens on a **welcome** of four steps, each of which you can skip:
+  1. **Connect Claude Code**: shows exactly what would change (a dry run) and installs only when
+     you click **Looks good, install**. **Later** skips it (Settings → Claude Code has it too).
+  2. **How should I look?**: the paper (it changes at once), follow Windows dark mode, sounds,
+     unsolicited advice (off by default) and start with Windows.
+  3. **Want me on your phone?**: **Set up Telegram** (paste your bot token and pair),
+     **WhatsApp (advanced) ›** (your Worker URL and relay secret), or **Not now**.
+  4. **Try it**: a practice question ("Tea or coffee?") on a real question card. Tap an answer; it
+     stays on the note and goes nowhere. Then the Tell Clippy hotkey, and **Finish** opens the Pad.
+- **Getting started** sits at the top of the Pad ("Getting started 📎 3/7") until you have done
+  all seven things on it or closed it with ×: connect Claude Code, answer a question, tell Clippy
+  something, snooze a note, set a standing order, pin a page to the desktop, get a morning brief.
+  Each ticks itself when you do it; the ones left say how. For the first two weeks Clippy also
+  drops a few one-time **tips** in his speech bubble (at most one an hour, never over a new
+  message's line; off in Settings → Look → Show tips). Existing installs skip the welcome but get
+  the list and the tips.
 - Uninstall from Windows Settings → Apps. To clean Claude Code up too, run
   `node scripts/install-claude-wiring.ts uninstall` from a checkout first (see below; it finds
   the entries by name and marker, wherever they point). Your notes and settings in
@@ -305,7 +315,8 @@ npm run e2e -w apps/desktop   # full local smoke test of the built app (~70 s)
 npm run dev:renderer -w apps/desktop   # the UI alone in a browser, on a mock backend
 ```
 
-In the browser preview, add `?mock=1` for the mock backend, `&firstrun=1` for the wizard,
+In the browser preview, add `?mock=1` for the mock backend, `&firstrun=1` for the welcome
+(`&done=connect,answer` ticks Getting started items),
 `?mode=expanded&tab=chat` (or `tab=pad`) and so on for a given view (`tab=settings&section=look`
 opens a Settings section; `&telegram=1` pretends Telegram is paired), `?page=Scratch` for a
 pinned-out page's window, and `?gallery=1` for the
@@ -367,7 +378,7 @@ local API), `brain\` (the brain's MCP config) and `hook-state.json`.
 | Telegram says "409 Conflict" | Something else reads this bot's updates: another Clippy (another PC, or a dev build) with the same token, or a webhook set on the bot. One Clippy per bot; remove a webhook with the Bot API's `deleteWebhook`. |
 | Nothing arrives on Telegram | Settings → Phone → Telegram must show "Paired with …" and **Send test** must work. If you typed the chat id in, send `/start` to the bot once from your account (a bot can't message someone who never started it). |
 | Clippy vanished | He hides while a fullscreen app is focused (Settings → Pop-ups & sounds → Hide during fullscreen apps), and closing the window only hides him: use the tray icon → Show Clippy. |
-| Start fresh | Quit from the tray, then delete or rename `%APPDATA%\professor-clippy\`. To see the wizard again: Settings → Windows & hotkeys → **Run the welcome again**. |
+| Start fresh | Quit from the tray, then delete or rename `%APPDATA%\professor-clippy\`. To see the welcome (and a closed Getting started list) again: Settings → Windows & hotkeys → **Run the welcome again**; what you already did stays ticked. |
 
 ## Known limitations & security notes
 

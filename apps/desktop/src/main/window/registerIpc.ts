@@ -9,7 +9,7 @@
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import { z } from 'zod';
 import { IpcInvoke, type ClippyBackend, type ClippyEvent, type ClippyEventMap } from '@clippy/shared/ipc';
-import { MessageFilter, NewPageInput, NewStandingOrderInput, NewWatchInput, PageChange, PageFilter, Timestamp } from '@clippy/shared/schemas';
+import { ChecklistItem, MessageFilter, NewPageInput, NewStandingOrderInput, NewWatchInput, PageChange, PageFilter, TipId, Timestamp } from '@clippy/shared/schemas';
 import { SettingsPatch } from '@clippy/shared/settings';
 
 const id = z.string().min(1);
@@ -48,6 +48,11 @@ const argSchemas: { [K in keyof ClippyBackend]: z.ZodType<Parameters<ClippyBacke
   restorePage: z.tuple([id]),
   deletePage: z.tuple([id]),
   popPage: z.tuple([id, z.boolean()]),
+  onboarding: z.tuple([]),
+  markOnboarding: z.tuple([ChecklistItem]),
+  dismissChecklist: z.tuple([]),
+  markTipShown: z.tuple([TipId]),
+  restartWelcome: z.tuple([]),
 };
 
 export interface ClippyIpc {

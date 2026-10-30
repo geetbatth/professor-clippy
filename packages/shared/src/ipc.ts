@@ -9,7 +9,21 @@
  * This module is type-only apart from the channel-name constants, so it is safe
  * to import from sandboxed preload and renderer code.
  */
-import type { AskResult, Message, MessageFilter, NewPageInput, NewWatchInput, Page, PageChange, PageFilter, StandingOrder, Watch } from './schemas';
+import type {
+  AskResult,
+  ChecklistItem,
+  Message,
+  MessageFilter,
+  NewPageInput,
+  NewWatchInput,
+  OnboardingState,
+  Page,
+  PageChange,
+  PageFilter,
+  StandingOrder,
+  TipId,
+  Watch,
+} from './schemas';
 import type { Settings, SettingsPatch } from './settings';
 
 /** Brain activity, for Clippy's thinking animation. */
@@ -152,6 +166,16 @@ export interface ClippyBackend {
   deletePage(id: string): Promise<void>;
   /** Open a page as its own window on the desktop (`true`) or put it back in the Pad. */
   popPage(id: string, popped: boolean): Promise<Page>;
+  /** The Getting started list and the tips given so far. Changes arrive as `onboarding:changed`. */
+  onboarding(): Promise<OnboardingState>;
+  /** Tick a Getting started item the renderer sees happen (a Tell box send, the welcome's practice question). */
+  markOnboarding(item: ChecklistItem): Promise<OnboardingState>;
+  /** The × on the Pad's Getting started row: the list goes away for good (until the welcome is run again). */
+  dismissChecklist(): Promise<OnboardingState>;
+  /** Clippy showed a tip: never again, and none for the next hour. */
+  markTipShown(id: TipId): Promise<OnboardingState>;
+  /** "Run the welcome again": the wizard comes back (`firstRunDone: false`) and so does the list; ticked items stay ticked. */
+  restartWelcome(): Promise<OnboardingState>;
 }
 
 /** `ipcMain.handle` / `ipcRenderer.invoke` channel for each backend method. */
@@ -187,6 +211,11 @@ export const IpcInvoke = {
   restorePage: 'clippy:restorePage',
   deletePage: 'clippy:deletePage',
   popPage: 'clippy:popPage',
+  onboarding: 'clippy:onboarding',
+  markOnboarding: 'clippy:markOnboarding',
+  dismissChecklist: 'clippy:dismissChecklist',
+  markTipShown: 'clippy:markTipShown',
+  restartWelcome: 'clippy:restartWelcome',
 } as const satisfies { [K in keyof ClippyBackend]: `clippy:${K}` };
 
 /** Push-event channels (main → renderer via `webContents.send`). */
@@ -200,6 +229,7 @@ export const IpcEvents = {
   pageChanged: 'page:changed',
   pageDeleted: 'page:deleted',
   settingsChanged: 'settings:changed',
+  onboardingChanged: 'onboarding:changed',
 } as const satisfies Record<string, keyof ClippyEventMap>;
 
 /** Event channel name → payload type. */
@@ -217,6 +247,8 @@ export interface ClippyEventMap {
   'page:deleted': { id: string };
   /** The settings changed, from any window, the tray or the brain (sent to every window). */
   'settings:changed': Settings;
+  /** A Getting started item was ticked, the list dismissed or a tip recorded. */
+  'onboarding:changed': OnboardingState;
 }
 
 /** A push-event channel name. */

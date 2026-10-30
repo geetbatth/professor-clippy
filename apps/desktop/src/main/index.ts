@@ -9,7 +9,7 @@ import { appDataDir, settingsPath, type ClippyEvent, type ClippyEventMap, type H
 import { createBackend, forRenderer } from './backend';
 import { findNode, resolveMcpServerPath } from './brain/mcpConfig';
 import { resolveClaude } from './brain/runner';
-import { createClaudeWiring, resolveWiringPaths } from './claudeWiring';
+import { claudeHooksInstalled, createClaudeWiring, resolveWiringPaths } from './claudeWiring';
 import { Bus } from './core/bus';
 import { startServices } from './startup';
 import { createTray, type ClippyTray } from './tray';
@@ -53,6 +53,7 @@ async function main(): Promise<void> {
   const bus = new Bus();
   bus.on('message:new', (m) => emit('message:new', m));
   bus.on('message:updated', (m) => emit('message:updated', m));
+  bus.on('onboarding:changed', (state) => emit('onboarding:changed', state));
   // Page events go to every window: the note and any page popped out on the desktop.
   const broadcast = <E extends ClippyEvent>(event: E, payload: ClippyEventMap[E]) => {
     for (const w of BrowserWindow.getAllWindows()) {
@@ -70,7 +71,7 @@ async function main(): Promise<void> {
   if (!mcpServerPath) console.warn('[clippy] MCP server not built (apps/mcp/dist/index.js); the brain runs without clippy tools');
   // Settings, core, brain, relay and Telegram; both channels are subscribed before any API
   // request is handled.
-  const { core, settings, brain, phoneGate, watcher, brief, pageArchiver, relay, telegram } = await startServices({
+  const { core, settings, brain, phoneGate, watcher, onboarding, brief, pageArchiver, relay, telegram } = await startServices({
     dataDir,
     settingsFile: settingsPath(),
     version: app.getVersion(),
@@ -87,14 +88,15 @@ async function main(): Promise<void> {
     ...(!app.isPackaged && process.env.CLIPPY_TELEGRAM_API && { telegram: { baseUrl: process.env.CLIPPY_TELEGRAM_API } }),
   });
 
+  // A sandbox for trying the wizard: wire `<dir>/.claude` instead of the real ~/.claude.
+  const claudeHome = process.env.CLIPPY_CLAUDE_HOME || undefined;
   const claudeWiring = createClaudeWiring({
     paths: resolveWiringPaths({
       resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
       mainDir: import.meta.dirname,
       mcpOverride: process.env.CLIPPY_MCP_PATH,
     }),
-    // A sandbox for trying the wizard: wire `<dir>/.claude` instead of the real ~/.claude.
-    home: process.env.CLIPPY_CLAUDE_HOME || undefined,
+    home: claudeHome,
     findNode: () => findNode(),
     findClaude: () => resolveClaude(),
     runInstall: (job) => runInstallInUtilityProcess(job),
@@ -102,7 +104,22 @@ async function main(): Promise<void> {
   // The Tell Clippy hotkey; its status is what Settings shows.
   let tellHotkey: TellHotkey | undefined;
   let tellStatus: HotkeyStatus = { accelerator: settings.get().tellHotkey, ok: true };
-  const backend = createBackend({ store: core.store, asks: core.asks, pages: core.pages, brain, settings, claudeWiring, telegram, hotkey: () => tellStatus, systemDark: () => nativeTheme.shouldUseDarkColors });
+  // Connected before Getting started existed: tick it (installing from the app ticks it too).
+  void claudeHooksInstalled(claudeHome)
+    .then((wired) => wired && onboarding.mark('connect'))
+    .catch((err) => console.error('[clippy] checking the Claude Code wiring failed:', err));
+  const backend = createBackend({
+    store: core.store,
+    asks: core.asks,
+    pages: core.pages,
+    brain,
+    settings,
+    claudeWiring,
+    telegram,
+    hotkey: () => tellStatus,
+    systemDark: () => nativeTheme.shouldUseDarkColors,
+    onboarding,
+  });
   clippy = createClippyWindow({
     loadPos: () => settings.get().windowPos,
     savePos: (windowPos) => {
@@ -188,6 +205,7 @@ async function main(): Promise<void> {
     pageWindows.dispose();
     phoneGate.stop();
     watcher.stop();
+    onboarding.stop();
     brief.stop();
     pageArchiver.stop();
     relay.stop();
