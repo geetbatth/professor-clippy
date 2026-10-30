@@ -9,6 +9,7 @@
 export * from './schemas';
 export * from './settings';
 export * from './api';
+export * from './brain';
 export * from './paths';
 export * from './client';
 export * from './ipc';

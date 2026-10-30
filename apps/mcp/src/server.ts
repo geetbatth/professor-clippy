@@ -9,6 +9,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import {
+  BRAIN_SENDER,
   ClippyNotRunningError,
   DEFAULT_SETTINGS,
   IsoDateTime,
@@ -16,6 +17,7 @@ import {
   settingsPath,
   type AskResult,
   type ClippyClient,
+  type Message,
 } from '@clippy/shared';
 import { NOT_RUNNING_MESSAGE, connectToClippy } from './connect';
 
@@ -35,6 +37,25 @@ export interface ClippyServerOptions {
 const ok = (...lines: string[]): CallToolResult => ({ content: lines.map((text) => ({ type: 'text', text })) });
 
 const iso = (ms: number) => new Date(ms).toISOString();
+
+/** Longest note body the brain gets in a listing; it can't act on more than the gist. */
+const NOTE_BODY_MAX = 300;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A message as the brain sees it in `list_notes` and `recent_activity`. */
+function noteView(m: Message) {
+  return {
+    id: m.id,
+    kind: m.kind,
+    title: m.title,
+    body: m.body.length > NOTE_BODY_MAX ? m.body.slice(0, NOTE_BODY_MAX) : m.body,
+    sender: m.sender,
+    project: m.project,
+    state: m.state,
+    snoozedUntil: m.snoozedUntil === undefined ? undefined : iso(m.snoozedUntil),
+    created: iso(m.createdAt),
+  };
+}
 
 /**
  * Default `ask_user` timeout: `askTimeoutDefaultS` from the app's settings.json,
@@ -81,6 +102,14 @@ export function createClippyServer(options: ClippyServerOptions = {}): McpServer
       if (error instanceof ClippyNotRunningError) throw new Error(NOT_RUNNING_MESSAGE + notRunningHint);
       throw error;
     }
+  }
+
+  /**
+   * Register tools only the desktop app's brain (headless Claude Code with `CLIPPY_SENDER` =
+   * `BRAIN_SENDER`) gets. Agents never see them: they are the user's own sticky note, not theirs.
+   */
+  function brainOnly(register: () => void): void {
+    if (env.CLIPPY_SENDER === BRAIN_SENDER) register();
   }
 
   server.registerTool(
@@ -255,6 +284,84 @@ export function createClippyServer(options: ClippyServerOptions = {}): McpServer
       return ok(JSON.stringify(result), `Answered question ${id}.`);
     },
   );
+
+  brainOnly(() => {
+    server.registerTool(
+      'list_notes',
+      {
+        title: 'List notes waiting on the user',
+        description:
+          "List the notes, questions and reminders on the user's sticky note that are unread or snoozed, newest first. " +
+          'Use this when they ask what is waiting on them, or to find the note they mean before snoozing or dismissing it.',
+        inputSchema: {},
+      },
+      async () => {
+        const [unread, snoozed] = await withClient((c) =>
+          Promise.all([c.listMessages({ state: 'unread' }), c.listMessages({ state: 'snoozed' })]),
+        );
+        const notes = [...unread, ...snoozed].filter((m) => m.kind !== 'chat').sort((a, b) => b.createdAt - a.createdAt);
+        if (notes.length === 0) return ok('No unread or snoozed notes.');
+        return ok(JSON.stringify(notes.map(noteView), null, 2));
+      },
+    );
+
+    server.registerTool(
+      'recent_activity',
+      {
+        title: 'Recent activity',
+        description:
+          'List the notes, questions and reminders that arrived since a given time (default the last 24 hours), newest first, ' +
+          'with whether the user dealt with them and any answer they gave. Use this for what happened while they were away.',
+        inputSchema: {
+          since: IsoDateTime.optional().describe('ISO 8601 start time. Default: 24 hours ago.'),
+          limit: z.number().int().min(1).max(100).optional().describe('Most items to return, 1 to 100. Default 30.'),
+        },
+      },
+      async ({ since, limit }) => {
+        const from = since === undefined ? Date.now() - DAY_MS : Date.parse(since);
+        const all = await withClient((c) => c.listMessages({}));
+        const recent = all
+          .filter((m) => m.kind !== 'chat' && m.createdAt >= from)
+          .sort((a, b) => b.createdAt - a.createdAt)
+          .slice(0, limit ?? 30);
+        if (recent.length === 0) return ok(`Nothing arrived since ${iso(from)}.`);
+        return ok(JSON.stringify(recent.map((m) => ({ ...noteView(m), answer: m.answer, answeredVia: m.answeredVia })), null, 2));
+      },
+    );
+
+    server.registerTool(
+      'snooze_note',
+      {
+        title: 'Snooze a note',
+        description:
+          "Hide one of the user's notes until a later time, when it comes back. Use this when they say not now or bring it back after lunch. " +
+          'Get the id from list_notes. Convert phrases like after lunch to an ISO 8601 timestamp yourself.',
+        inputSchema: {
+          id: z.string().min(1).describe('Note id from list_notes.'),
+          until: IsoDateTime.describe('When it should come back, ISO 8601 with an offset or Z. Must be in the future.'),
+        },
+      },
+      async ({ id, until }) => {
+        const untilMs = Date.parse(until);
+        if (untilMs <= Date.now()) throw new Error('That time has already passed');
+        await withClient((c) => c.snooze(id, untilMs));
+        return ok(`Snoozed note ${id} until ${iso(untilMs)}.`);
+      },
+    );
+
+    server.registerTool(
+      'dismiss_note',
+      {
+        title: 'Dismiss a note',
+        description: "Mark one of the user's notes as done so it leaves the sticky note. Get the id from list_notes.",
+        inputSchema: { id: z.string().min(1).describe('Note id from list_notes.') },
+      },
+      async ({ id }) => {
+        await withClient((c) => c.markDone(id));
+        return ok(`Dismissed note ${id}.`);
+      },
+    );
+  });
 
   return server;
 }

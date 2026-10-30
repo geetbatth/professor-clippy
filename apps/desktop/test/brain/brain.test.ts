@@ -60,6 +60,10 @@ describe('Brain', () => {
     expect([...BRAIN_CLIPPY_TOOLS, ...BRAIN_BLOCKED_CLIPPY_TOOLS].sort()).toEqual([...registered].sort());
     // The persona asks in the reply, never through a tool that waits.
     expect(PERSONA).toMatch(/ask in your reply/);
+    // ...and knows what to do with the note tools.
+    expect(PERSONA).toMatch(/snooze_note/);
+    expect(PERSONA).toMatch(/recent_activity/);
+    expect(PERSONA).toMatch(/list_notes with list_pending_asks/);
     expect(PERSONA).not.toMatch(/"|%/); // survives the cmd.exe fallback
   });
 
@@ -83,7 +87,8 @@ describe('Brain', () => {
     expect(flag('--mcp-config')).toBe('C:/data/brain/brain-mcp.json');
     expect(flag('--allowedTools')).toBe(
       'Read Glob Grep WebSearch mcp__clippy__leave_message mcp__clippy__remind_me mcp__clippy__list_reminders ' +
-        'mcp__clippy__cancel_reminder mcp__clippy__list_pending_asks mcp__clippy__answer_pending',
+        'mcp__clippy__cancel_reminder mcp__clippy__list_pending_asks mcp__clippy__answer_pending ' +
+        'mcp__clippy__list_notes mcp__clippy__recent_activity mcp__clippy__snooze_note mcp__clippy__dismiss_note',
     );
     expect(flag('--allowedTools')).toBe(ALLOWED_TOOLS);
     expect(flag('--disallowedTools')).toBe('Edit Write Bash NotebookEdit WebFetch mcp__clippy__ask_user mcp__clippy__check_reply');

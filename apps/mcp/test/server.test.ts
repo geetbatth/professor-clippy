@@ -5,6 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { Message } from '@clippy/shared';
 import { createClippyServer, type ClippyServerOptions } from '../src/server';
 import { startFakeApi, type FakeApi } from './fake-api';
 
@@ -239,6 +240,116 @@ describe('pending asks', () => {
     const r = await call('check_reply', { id: 'missing' });
     expect(r.isError).toBe(true);
     expect(texts(r)[0]).toMatch(/404/);
+  });
+});
+
+describe('brain-only note tools', () => {
+  const BRAIN = { CLIPPY_SENDER: 'clippy-brain' };
+  const BRAIN_TOOLS = ['dismiss_note', 'list_notes', 'recent_activity', 'snooze_note'];
+  const seed = (api: FakeApi, extra: Partial<Message>): Message => {
+    const m: Message = {
+      id: `01JB2Z3K4M5N6P7Q8R9S0${String(api.messages.length + 90).padStart(5, '0')}`,
+      kind: 'note',
+      body: 'hello',
+      sender: 'claude-code',
+      urgent: false,
+      state: 'unread',
+      createdAt: Date.now(),
+      ...extra,
+    };
+    api.messages.push(m);
+    return m;
+  };
+
+  it('lists the four tools for the brain and hides them from agents', async () => {
+    await setup({ env: BRAIN });
+    const names = (await client!.listTools()).tools.map((t) => t.name);
+    expect(names).toEqual(expect.arrayContaining(BRAIN_TOOLS));
+    await client!.close();
+    await api?.close();
+
+    await setup({ env: { CLIPPY_SENDER: 'codex' } });
+    const agentNames = (await client!.listTools()).tools.map((t) => t.name);
+    for (const t of BRAIN_TOOLS) expect(agentNames).not.toContain(t);
+  });
+
+  it('list_notes shows unread and snoozed notes, asks and reminders (not done or chat), body cut to 300 chars', async () => {
+    const { api } = await setup({ env: BRAIN });
+    const unread = seed(api, { body: 'x'.repeat(400), project: 'payments', createdAt: Date.parse('2026-11-02T09:00:00Z') });
+    const snoozed = seed(api, { kind: 'ask', state: 'snoozed', snoozedUntil: Date.parse('2026-11-02T15:00:00Z'), createdAt: Date.parse('2026-11-02T08:00:00Z') });
+    seed(api, { state: 'done' });
+    seed(api, { kind: 'chat', role: 'user' });
+    const listed = JSON.parse(texts(await call('list_notes'))[0]!);
+    expect(listed.map((n: { id: string }) => n.id)).toEqual([unread.id, snoozed.id]);
+    expect(listed[0]).toEqual({
+      id: unread.id,
+      kind: 'note',
+      title: undefined,
+      body: 'x'.repeat(300),
+      sender: 'claude-code',
+      project: 'payments',
+      state: 'unread',
+      created: '2026-11-02T09:00:00.000Z',
+    });
+    expect(listed[1]).toMatchObject({ kind: 'ask', state: 'snoozed', snoozedUntil: '2026-11-02T15:00:00.000Z' });
+  });
+
+  it('list_notes says so when nothing is waiting', async () => {
+    await setup({ env: BRAIN });
+    expect(texts(await call('list_notes'))[0]).toBe('No unread or snoozed notes.');
+  });
+
+  it('snooze_note snoozes until the given time (epoch ms)', async () => {
+    const { api } = await setup({ env: BRAIN });
+    const m = seed(api, {});
+    const until = new Date(Date.now() + 3_600_000).toISOString();
+    const r = await call('snooze_note', { id: m.id, until });
+    expect(r.isError).toBeFalsy();
+    expect(api.requests.find((q) => q.path === `/messages/${m.id}/snooze`)?.body).toEqual({ until: Date.parse(until) });
+    expect(m).toMatchObject({ state: 'snoozed', snoozedUntil: Date.parse(until) });
+  });
+
+  it('snooze_note refuses a time that has already passed', async () => {
+    const { api } = await setup({ env: BRAIN });
+    const m = seed(api, {});
+    const r = await call('snooze_note', { id: m.id, until: '2020-01-01T00:00:00Z' });
+    expect(r.isError).toBe(true);
+    expect(texts(r)[0]).toMatch(/That time has already passed/);
+    expect(api.requests.some((q) => q.path.endsWith('/snooze'))).toBe(false);
+  });
+
+  it('dismiss_note marks the note done', async () => {
+    const { api } = await setup({ env: BRAIN });
+    const m = seed(api, {});
+    const r = await call('dismiss_note', { id: m.id });
+    expect(r.isError).toBeFalsy();
+    expect(m.state).toBe('done');
+  });
+
+  it('recent_activity skips chat lines and older messages, newest first, with answers', async () => {
+    const { api } = await setup({ env: BRAIN });
+    const now = Date.now();
+    const old = seed(api, { createdAt: now - 48 * 3_600_000 });
+    const a = seed(api, { createdAt: now - 3 * 3_600_000, project: 'web' });
+    const b = seed(api, {
+      kind: 'ask',
+      body: 'Deploy?',
+      state: 'done',
+      answer: 'yes',
+      answeredVia: 'whatsapp',
+      createdAt: now - 1 * 3_600_000,
+    });
+    seed(api, { kind: 'chat', role: 'user', createdAt: now - 1000 });
+    const got = JSON.parse(texts(await call('recent_activity'))[0]!);
+    expect(got.map((n: { id: string }) => n.id)).toEqual([b.id, a.id]);
+    expect(got.map((n: { id: string }) => n.id)).not.toContain(old.id);
+    expect(got[0]).toMatchObject({ state: 'done', answer: 'yes', answeredVia: 'whatsapp' });
+
+    const since = new Date(now - 2 * 3_600_000).toISOString();
+    const recent = JSON.parse(texts(await call('recent_activity', { since }))[0]!);
+    expect(recent.map((n: { id: string }) => n.id)).toEqual([b.id]);
+    const limited = JSON.parse(texts(await call('recent_activity', { since: new Date(now - 72 * 3_600_000).toISOString(), limit: 2 }))[0]!);
+    expect(limited).toHaveLength(2);
   });
 });
 

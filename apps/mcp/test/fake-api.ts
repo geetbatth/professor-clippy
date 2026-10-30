@@ -76,6 +76,25 @@ export async function startFakeApi(appDataDir?: string) {
         messages.push(m);
         return send(201, m);
       }
+      case 'GET /messages': {
+        const { state, kind } = Object.fromEntries(url.searchParams);
+        const list = messages.filter((m) => (!state || m.state === state) && (!kind || m.kind === kind));
+        return send(200, [...list].sort((a, b) => b.createdAt - a.createdAt));
+      }
+      case 'POST /messages/:id/done': {
+        const m = messages.find((x) => x.id === id);
+        if (!m) return send(404, { error: 'no such message' });
+        m.state = 'done';
+        m.doneAt = Date.now();
+        return send(200, m);
+      }
+      case 'POST /messages/:id/snooze': {
+        const m = messages.find((x) => x.id === id);
+        if (!m) return send(404, { error: 'no such message' });
+        m.state = 'snoozed';
+        m.snoozedUntil = body.until;
+        return send(200, m);
+      }
       case 'POST /reminders': {
         const r: Reminder = {
           id: nextId(),

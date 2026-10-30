@@ -8,9 +8,8 @@
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { delimiter, join, resolve } from 'node:path';
+import { BRAIN_SENDER } from '@clippy/shared';
 import { writeAtomic } from '../core/files';
-
-export const BRAIN_SENDER = 'clippy-brain';
 
 export interface McpServerLocation {
   /** Overrides everything (env `CLIPPY_MCP_PATH`). */
