@@ -16,12 +16,16 @@
  * - Messages that arrive `done` (quiet agent-finished notes, chat lines) are never mirrored.
  * - A phone approval (an agent's permission request, `isApprovalAsk`) is mirrored at once, always:
  *   it is only ever posted when the user is away, and its agent is blocked until they answer.
+ * - So is a restart confirmation (`isPowerConfirmation`): the user may well have asked for the
+ *   restart from the phone, and keyboard or mouse input at the PC (someone else, or the user a
+ *   minute ago) must not keep the Restart / Cancel question from reaching them.
  *
  * Electron-free: "away" is injected (`startServices` builds it from the idle time and the
  * away threshold).
  */
 import type { Message } from '@clippy/shared';
 import { isApprovalAsk } from './approvals/approvals';
+import { isPowerConfirmation } from './power/actions';
 import type { Bus } from './core/bus';
 import { systemClock, type Clock, type TimerHandle } from './core/clock';
 import type { Store } from './core/store';
@@ -99,7 +103,7 @@ export class PhoneGate {
   #onNew(m: Message): void {
     if (m.kind !== 'note' && m.kind !== 'ask' && m.kind !== 'reminder') return;
     if (m.state === 'done') return;
-    if (m.state === 'unread' && (isApprovalAsk(m) || this.#open())) this.#o.bus.emit('message:mirror', m);
+    if (m.state === 'unread' && (isApprovalAsk(m) || isPowerConfirmation(m) || this.#open())) this.#o.bus.emit('message:mirror', m);
     else this.#held.set(m.id, { since: this.#clock.now(), snoozed: m.state === 'snoozed' });
   }
 

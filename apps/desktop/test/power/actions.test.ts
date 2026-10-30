@@ -11,6 +11,7 @@ import { startCore, type Core } from '../../src/main/core/core';
 import { ForbiddenError } from '../../src/main/core/errors';
 import {
   confirmsRestart,
+  isPowerConfirmation,
   ONLY_USER_CONFIRMS_MESSAGE,
   POWER_KV_KEY,
   POWER_OFF_MESSAGE,
@@ -77,7 +78,8 @@ describe('restart an app', () => {
     const result = await client.restartApp('chrome', 'it froze');
     const question = 'Restart Google Chrome (chrome.exe, 3 processes)? Unsaved work in it may be lost. Reason: it froze';
     expect(result).toEqual({ id: expect.any(String), status: 'awaiting-confirmation', question });
-    expect(core.store.getMessage(result.id)).toMatchObject({ kind: 'ask', body: question, options: ['Restart', 'Cancel'], sender: POWER_SENDER, urgent: true, state: 'unread' });
+    expect(core.store.getMessage(result.id)).toMatchObject({ kind: 'ask', body: question, options: ['Restart', 'Cancel'], sender: POWER_SENDER, urgent: true, state: 'unread', event: 'power-confirmation' });
+    expect(isPowerConfirmation(core.store.getMessage(result.id)!)).toBe(true); // so the phone gate sends it at once
     expect(actions(fake)).toEqual([]); // nothing until the user says so
     expect(JSON.parse(core.store.getKv(POWER_KV_KEY)!)).toEqual([
       { id: result.id, kind: 'restart-app', exe: 'chrome.exe', label: 'Google Chrome', createdAt: T0 },
@@ -226,12 +228,14 @@ describe('restart the PC', () => {
   it('asks first, then schedules a 60 s restart and offers Cancel restart', async () => {
     const { id, question } = await client.restartPc('updates');
     expect(question).toBe('Restart your PC? Every app will close and unsaved work may be lost. Reason: updates');
+    expect(core.store.getMessage(id)).toMatchObject({ options: ['Restart', 'Cancel'], event: 'power-confirmation' });
     expect(actions(fake)).toEqual([]);
     core.asks.answer(id, 'Restart', 'telegram');
     await core.power.settled();
     expect(actions(fake)).toEqual(['shutdown /r /t 60 /c Professor Clippy is restarting your PC because you asked him to.']);
     const [cancel] = core.asks.listPending();
-    expect(cancel).toMatchObject({ body: 'Restarting your PC in 60 seconds.', options: ['Cancel restart'], sender: POWER_SENDER, urgent: true });
+    expect(cancel).toMatchObject({ body: 'Restarting your PC in 60 seconds.', options: ['Cancel restart'], sender: POWER_SENDER, urgent: true, event: 'power-confirmation' });
+    expect(isPowerConfirmation(cancel!)).toBe(true);
     expect(core.power.isConfirmation(cancel!.id)).toBe(false);
   });
 
@@ -261,6 +265,15 @@ describe('restart the PC', () => {
     await core.power.settled();
     expect(actions(fake)).toEqual([]);
     expect(lastNote()).toBe('Cancelled: your PC stays on.');
+  });
+});
+
+describe('isPowerConfirmation', () => {
+  it('is an ask with the power-confirmation event, nothing else', () => {
+    expect(isPowerConfirmation({ kind: 'ask', event: 'power-confirmation' })).toBe(true);
+    expect(isPowerConfirmation({ kind: 'ask' })).toBe(false);
+    expect(isPowerConfirmation({ kind: 'ask', event: 'agent-permission-request' })).toBe(false);
+    expect(isPowerConfirmation({ kind: 'note', event: 'power-confirmation' })).toBe(false);
   });
 });
 

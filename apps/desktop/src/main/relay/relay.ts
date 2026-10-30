@@ -27,8 +27,10 @@
  *
  * Inbound frames (idempotent; the Worker redelivers anything unacked):
  * - `inbound` quote-replying to an unanswered ask's `waId` answers that ask
- *   (`answeredVia: 'whatsapp'`). Any other text is stored as a user chat line and becomes a
- *   brain turn, whose reply goes back with `/send`.
+ *   (`answeredVia: 'whatsapp'`). So does a plain text that is one of the buttons of exactly one
+ *   open ask sent to WhatsApp (`findButtonAnswer`); if several offer it, the user is asked to
+ *   quote the one they mean. Any other text is stored as a user chat line and becomes a brain
+ *   turn, whose reply goes back with `/send`.
  * - `reminder-fired` is reconciled through `scheduler.applyRemoteFiring` (it never sends).
  */
 import type { Message, Reminder, RelayInbound, RelayReminderFired, WorkerToPc } from '@clippy/shared';
@@ -38,6 +40,7 @@ import type { Asks } from '../core/asks';
 import type { Scheduler } from '../core/scheduler';
 import type { Store } from '../core/store';
 import type { BrainReply, Channel } from '../brain/brain';
+import { AMBIGUOUS_ANSWER_MESSAGE, findButtonAnswer } from '../buttonAnswer';
 import { RelayHttpError, type RelayTransport } from './relayClient';
 
 /** Delays before each retry of a failed Worker call. */
@@ -330,6 +333,15 @@ export class Relay {
         const via = current?.answeredVia ? ` (via ${current.answeredVia})` : '';
         this.#sendChat(`📎 That question was already answered${via}: “${current?.answer ?? ''}”.`);
       }
+      this.#markSeen(seen, frame.id);
+      return;
+    }
+
+    // A plain "Restart" (say) answers the one open question here with that button.
+    const button = findButtonAnswer(store.listPendingAsks(), frame.text, 'whatsapp');
+    if (button === 'ambiguous') this.#sendChat(AMBIGUOUS_ANSWER_MESSAGE);
+    else if (button) asks.answer(button.ask.id, button.option, 'whatsapp');
+    if (button) {
       this.#markSeen(seen, frame.id);
       return;
     }

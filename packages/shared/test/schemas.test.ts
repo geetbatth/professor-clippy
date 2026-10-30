@@ -213,6 +213,12 @@ describe('Watch', () => {
     // An ask posted through the API can't carry an event at all (it is stripped).
     expect(NewAskInput.parse({ question: 'q', sender: 'a', event: 'agent-permission-request' })).toEqual({ question: 'q', sender: 'a' });
   });
+
+  it('marks a restart confirmation ask, which no note or ask posted through the API can claim to be', () => {
+    expect(Message.parse({ ...note, kind: 'ask', event: 'power-confirmation' }).event).toBe('power-confirmation');
+    expect(NewMessageInput.safeParse({ body: 'hi', sender: 'a', event: 'power-confirmation' }).success).toBe(false);
+    expect(NewAskInput.parse({ question: 'q', sender: 'a', event: 'power-confirmation' })).toEqual({ question: 'q', sender: 'a' });
+  });
 });
 
 describe('Page', () => {

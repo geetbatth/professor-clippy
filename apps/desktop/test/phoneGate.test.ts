@@ -4,6 +4,7 @@ import { Asks } from '../src/main/core/asks';
 import { Bus } from '../src/main/core/bus';
 import { Store } from '../src/main/core/store';
 import { PhoneGate } from '../src/main/phoneGate';
+import { POWER_SENDER } from '../src/main/power/actions';
 import { FakeClock } from './core/fakeClock';
 
 const T0 = Date.UTC(2026, 9, 30, 9);
@@ -246,6 +247,13 @@ describe('PhoneGate', () => {
     const approval = asks.create({ question: '🔐 p wants permission\nRun: npm test', options: ['Allow', 'Deny'], sender: 'claude-code', urgent: true, event: 'agent-permission-request' });
     const plain = asks.create({ question: 'Which branch?', sender: 'claude-code', urgent: true });
     expect(mirrored.map((m) => m.id)).toEqual([approval.id]);
+    expect(gate.heldIds).toEqual([plain.id]);
+  });
+
+  it('mirrors a restart confirmation at once while the user is at the PC; an ordinary ask from the same sender is held', () => {
+    const confirmation = asks.create({ question: 'Restart T3 Code?', options: ['Restart', 'Cancel'], sender: POWER_SENDER, urgent: true, event: 'power-confirmation' });
+    const plain = asks.create({ question: 'Restart T3 Code?', options: ['Restart', 'Cancel'], sender: POWER_SENDER, urgent: true });
+    expect(mirrored.map((m) => m.id)).toEqual([confirmation.id]);
     expect(gate.heldIds).toEqual([plain.id]);
   });
 

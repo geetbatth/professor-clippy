@@ -454,6 +454,75 @@ describe('Telegram: answering asks', () => {
   });
 });
 
+describe('Telegram: a plain message that matches a button', () => {
+  async function mirroredAsk(question: string, options: string[], extra: { event?: 'agent-permission-request' } = {}) {
+    const ask = ctx.asks.create({ question, options, sender: 'agent', ...extra });
+    const tgMsgId = await waitFor(() => ctx.store.getMessage(ask.id)?.tgMsgId, 3000, 'the ask mirror');
+    return { ask, tgMsgId };
+  }
+
+  it('answers the waiting question with the option (via telegram) and edits its copy; nothing goes to the brain', async () => {
+    ctx = await setup({ chatId: ME });
+    const { ask, tgMsgId } = await mirroredAsk('Restart T3 Code?', ['Restart', 'Cancel']);
+    ctx.fake.text('Restart.');
+    await waitFor(() => ctx.asks.result(ask.id).status === 'answered', 3000, 'the answer');
+    expect(ctx.asks.result(ask.id)).toMatchObject({ answer: 'Restart', answeredVia: 'telegram' });
+    await waitFor(() => ctx.fake.of('editMessageText').length === 1, 3000, 'the edit');
+    expect(ctx.fake.of('editMessageText')[0]).toMatchObject({ message_id: tgMsgId });
+    expect(ctx.asked).toEqual([]);
+  });
+
+  it('answers a phone approval too (Allow)', async () => {
+    ctx = await setup({ chatId: ME });
+    const { ask } = await mirroredAsk('🔐 p wants permission\nRun: npm test', ['Allow', 'Deny'], { event: 'agent-permission-request' });
+    ctx.fake.text('allow');
+    await waitFor(() => ctx.asks.result(ask.id).status === 'answered', 3000, 'the answer');
+    expect(ctx.asks.result(ask.id)).toMatchObject({ answer: 'Allow', answeredVia: 'telegram' });
+    expect(ctx.asked).toEqual([]);
+  });
+
+  it('text that is not an option ("yes please") is chat for the brain, and the question stays open', async () => {
+    ctx = await setup({ chatId: ME });
+    const { ask } = await mirroredAsk('Restart T3 Code?', ['Restart', 'Cancel']);
+    ctx.fake.text('yes please');
+    await waitFor(() => ctx.asked.length === 1, 3000, 'the brain turn');
+    expect(ctx.asked[0]).toEqual(['yes please', { channel: 'telegram' }]);
+    expect(ctx.asks.result(ask.id).status).toBe('pending');
+  });
+
+  it('two waiting questions offering the same answer: says to reply to the one meant, answers neither, no brain', async () => {
+    ctx = await setup({ chatId: ME });
+    const first = await mirroredAsk('Restart T3 Code?', ['Restart', 'Cancel']);
+    const second = await mirroredAsk('Delete the branch?', ['Delete', 'Cancel']);
+    const before = sends().length;
+    ctx.fake.text('cancel');
+    await waitFor(() => sends().length === before + 1, 3000, 'the reply');
+    expect(lastSend().text).toBe('📎 More than one question is waiting for that answer — reply to the one you mean.');
+    expect(ctx.asks.result(first.ask.id).status).toBe('pending');
+    expect(ctx.asks.result(second.ask.id).status).toBe('pending');
+    expect(ctx.asked).toEqual([]);
+    expect(ctx.store.listMessages({ kind: 'chat' })).toEqual([]);
+  });
+
+  it('a question that never reached Telegram is not answered by a plain message (it goes to the brain)', async () => {
+    ctx = await setup({ chatId: ME });
+    const { ask } = await mirroredAsk('Restart T3 Code?', ['Restart', 'Cancel']);
+    ctx.store.updateMessage(ask.id, { tgMsgId: null }); // as if the phone gate had held it
+    ctx.fake.text('restart');
+    await waitFor(() => ctx.asked.length === 1, 3000, 'the brain turn');
+    expect(ctx.asks.result(ask.id).status).toBe('pending');
+  });
+
+  it('an already answered question is ignored: the text goes to the brain', async () => {
+    ctx = await setup({ chatId: ME });
+    const { ask } = await mirroredAsk('Restart T3 Code?', ['Restart', 'Cancel']);
+    ctx.asks.answer(ask.id, 'Cancel', 'desk');
+    ctx.fake.text('restart');
+    await waitFor(() => ctx.asked.length === 1, 3000, 'the brain turn');
+    expect(ctx.asks.result(ask.id)).toMatchObject({ answer: 'Cancel', answeredVia: 'desk' });
+  });
+});
+
 describe('Telegram: restart questions (power actions)', () => {
   /** PowerActions over this test's store, with a fake executor: nothing real is touched. */
   function power() {
@@ -491,6 +560,22 @@ describe('Telegram: restart questions (power actions)', () => {
     await p.settled();
     expect(fakeActions(fake)).toEqual(['shutdown /r /t 60 /c Professor Clippy is restarting your PC because you asked him to.']);
     expect(ctx.asked).toEqual([]); // an answer, not a brain turn
+  });
+
+  it('a plain "restart" (not a reply) answers the one waiting Restart / Cancel question, like a tap; the brain never hears it', async () => {
+    ctx = await setup({ chatId: ME });
+    const { fake, power: p } = power();
+    const { id } = await p.requestRestartApp('chrome');
+    const tgMsgId = await waitFor(() => ctx.store.getMessage(id)?.tgMsgId, 3000, 'the question');
+    ctx.fake.text('restart');
+    await waitFor(() => ctx.asks.result(id).status === 'answered', 3000, 'the answer');
+    expect(ctx.asks.result(id)).toMatchObject({ answer: 'Restart', answeredVia: 'telegram' }); // the option's own casing
+    await p.settled();
+    expect(fakeActions(fake)).toContain(`launch ${CHROME_PATH} | --profile-directory=Default`);
+    await waitFor(() => ctx.fake.of('editMessageText').length === 1, 3000, 'the buttons removed');
+    expect(ctx.fake.of('editMessageText')[0]).toMatchObject({ message_id: tgMsgId, reply_markup: { inline_keyboard: [] } });
+    expect(ctx.asked).toEqual([]);
+    expect(ctx.store.listMessages({ kind: 'chat' })).toEqual([]); // an answer, not a chat line
   });
 
   it('a leftover expired on start loses its buttons in Telegram', async () => {

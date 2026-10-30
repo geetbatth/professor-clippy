@@ -273,6 +273,79 @@ describe('Relay', () => {
       expect(transport.sends.at(-1)).toEqual({ text: "📎 Claude Code isn't logged in.", kind: 'chat' });
     });
 
+    it('plain text matching a button of the one waiting question answers it via WhatsApp; the brain never hears it', async () => {
+      ctx = setup();
+      const { asks, store, transport, relay, asked, settle } = ctx;
+      const ask = asks.create({ question: 'Restart T3 Code?', options: ['Restart', 'Cancel'], sender: 'Professor Clippy', urgent: true });
+      await settle();
+      expect(store.getMessage(ask.id)?.waId).toBeDefined();
+      await relay.handleFrame(inbound('wamid.b1', ' restart! '));
+      expect(asks.result(ask.id)).toMatchObject({ status: 'answered', answer: 'Restart', answeredVia: 'whatsapp' });
+      await settle();
+      expect(asked).toEqual([]);
+      expect(store.listMessages({ kind: 'chat' })).toEqual([]);
+      expect(transport.sends).toHaveLength(1); // just the ask itself
+      expect(JSON.parse(store.getKv(SEEN_KV_KEY)!)).toEqual(['wamid.b1']);
+      // Redelivered: handled once.
+      await relay.handleFrame(inbound('wamid.b1', 'restart'));
+      await settle();
+      expect(asked).toEqual([]);
+    });
+
+    it('a phone approval is answered the same way (Deny)', async () => {
+      ctx = setup();
+      const { asks, relay, settle } = ctx;
+      const ask = asks.create({ question: '🔐 p wants permission', options: ['Allow', 'Deny'], sender: 'claude-code', event: 'agent-permission-request' });
+      await settle();
+      await relay.handleFrame(inbound('wamid.b2', 'Deny'));
+      expect(asks.result(ask.id)).toMatchObject({ answer: 'Deny', answeredVia: 'whatsapp' });
+    });
+
+    it('text that is not an option is chat for the brain, and the question stays open', async () => {
+      ctx = setup();
+      const { asks, relay, asked, settle } = ctx;
+      const ask = asks.create({ question: 'Restart T3 Code?', options: ['Restart', 'Cancel'], sender: 'Professor Clippy' });
+      await settle();
+      await relay.handleFrame(inbound('wamid.b3', 'yes please'));
+      await settle();
+      expect(asked).toEqual([['yes please', { channel: 'whatsapp' }]]);
+      expect(asks.result(ask.id).status).toBe('pending');
+    });
+
+    it('two waiting questions offering the answer: says to quote the one meant, answers neither, no brain', async () => {
+      ctx = setup();
+      const { asks, transport, relay, asked, settle } = ctx;
+      const a = asks.create({ question: 'Restart T3 Code?', options: ['Restart', 'Cancel'], sender: 'Professor Clippy' });
+      const b = asks.create({ question: 'Delete the branch?', options: ['Delete', 'Cancel'], sender: 'agent' });
+      await settle();
+      await relay.handleFrame(inbound('wamid.b4', 'Cancel'));
+      await settle();
+      expect(transport.sends.at(-1)).toEqual({ text: '📎 More than one question is waiting for that answer — reply to the one you mean.', kind: 'chat' });
+      expect(asks.result(a.id).status).toBe('pending');
+      expect(asks.result(b.id).status).toBe('pending');
+      expect(asked).toEqual([]);
+    });
+
+    it('a question that never reached WhatsApp, or one already answered, is not answered by plain text', async () => {
+      ctx = setup();
+      const { asks, store, relay, asked, settle } = ctx;
+      const held = asks.create({ question: 'Restart T3 Code?', options: ['Restart', 'Cancel'], sender: 'Professor Clippy' });
+      await settle();
+      store.updateMessage(held.id, { waId: null }); // as if the phone gate had held it
+      await relay.handleFrame(inbound('wamid.b5', 'restart'));
+      await settle();
+      expect(asks.result(held.id).status).toBe('pending');
+      expect(asked).toHaveLength(1);
+
+      const answered = asks.create({ question: 'Restart Slack?', options: ['Restart', 'Cancel'], sender: 'Professor Clippy' });
+      await settle();
+      asks.answer(answered.id, 'Cancel', 'desk');
+      await relay.handleFrame(inbound('wamid.b6', 'restart'));
+      await settle();
+      expect(asks.result(answered.id)).toMatchObject({ answer: 'Cancel', answeredVia: 'desk' });
+      expect(asked).toHaveLength(2);
+    });
+
     it('reminder-fired is reconciled without sending anything', async () => {
       ctx = setup();
       const { scheduler, store, transport, relay, settle } = ctx;

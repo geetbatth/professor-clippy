@@ -28,13 +28,15 @@ export type AnsweredVia = z.infer<typeof AnsweredVia>;
 /**
  * What a message from an agent is about: the hook's notes (the agent finished, or it needs a
  * permission) and, on an ask only, `agent-permission-request`: an agent's permission request the
- * user approves from the phone while away (`main/approvals`). Only the app itself stores that one.
+ * user approves from the phone while away (`main/approvals`), or `power-confirmation`: Clippy's
+ * Restart / Cancel question for a restart the user asked for (`main/power`). Only the app itself
+ * stores those two.
  */
-export const AgentEvent = z.enum(['agent-finished', 'agent-needs-permission', 'agent-permission-request']);
+export const AgentEvent = z.enum(['agent-finished', 'agent-needs-permission', 'agent-permission-request', 'power-confirmation']);
 export type AgentEvent = z.infer<typeof AgentEvent>;
 
-/** The events a note posted through the API may carry (never `agent-permission-request`). */
-export const NoteEvent = AgentEvent.exclude(['agent-permission-request']);
+/** The events a note posted through the API may carry (never `agent-permission-request` or `power-confirmation`). */
+export const NoteEvent = AgentEvent.exclude(['agent-permission-request', 'power-confirmation']);
 export type NoteEvent = z.infer<typeof NoteEvent>;
 
 /** Who wrote a chat line (only meaningful for `kind: 'chat'`). */

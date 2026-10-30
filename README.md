@@ -90,7 +90,9 @@ that have waited less than an hour are sent; older ones stay on the desk.
   WhatsApp) and he posts an urgent question, e.g. "Restart Google Chrome (chrome.exe, 12
   processes)? Unsaved work in it may be lost.", with Restart and Cancel buttons. Nothing happens
   until **you** tap Restart (or answer yes) on the note or your phone; Clippy can't answer it for
-  you, and an unanswered request expires after 10 minutes. Restarting an app closes every process
+  you, and an unanswered request expires after 10 minutes. The question goes to your phone at
+  once, even while the PC is in use, and there you can also just send "Restart" or "Cancel"
+  instead of tapping. Restarting an app closes every process
   of that exe and starts it again from its own path with its original command line (apps that
   restart themselves, like Explorer, are left to it). Windows' own processes, apps running as
   administrator and Clippy himself are refused. A PC restart happens 60 seconds after you confirm,
@@ -101,8 +103,8 @@ that have waited less than an hour are sent; older ones stay on the desk.
   Code → "Approve agents from my phone", which needs the Claude Code hook on). While you
   are away (the "I count as away after" time, Settings → Phone), a Claude Code agent that stops to ask "allow this
   tool use?" puts the question on the note and on your phone instead, e.g. "🔐 payments wants
-  permission / Run: npm publish", with Allow and Deny buttons; your tap answers the agent. A typed
-  reply ("use pnpm instead") denies it and passes your words on to the agent. At the PC nothing
+  permission / Run: npm publish", with Allow and Deny buttons; your tap (or just sending "Allow"
+  or "Deny") answers the agent. A typed reply ("use pnpm instead") denies it and passes your words on to the agent. At the PC nothing
   changes: you get Claude Code's normal prompt. Only you can answer one (not Clippy, not a standing
   order, not another agent). If nobody answers within 29 minutes, or you dismiss the note, the
   agent falls back to its normal terminal prompt. It needs the hook's `PermissionRequest` entry:
@@ -241,8 +243,10 @@ How it behaves once connected:
   Within 24 h of your last WhatsApp
   message to Clippy it is plain text; otherwise it goes out as the approved `clippy_note`
   template (cut at 1000 characters, "…more on desktop").
-- **Quote-reply** to a question to answer it. Any other message goes to Clippy's brain, which
-  replies on WhatsApp (and can answer pending questions for you).
+- **Quote-reply** to a question to answer it. A message that is just one of a question's options
+  ("Restart", "Allow") answers the one waiting question that offers it; if several do, Clippy asks
+  you to quote the one you mean. Any other message goes to Clippy's brain, which replies on
+  WhatsApp (and can answer pending questions for you).
 - Reminders are synced to the Worker, which sends them on time even when the PC is off or you are
   at the PC (the away setting does not hold them back); the
   desktop shows them later as "missed while you were away". Reminders that already exist when you
@@ -274,7 +278,9 @@ How it behaves:
   Reminders that fired while the PC was off or asleep arrive together as one message marked
   "(missed while your PC was off)". Desk chat is not sent.
 - A question's options are buttons: tap one to answer it. Or use Telegram's **reply** on the
-  question to answer in your own words. When it is answered anywhere (desk, WhatsApp, Clippy),
+  question to answer in your own words. Sending just a button's text ("Restart", "allow.")
+  works like the tap when exactly one waiting question has that button; if several do, Clippy
+  asks you to reply to the one you mean. When it is answered anywhere (desk, WhatsApp, Clippy),
   the Telegram message changes to "✅ Answered: …".
 - Anything else you send goes to Clippy's brain (the same session as the desk and WhatsApp), and
   the reply comes back in Telegram, with "typing…" while he thinks. Commands: `/help`, `/notes`

@@ -7,6 +7,9 @@
  * runs when the user answers Restart (or yes / y / ok) on the desk, in Telegram or on WhatsApp;
  * any other answer cancels it. Clippy itself can never confirm one: an answer `via: 'clippy'`
  * (the brain's `answer_pending`) is refused by an `Asks` guard (403), and ignored here as well.
+ * Both of its questions carry `event: 'power-confirmation'` ({@link isPowerConfirmation}), so the
+ * phone gate sends them to the phone at once, even while the user is at the PC (they may have
+ * asked from the phone, and the restart waits on the answer).
  *
  * - Off unless the `allowPowerActions` setting is on (ForbiddenError, 403).
  * - A request answered more than {@link POWER_REQUEST_TTL_MS} after it was made only leaves a
@@ -48,6 +51,8 @@ export const CANCEL = 'Cancel';
 export const CANCEL_RESTART = 'Cancel restart';
 /** What an expired request is answered with. */
 export const EXPIRED = 'Expired';
+/** The `event` of both questions (what the phone gate recognises them by). */
+export const POWER_EVENT = 'power-confirmation';
 
 export const POWER_OFF_MESSAGE =
   "Restarting apps and the PC is turned off. Turn on 'Let Clippy restart apps and the PC' in Clippy's Settings.";
@@ -61,6 +66,11 @@ const PendingRequest = z.discriminatedUnion('kind', [
   z.object({ id: z.string(), kind: z.literal('cancel-pc-restart'), createdAt: z.number() }),
 ]);
 type PendingRequest = z.infer<typeof PendingRequest>;
+
+/** Is `m` one of the restart questions? Only the app creates those (agents can't set `event` on an ask). */
+export function isPowerConfirmation(m: Pick<Message, 'kind' | 'event'>): boolean {
+  return m.kind === 'ask' && m.event === POWER_EVENT;
+}
 
 /** Answers that confirm a restart: Restart, yes, y, ok (trimmed, any case). */
 export function confirmsRestart(answer: string): boolean {
@@ -159,7 +169,7 @@ export class PowerActions {
   }
 
   #ask(question: string, request: { kind: 'restart-app'; exe: string; label: string } | { kind: 'restart-pc' }): PowerRequestResult {
-    const ask = this.#o.asks.create({ question, options: [RESTART, CANCEL], sender: POWER_SENDER, urgent: true });
+    const ask = this.#o.asks.create({ question, options: [RESTART, CANCEL], sender: POWER_SENDER, urgent: true, event: POWER_EVENT });
     this.#add({ ...request, id: ask.id, createdAt: ask.createdAt }, POWER_REQUEST_TTL_MS);
     return { id: ask.id, status: 'awaiting-confirmation', question };
   }
@@ -257,6 +267,7 @@ export class PowerActions {
       options: [CANCEL_RESTART],
       sender: POWER_SENDER,
       urgent: true,
+      event: POWER_EVENT,
     });
     this.#add({ id: ask.id, kind: 'cancel-pc-restart', createdAt: ask.createdAt }, CANCEL_TTL_MS);
   }

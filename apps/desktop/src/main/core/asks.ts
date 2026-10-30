@@ -44,7 +44,7 @@ export class Asks {
    * Post a question; returns the stored ask Message (emits `message:new`). With `auto`, a standing
    * order has already answered it: it is stored answered (`answeredVia: 'clippy'`) and done, so it
    * never pops up or goes to the phone, and an agent waiting on it gets the answer at once.
-   * `event` is for asks the app makes itself (phone approvals); `POST /asks` bodies never carry one.
+   * `event` is for asks the app makes itself (phone approvals, restart confirmations); `POST /asks` bodies never carry one.
    */
   create(input: NewAskInput & { event?: AgentEvent }, auto?: { orderId: string; answer: string }): Message {
     return this.#store.createMessage({

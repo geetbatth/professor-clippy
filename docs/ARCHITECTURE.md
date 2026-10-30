@@ -29,10 +29,21 @@ network.
 | Configured by | `workerUrl` + `workerSecret` | `telegramBotTokenEnc` (+ `telegramChatId`) |
 | Mirrors | new `note` and `ask` Messages | new `note`, `ask` and fired `reminder` Messages (missed ones combined) |
 | Reminders | synced to the Worker, which sends them on time even with the PC off | sent by the desktop when its scheduler fires them |
-| Answers an ask | quote-reply (`answeredVia: 'whatsapp'`) | inline button tap or Telegram reply (`answeredVia: 'telegram'`) |
+| Answers an ask | quote-reply, or a plain text equal to one option (`answeredVia: 'whatsapp'`) | inline button tap, Telegram reply, or a plain text equal to one option (`answeredVia: 'telegram'`) |
 | Reply routing id | `Message.waId` | `Message.tgMsgId` (column `tg_msg_id`, schema version 3) |
 | Dedupe | Worker frame ids (kv `relaySeenInbound`) | update offset + recent update ids (kv `telegramOffset:<bot id>`, `telegramSeenUpdates:<bot id>`) |
 | Brain channel | `whatsapp` (`[via WhatsApp]` prefix) | `telegram` (`[via Telegram]` prefix) |
+
+A plain message (no reply / quote) whose text is one of a waiting question's options answers it,
+like a tap: `findButtonAnswer` (`main/buttonAnswer.ts`, pure, shared by both channels) looks at
+`store.listPendingAsks()` for open asks (unanswered, not `done`, with options) mirrored to that
+channel (`tgMsgId` / `waId`) with an option equal to the text (trimmed, any case, a trailing `.` or
+`!` ignored) and answers with the option's own casing. Two or more such asks: the channel sends
+"📎 More than one question is waiting for that answer — reply to the one you mean." and answers
+nothing; none: the text is chat for the brain as before. It runs after the reply-to check, only
+for the user's own messages, so it works for restart confirmations and phone approvals (only the
+user may answer those, and `via: 'telegram' | 'whatsapp'` is the user); the brain never goes
+through it.
 
 Telegram's parts:
 
@@ -41,7 +52,7 @@ Telegram's parts:
 - `format.ts`: HTML formatting with escaping, the 4096-character cut/split, ask keyboards.
 - `telegram.ts`: one `Telegram` per token: the poll loop (backoff 1 s → 60 s; the first poll after
   a start or an error has `timeout=0`, so the status is known at once), inbound handling (pairing,
-  chat-id filter, commands, button taps, reply-to answers, brain turns with "typing…"), and the
+  chat-id filter, commands, button taps, reply-to answers, button-text answers, brain turns with "typing…"), and the
   serial send queue (retries 1 s, 5 s, 30 s, 2 min; a 429 waits `retry_after`).
 - `index.ts`: `TelegramManager` starts the channel when a token appears, retargets it when the
   (decrypted) token changes (the poll restarts with the new bot; queued sends go out with it),
@@ -96,7 +107,9 @@ Going away flushes only notes and reminders that have waited at most `FLUSH_MAX_
 dropped from the hold and stay on the desk. A held ask still unanswered `askEscalateMs()` after it started
 waiting goes anyway on the next tick, even at the PC; `startServices` wires it to half of `askTimeoutDefaultS`
 (5 min by default, read each tick so a settings change applies), so a question escalates before `ask_user` gives up.
-Notes and reminders never escalate. `isUserAway` is built in `startServices`: idle time at or
+Notes and reminders never escalate. Phone approvals (`isApprovalAsk`) and restart confirmations
+(`isPowerConfirmation`, `event: 'power-confirmation'`) are mirrored at once, always, whatever the
+idle time. `isUserAway` is built in `startServices`: idle time at or
 over `awayThresholdS` (0 = always away); without an idle source, always away. Telegram's startup
 replay of missed reminders skips the gate, and WhatsApp reminders still come from the Worker.
 `test/phoneGate.test.ts` covers the rules; relay/Telegram tests use `test/alwaysMirror.ts`.
@@ -178,7 +191,8 @@ Opt-in (setting `allowPowerActions`, default off), requested by the brain, confi
 `core.power`) and serves `POST /power/restart-app` `{name, reason?}`, `POST /power/restart-pc`
 `{reason?}` and `GET /power/apps` (`ClippyClient.restartApp` / `restartPc` / `listOpenApps`). With
 the setting off each is a `ForbiddenError` (403). A request never runs anything: it posts an urgent
-ask from `Professor Clippy` with options Restart / Cancel and answers 202 `{ id, status:
+ask from `Professor Clippy` with options Restart / Cancel and `event: 'power-confirmation'`
+(excluded from `NoteEvent`, so only the app sets it) and answers 202 `{ id, status:
 'awaiting-confirmation', question }` at once (brain turns are queued, so nothing may wait for the
 user). On `ask:answered` for one of its asks: Restart (or yes / y / ok, trimmed, any case) runs it,
 anything else cancels, a request over 10 minutes old only leaves an "expired" note, and an answer
@@ -204,8 +218,13 @@ or system), terminates every match with `process.kill`, waits 1.5 s, and unless 
 appeared by themselves (Explorer) relaunches the root instance (whose parent is not a match) with
 `spawn` (detached, `stdio: 'ignore'`, `windowsVerbatimArguments`, `argv0` = the quoted path, the
 rest of its command line verbatim, no `ELECTRON_*` / `CLIPPY_*` variables). A confirmed PC restart
-posts a second ask, "Restarting your PC in 60 seconds." with option Cancel restart; answering it
-from anywhere (Clippy included) runs `shutdown /a`.
+posts a second ask, "Restarting your PC in 60 seconds." with option Cancel restart (also
+`event: 'power-confirmation'`); answering it from anywhere (Clippy included) runs `shutdown /a`.
+`PhoneGate` sends both questions to the phone at once, even while the PC has recent input (the
+user may have asked from the phone; holding the question there once left a restart unconfirmed),
+and on the phone a plain "Restart" or "Cancel" answers it like a tap (see the channels' button-text
+answers above). `matchWatches` ignores them (sender `Professor Clippy`); the brief only tells
+`agent-finished` apart, and onboarding and the channels' formatting never read `event`.
 
 The MCP server registers `list_open_apps`, `restart_app` and `restart_computer` only when env
 `CLIPPY_POWER_TOOLS` is `1`, which `buildMcpConfig` sets for the brain alone; they are in
@@ -242,7 +261,9 @@ one (`Approvals.isOpen`), whatever `via` it claims. Standing orders never see on
 created in-process, not through `POST /asks`, where `matchOrder` runs. `matchWatches` ignores
 approval asks. `PhoneGate` mirrors one at once even if the user's idle time has since dropped under
 the threshold (it was only posted because they were away, and its agent is blocked); on the desk
-it is loud like any question. Telegram shows the heading in bold and the rest in `<pre>`.
+it is loud like any question. Telegram shows the heading in bold and the rest in `<pre>`. On the
+phone a plain "Allow" or "Deny" (no reply needed) answers it like a tap, when it is the only
+waiting question with that option.
 
 Clippy closes an approval itself, answering via `clippy` after first forgetting it (so its own
 guard lets that through): "Withdrawn" (the hook gave up), "Expired" after `APPROVAL_TTL_MS` (the

@@ -17,7 +17,9 @@
  * - Before pairing, the first private `/start <code>` with the right code pairs that chat (a chat
  *   that sends MAX_WRONG_CODES wrong ones may not pair; the code never changes because of it).
  * - A tap on an ask's button answers it (`answeredVia: 'telegram'`); so does a text that uses
- *   Telegram's reply on an ask.
+ *   Telegram's reply on an ask, and a plain text that is one of the buttons of exactly one open
+ *   ask sent here (`findButtonAnswer`: "restart" answers the Restart / Cancel question). If several
+ *   open asks offer it, the user is asked to reply to the one they mean and nothing is answered.
  * - `/start`, `/help`, `/notes` (unread notes) and `/new` (fresh brain session) are commands.
  * - Any other text is a brain turn on the `telegram` channel, its reply sent back, with a
  *   "typing…" indicator meanwhile.
@@ -29,6 +31,7 @@ import type { BrainReply, Channel } from '../brain/brain';
 import type { Asks } from '../core/asks';
 import type { Bus } from '../core/bus';
 import { ConflictError } from '../core/errors';
+import { AMBIGUOUS_ANSWER_MESSAGE, findButtonAnswer } from '../buttonAnswer';
 import type { Store } from '../core/store';
 import {
   isAbortError,
@@ -364,6 +367,17 @@ export class Telegram {
         const via = current?.answeredVia ? ` (via ${current.answeredVia})` : '';
         this.#sendHtml(chatId, `📎 That question was already answered${escapeHtml(via)}: “${escapeClipped(current?.answer ?? '', ANSWER_MAX)}”.`);
       }
+      return;
+    }
+
+    // A plain "Restart" (say) answers the one open question here with that button, like a tap.
+    const button = findButtonAnswer(store.listPendingAsks(), text, 'telegram');
+    if (button === 'ambiguous') {
+      this.#sendHtml(chatId, escapeHtml(AMBIGUOUS_ANSWER_MESSAGE));
+      return;
+    }
+    if (button) {
+      asks.answer(button.ask.id, button.option, 'telegram'); // the copy is edited by the ask:answered listener
       return;
     }
 
