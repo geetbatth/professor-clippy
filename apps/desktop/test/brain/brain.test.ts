@@ -72,6 +72,7 @@ describe('Brain', () => {
     expect(PERSONA).toMatch(/list_notes with list_pending_asks/);
     expect(PERSONA).toMatch(/add_standing_order phrased as When an agent asks about X, answer: Y/);
     expect(PERSONA).toMatch(/watch_for/);
+    expect(PERSONA).toMatch(/finished for when X finishes, any for when I hear from X/);
     expect(PERSONA).toMatch(/look it up with recent_activity/);
     expect(PERSONA).not.toMatch(/"|%/); // survives the cmd.exe fallback
   });

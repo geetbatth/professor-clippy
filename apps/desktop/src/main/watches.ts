@@ -9,7 +9,7 @@
  *
  * Electron-free; no timers, so there is nothing to outlive the store.
  */
-import type { Message, Watch } from '@clippy/shared';
+import { BRAIN_SENDER, type Message, type Watch } from '@clippy/shared';
 import type { Bus } from './core/bus';
 import { systemClock, type Clock } from './core/clock';
 import type { Store } from './core/store';
@@ -18,9 +18,9 @@ import type { Store } from './core/store';
 const NUDGE_SENDER = 'clippy';
 const NUDGE_TITLE = '⏰ Nudge';
 
-/** The watches a new message triggers: Clippy's own notes never do, chat and reminders never do. */
+/** The watches a new message triggers: Clippy's own notes (nudges, and the brain's) never do, chat and reminders never do. */
 export function matchWatches(watches: Watch[], m: Pick<Message, 'kind' | 'project' | 'event' | 'sender'>): Watch[] {
-  if (m.sender === NUDGE_SENDER || (m.kind !== 'note' && m.kind !== 'ask')) return [];
+  if (m.sender === NUDGE_SENDER || m.sender === BRAIN_SENDER || (m.kind !== 'note' && m.kind !== 'ask')) return [];
   const project = m.project?.toLowerCase();
   return watches.filter((w) => {
     if (w.project !== undefined && !project?.includes(w.project.toLowerCase())) return false;
@@ -64,9 +64,16 @@ export class Watcher {
   #onNew(m: Message): void {
     const { store } = this.#o;
     for (const watch of matchWatches(store.listActiveWatches(), m)) {
-      // Claiming first means a watch can never fire twice, whatever happens to the note.
-      if (!store.fireWatch(watch.id, this.#clock.now())) continue;
-      store.createMessage({ kind: 'note', sender: NUDGE_SENDER, title: NUDGE_TITLE, body: `${watch.nudge}\n(${trigger(m)})` });
+      // One transaction: the watch is spent only if its nudge is stored, and a watch that is no
+      // longer active (fired or cancelled meanwhile) is skipped, so it fires exactly once.
+      try {
+        store.transaction(() => {
+          if (!store.fireWatch(watch.id, this.#clock.now())) return;
+          store.createMessage({ kind: 'note', sender: NUDGE_SENDER, title: NUDGE_TITLE, body: `${watch.nudge}\n(${trigger(m)})` });
+        });
+      } catch (err) {
+        console.error('[clippy] watch nudge failed:', err); // the watch stays active for the next match
+      }
     }
   }
 }

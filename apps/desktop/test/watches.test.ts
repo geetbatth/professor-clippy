@@ -1,5 +1,5 @@
-import type { Message } from '@clippy/shared';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { BRAIN_SENDER, type Message } from '@clippy/shared';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Bus } from '../src/main/core/bus';
 import { Store } from '../src/main/core/store';
 import { matchWatches, Watcher } from '../src/main/watches';
@@ -60,8 +60,11 @@ describe('matchWatches', () => {
     expect(matchWatches(any, { ...plain, kind: 'chat' })).toEqual([]);
   });
 
-  it("never matches Clippy's own notes", () => {
-    expect(matchWatches([watch({ event: 'any' }), watch({ event: 'finished' })], msg({ sender: 'clippy' }))).toEqual([]);
+  it("never matches Clippy's own notes, nudges or the brain's", () => {
+    const watches = [watch({ event: 'any' }), watch({ event: 'finished' })];
+    expect(matchWatches(watches, msg({ sender: 'clippy' }))).toEqual([]);
+    expect(matchWatches(watches, msg({ sender: BRAIN_SENDER }))).toEqual([]);
+    expect(matchWatches(watches, msg({ sender: BRAIN_SENDER, event: undefined } as never))).toEqual([]);
   });
 
   it('returns every watch that matches', () => {
@@ -144,6 +147,37 @@ describe('Watcher', () => {
     store.createMessage({ kind: 'note', body: 'done', sender: 'codex', event: 'agent-finished' });
     expect(nudges().map((m) => m.body)).toEqual(['Two\n(an agent finished)']);
     expect(store.listActiveWatches().map((w) => w.nudge)).toEqual(['One']);
+  });
+
+  it("a project-less any-watch is not spent by the brain's own note", () => {
+    store.insertWatch({ event: 'any', nudge: 'For an agent' });
+    store.createMessage({ kind: 'note', body: 'reminder you asked for', sender: BRAIN_SENDER });
+    expect(nudges()).toEqual([]);
+    expect(store.listActiveWatches()).toHaveLength(1);
+    store.createMessage({ kind: 'note', body: 'hi', sender: 'claude-code', project: 'x' });
+    expect(nudges()).toHaveLength(1);
+  });
+
+  it('keeps the watch active when the nudge cannot be stored, and fires on the next match', () => {
+    store.insertWatch({ event: 'finished', nudge: 'Deploy' });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Only the nudge fails to store; the agent's own note goes in as usual.
+    const real = store.createMessage.bind(store);
+    let failNudge = true;
+    vi.spyOn(store, 'createMessage').mockImplementation((record) => {
+      if (record.sender === 'clippy' && failNudge) throw new Error('disk full');
+      return real(record);
+    });
+    finished();
+    expect(nudges()).toEqual([]);
+    expect(store.listActiveWatches()).toHaveLength(1);
+    expect(log).toHaveBeenCalledOnce();
+
+    failNudge = false;
+    finished();
+    expect(nudges()).toHaveLength(1);
+    expect(store.listActiveWatches()).toEqual([]);
+    vi.restoreAllMocks();
   });
 
   it('does not fire a cancelled watch, and stop() unsubscribes', () => {

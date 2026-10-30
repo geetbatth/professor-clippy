@@ -141,10 +141,10 @@ beside the phone gate, stopped on quit) listens to `message:new`, so a finished 
 by the away-only rule still counts. `matchWatches` picks the watches a message triggers (never one
 from `sender: 'clippy'`, so a nudge cannot set off another watch); each is claimed with
 `Store.fireWatch` (active -> inactive, `firedAt`; it can only fire once) and answered with a note
-`{ sender: 'clippy', title: '⏰ Nudge', body: '<nudge>
-(<project> agent finished)' }`. That note
-is loud on the desk (alert level) and is mirrored to the phone by the phone gate like any other
-note.
+`{ sender: 'clippy', title: '⏰ Nudge', body: '<nudge>\n(<project> agent finished)' }`
+(the fire and the note are stored in one transaction, so the watch is only spent if the nudge is).
+That note is loud on the desk (alert level) and is mirrored to the phone by the phone gate like any
+other note. Clippy's brain (`BRAIN_SENDER`) and `clippy` notes never trigger a watch.
 
 ## Storage
 
