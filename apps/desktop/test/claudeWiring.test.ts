@@ -121,6 +121,13 @@ describe('createClaudeWiring', () => {
     expect(done).toMatchObject({ ok: true, warnings: [] });
     expect(installs).toEqual([{ ...paths, dryRun: false, home }]);
     expect(existsSync(join(home, '.claude', 'settings.json'))).toBe(true);
+
+    // That preview is used up: another install needs a fresh one.
+    expect(await wiring.connect('install')).toMatchObject({ ok: false, error: expect.stringMatching(/preview/) });
+    expect(installs).toHaveLength(1);
+    expect((await wiring.connect('preview')).ok).toBe(true);
+    expect((await wiring.connect('install')).ok).toBe(true);
+    expect(installs).toHaveLength(2);
   });
 
   it('warns when node is missing, and blocks when claude or the built files are', async () => {

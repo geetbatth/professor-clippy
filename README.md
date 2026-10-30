@@ -116,7 +116,11 @@ How it behaves once connected:
   replies on WhatsApp (and can answer pending questions for you).
 - Reminders are synced to the Worker, which sends them on time even when the PC is off; the
   desktop shows them later as "missed while you were away". Reminders that already exist when you
-  first connect WhatsApp (or switch to another Worker) are synced once, at that moment.
+  connect WhatsApp (or fix a wrong secret, or switch to another Worker) are synced then; any the
+  Worker hasn't confirmed are filled in the next time the app starts.
+- **Switching to a new Worker leaves your reminders on the old one**, which keeps sending them.
+  Delete the old Worker when you switch (`npx wrangler delete --name <old worker name>`, or in
+  the Cloudflare dashboard).
 
 ## Development
 

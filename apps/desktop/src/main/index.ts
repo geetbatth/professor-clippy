@@ -137,6 +137,10 @@ async function main(): Promise<void> {
   console.info(`[clippy] ready: API on 127.0.0.1:${core.port}, data in ${dataDir}, relay ${relay.active ? 'on' : 'off'}`);
 }
 
+// The installer's appId: names the login item and groups toasts/taskbar under Professor Clippy
+// (otherwise Windows sees "electron.app.Professor Clippy").
+if (process.platform === 'win32') app.setAppUserModelId('com.professorclippy.app');
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {

@@ -9,9 +9,12 @@
  *   itself and owns their WhatsApp delivery.
  * - A reminder is synced when it is created (`PUT /reminders/:id`, always with the PC's
  *   IANA `tz`) and deleted when it is cancelled. Nothing is re-synced on reconnect.
- * - One exception, {@link Relay.syncExistingReminders}: when WhatsApp is first configured (or
- *   pointed at a different Worker), every active future reminder that Worker has never been
- *   sent is PUT once. Synced ids are tracked per Worker URL in kv.
+ * - Gap-fill, {@link Relay.syncExistingReminders}: run by `RelayManager` each time it starts a
+ *   relay (app start, or a changed Worker URL or secret; never on a socket reconnect). It
+ *   PUTs every active future reminder the Worker has not acknowledged yet. The ids a Worker
+ *   holds are tracked per Worker URL in kv, and an id goes in only after a 2xx PUT, so a
+ *   rejected secret, exhausted retries or a quit mid-way are filled in next time, and
+ *   nothing is ever PUT twice.
  * - Chat replies to WhatsApp messages are sent with kind `chat`. Desk chat isn't mirrored.
  * - Failed calls are retried with backoff (5 s → 10 min, 5 attempts) unless the Worker
  *   answered with a permanent 4xx, and only while still relevant.
@@ -158,10 +161,10 @@ export class Relay {
   }
 
   /**
-   * One-time catch-up when WhatsApp is first configured, or pointed at another Worker
-   * (the caller decides when; never on an ordinary reconnect). PUTs every active reminder
-   * still due in the future that this Worker was never sent, and DELETEs the ones it holds
-   * that were cancelled or finished meanwhile (the relay was off, so it never heard).
+   * Gap-fill (the caller runs it when a relay starts; never on an ordinary reconnect). PUTs
+   * every active reminder still due in the future that this Worker never acknowledged, and
+   * DELETEs the ones it holds that were cancelled or finished meanwhile (the relay was off,
+   * or the DELETE failed). Idempotent: a reminder already synced is never sent again.
    */
   syncExistingReminders(): void {
     if (!this.#running) return;
@@ -241,6 +244,8 @@ export class Relay {
   }
 
   #reminderFired(frame: RelayReminderFired): void {
+    // A one-off the Worker fired is gone from the Worker: stop tracking it.
+    if (frame.nextDueAt === undefined) this.#markSynced(frame.reminderId, false);
     this.#d.scheduler.applyRemoteFiring({
       reminderId: frame.reminderId,
       firedAt: frame.firedAt,

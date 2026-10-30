@@ -114,6 +114,7 @@ export interface ClaudeWiring {
 
 export function createClaudeWiring(deps: ClaudeWiringDeps): ClaudeWiring {
   const exists = deps.exists ?? existsSync;
+  /** A successful preview since the last install started: each install needs its own. */
   let previewed = false;
   let installing: Promise<ClaudeWiringReport> | undefined;
 
@@ -144,11 +145,15 @@ export function createClaudeWiring(deps: ClaudeWiringDeps): ClaudeWiring {
         previewed = report.ok;
         return blocker ? { ...report, ok: false, error: blocker, warnings } : { ...report, warnings };
       }
-      if (!previewed) return { ok: false, log: [], error: 'Show the changes first (preview), then install.', warnings };
-      if (blocker) return { ok: false, log: [], error: blocker, warnings };
-      installing ??= deps.runInstall(job(false)).finally(() => {
-        installing = undefined;
-      });
+      // A second click while installing joins the running install.
+      if (!installing) {
+        if (!previewed) return { ok: false, log: [], error: 'Show the changes first (preview), then install.', warnings };
+        if (blocker) return { ok: false, log: [], error: blocker, warnings };
+        previewed = false;
+        installing = deps.runInstall(job(false)).finally(() => {
+          installing = undefined;
+        });
+      }
       const report = await installing;
       return { ...report, warnings };
     },
