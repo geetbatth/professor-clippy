@@ -5,6 +5,8 @@ order. The Meta and Cloudflare steps are explained in detail, with screenshots o
 described, in [`apps/worker/README.md`](../apps/worker/README.md); this page is the checklist.
 
 Skipping WhatsApp? Do sections 1, 5 and 6 only, and choose "Skip WhatsApp for now" in the wizard.
+Using Telegram instead (or as well)? See "Telegram instead of WhatsApp" below: no Meta or
+Cloudflare steps needed.
 
 ## 1. On this PC
 
@@ -12,7 +14,7 @@ Skipping WhatsApp? Do sections 1, 5 and 6 only, and choose "Skip WhatsApp for no
       MCP server and hook with `node`).
 - [ ] Claude Code is installed and signed in: run `claude` once and log in.
 - [ ] Build the installer from the repo root: `npm ci`, then `npm run package`.
-      It ends with `apps\desktop\release\Professor-Clippy-Setup-0.1.0.exe`.
+      It ends with `apps\desktop\release\Professor-Clippy-Setup-0.2.0.exe`.
 
 ## 2. Meta (WhatsApp Cloud API)
 
@@ -60,7 +62,7 @@ From `apps\worker` in the repo:
 
 ## 5. Install the app
 
-- [ ] Run `Professor-Clippy-Setup-0.1.0.exe`. It is unsigned, so SmartScreen says "Windows
+- [ ] Run `Professor-Clippy-Setup-0.2.0.exe`. It is unsigned, so SmartScreen says "Windows
       protected your PC": click **More info → Run anyway**. No admin prompt; it starts by itself.
 - [ ] In the first-run wizard:
   - [ ] Paste the Worker URL and your `PC_SECRET`, then **Connect WhatsApp** (or skip).
@@ -78,6 +80,25 @@ From `apps\worker` in the repo:
 - [ ] By hand, since the automated tests can't: start a real fullscreen app (game, video,
       slideshow) and check Clippy hides and comes back; drag mini Clippy around with the mouse,
       including while a new note arrives, and check he lets go when you do.
+
+## Telegram instead of WhatsApp
+
+Telegram needs only a bot; it works with or without WhatsApp. Details in the
+[README's Telegram section](../README.md#telegram-a-bot-no-worker).
+
+- [ ] In Telegram, message **@BotFather**: `/newbot`, choose a name and a username ending in
+      `bot`, and copy the token it gives you (`123456789:AAH…`). Keep it secret.
+- [ ] Clippy → Settings → **Telegram** (or the wizard's Telegram step): paste the token,
+      **Save token**. The status line says "Connected as @YourBot".
+- [ ] From your own Telegram account, send the bot **`/start CODE`** with the code Settings shows.
+      Clippy replies "Paired!" and Settings shows your name.
+- [ ] Click **Send test**; it arrives in Telegram.
+- [ ] Ask an agent to `ask_user` something with options: tap a button in Telegram, and the agent
+      gets your answer. Send Clippy a message: he replies there.
+
+Headless instead of the UI: quit Clippy, add `"telegramBotToken": "<token>"` and
+`"telegramChatId": <your id>` to `%APPDATA%\professor-clippy\settings.json`, start Clippy. It
+encrypts the token on start and removes the plaintext from the file.
 
 ## Known limitations & security notes
 

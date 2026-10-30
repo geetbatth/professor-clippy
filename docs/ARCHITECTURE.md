@@ -17,6 +17,48 @@ Root scripts: `npm test`, `npm run typecheck`, `npm run build` (each runs in eve
 
 `@clippy/shared` is consumed as TypeScript source. Vite (desktop, mcp, hook), wrangler (worker) and Vitest bundle or transform it; it is never `require`d from `node_modules` at runtime. Its root entry is Node-only. Renderer, preload and Worker code import the Node-free subpaths (`@clippy/shared/schemas`, `/settings`, `/api`, `/ipc`, `/relay`).
 
+## Phone channels: WhatsApp and Telegram
+
+Both are optional and independent; either, both or neither can be configured. Both subscribe
+to the core `Bus` and share one brain session with the desk chat. Neither listens on the
+network.
+
+| | WhatsApp (`src/main/relay/`) | Telegram (`src/main/telegram/`) |
+| --- | --- | --- |
+| Transport | WebSocket + REST to your Cloudflare Worker, which talks to Meta | `fetch` long-poll of the Bot API (`getUpdates`, 50 s), `sendMessage` etc. |
+| Configured by | `workerUrl` + `workerSecret` | `telegramBotTokenEnc` (+ `telegramChatId`) |
+| Mirrors | new `note` and `ask` Messages | new `note`, `ask` and fired `reminder` Messages (missed ones combined) |
+| Reminders | synced to the Worker, which sends them on time even with the PC off | sent by the desktop when its scheduler fires them |
+| Answers an ask | quote-reply (`answeredVia: 'whatsapp'`) | inline button tap or Telegram reply (`answeredVia: 'telegram'`) |
+| Reply routing id | `Message.waId` | `Message.tgMsgId` (column `tg_msg_id`, schema version 3) |
+| Dedupe | Worker frame ids (kv `relaySeenInbound`) | update offset + recent update ids (kv `telegramOffset:<bot id>`, `telegramSeenUpdates:<bot id>`) |
+| Brain channel | `whatsapp` (`[via WhatsApp]` prefix) | `telegram` (`[via Telegram]` prefix) |
+
+Telegram's parts:
+
+- `api.ts`: a dependency-free Bot API client over `fetch` (base URL injectable; tests use a fake
+  HTTP server). Every error has the token redacted (it is part of each URL).
+- `format.ts`: HTML formatting with escaping, the 4096-character cut/split, ask keyboards.
+- `telegram.ts`: one `Telegram` per token: the poll loop (backoff 1 s → 60 s; the first poll after
+  a start or an error has `timeout=0`, so the status is known at once), inbound handling (pairing,
+  chat-id filter, commands, button taps, reply-to answers, brain turns with "typing…"), and the
+  serial send queue (retries 1 s, 5 s, 30 s, 2 min; a 429 waits `retry_after`).
+- `index.ts`: `TelegramManager` starts, restarts and stops it as the token changes (pairing
+  doesn't restart it: the chat id is read live), owns the pairing code (kv
+  `telegramPairingCode`), and backs the `telegramStatus` / `setTelegramToken` / `telegramUnpair`
+  / `telegramSendTest` IPC methods.
+
+The token is encrypted at rest by `SettingsStore` through a `SecretBox` (Electron `safeStorage`
+in the app, `src/main/secrets.ts`); a plaintext `telegramBotToken` in `settings.json` is
+encrypted on load and removed. The renderer never receives the token (`forRenderer` in
+`backend.ts`).
+
+Startup ordering (`startup.ts`): `startCore`'s scheduler catch-up fires reminders missed while
+the app was off before any channel exists, so `startServices` collects the messages created
+during `startCore` and hands them to Telegram once it is subscribed, in the same synchronous
+block that subscribes the relay. `test/startup.test.ts` checks both channels see an agent's
+first note and Telegram sends the catch-up.
+
 ## Storage
 
 **Driver: Node's built-in `node:sqlite` (`DatabaseSync`).** No native module, so there is no `better-sqlite3` and no `@electron/rebuild` step.
