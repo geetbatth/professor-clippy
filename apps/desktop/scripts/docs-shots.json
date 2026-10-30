@@ -1,0 +1,81 @@
+[
+  {
+    "name": "mini",
+    "query": "mock=1",
+    "width": 204,
+    "height": 240,
+    "zoom": 2,
+    "js": "(() => { const f = document.querySelector('#root > div'); f.style.outline = 'none'; f.style.right = '24px'; f.style.bottom = '24px'; })()",
+    "at": 0
+  },
+  {
+    "name": "expanded-new-message",
+    "query": "mock=1&mode=expanded",
+    "width": 428,
+    "height": 688,
+    "js": "(() => { const f = document.querySelector('#root > div'); f.style.outline = 'none'; f.style.right = '24px'; f.style.bottom = '24px'; clippyMock.pushMessage({ kind: 'note', title: 'Tests passed', body: 'checkout-service: 482 tests passed, 0 failed. Coverage up 3% to 87%.', sender: 'claude-code', project: 'checkout-service' }); })()",
+    "afterJsMs": 150,
+    "at": 620
+  },
+  {
+    "name": "expanded-notes",
+    "query": "mock=1&mode=expanded",
+    "width": 428,
+    "height": 688,
+    "js": "(() => { const f = document.querySelector('#root > div'); f.style.outline = 'none'; f.style.right = '24px'; f.style.bottom = '24px'; clippyMock.pushMessage({ kind: 'note', title: 'Tests passed', body: 'checkout-service: 482 tests passed, 0 failed. Coverage up 3% to 87%.', sender: 'claude-code', project: 'checkout-service' }); })()",
+    "afterJsMs": 2600,
+    "at": 0
+  },
+  {
+    "name": "expanded-chat",
+    "query": "mock=1&mode=expanded&tab=chat",
+    "width": 428,
+    "height": 688,
+    "js": "(() => { const f = document.querySelector('#root > div'); f.style.outline = 'none'; f.style.right = '24px'; f.style.bottom = '24px'; const box = document.querySelector('.chat-input textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'Any wisdom for me today?'); box.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('.chat-input button[type=submit]').click(); })()",
+    "afterJsMs": 1500,
+    "at": 0
+  },
+  {
+    "name": "expanded-settings",
+    "query": "mock=1&mode=expanded&tab=settings",
+    "width": 428,
+    "height": 688,
+    "js": "(() => { const f = document.querySelector('#root > div'); f.style.outline = 'none'; f.style.right = '24px'; f.style.bottom = '24px'; })()",
+    "at": 0
+  },
+  {
+    "name": "expanded-inbox-zero",
+    "query": "mock=1&mode=expanded",
+    "width": 428,
+    "height": 688,
+    "js": "(async () => { const f = document.querySelector('#root > div'); f.style.outline = 'none'; f.style.right = '24px'; f.style.bottom = '24px'; for (const m of await clippyMock.listMessages({ state: 'unread' })) await clippyMock.markDone(m.id); })()",
+    "afterJsMs": 300,
+    "at": 880
+  },
+  {
+    "name": "first-run",
+    "query": "mock=1&firstrun=1",
+    "width": 428,
+    "height": 688,
+    "js": "(() => { const f = document.querySelector('#root > div'); f.style.outline = 'none'; f.style.right = '24px'; f.style.bottom = '24px'; })()",
+    "settleMs": 1200,
+    "at": 0
+  },
+  {
+    "name": "backend-missing",
+    "query": "",
+    "width": 204,
+    "height": 240,
+    "zoom": 2,
+    "js": "(() => { document.body.classList.add('mock-desk'); document.querySelector('.missing').style.margin = '24px'; })()",
+    "at": 0
+  },
+  {
+    "name": "character-sheet",
+    "query": "gallery=1",
+    "width": 1028,
+    "height": 470,
+    "zoom": 1.25,
+    "at": 1000
+  }
+]

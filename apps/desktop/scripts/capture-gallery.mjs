@@ -3,9 +3,11 @@
 //   npm run build -w apps/desktop
 //   node apps/desktop/scripts/launch-electron.mjs apps/desktop/scripts/capture-gallery.mjs <outDir> [shots.json]
 //
-// Each shot loads out/renderer/index.html?<query> in a window of the given size, optionally runs
-// `js`, freezes every CSS animation at `at` ms (`replay: true` restarts gallery cells first),
-// and saves <outDir>/<name>.png.
+// Each shot loads out/renderer/index.html?<query> in a window of the given size (CSS px; `zoom`
+// scales the page and the window), optionally runs `js`, freezes every CSS animation at `at` ms
+// (`replay: true` restarts gallery cells first), and saves <outDir>/<name>.png.
+//
+// The README screenshots: ... capture-gallery.mjs docs/screenshots apps/desktop/scripts/docs-shots.json
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, BrowserWindow } from 'electron';
@@ -22,9 +24,10 @@ const shots = shotsFile
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function shoot(shot) {
+  const zoom = shot.zoom ?? 1;
   const win = new BrowserWindow({
-    width: shot.width,
-    height: shot.height,
+    width: Math.round(shot.width * zoom),
+    height: Math.round(shot.height * zoom),
     useContentSize: true,
     // Hidden windows don't repaint, so show it, but fully transparent and out of the way.
     show: false,
@@ -34,7 +37,15 @@ async function shoot(shot) {
     frame: false,
     transparent: !!shot.transparent,
     backgroundColor: shot.transparent ? '#00000000' : '#2b4560',
-    webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false },
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+      backgroundThrottling: false,
+      zoomFactor: zoom,
+      // In-memory session: Chromium remembers zoom per page, and a persisted one would leak into
+      // Electron's default profile (and so into the dev harness).
+      partition: 'capture-gallery',
+    },
   });
   await win.loadFile(rendererHtml, { query: Object.fromEntries(new URLSearchParams(shot.query ?? '')) });
   win.showInactive();

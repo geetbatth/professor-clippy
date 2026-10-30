@@ -7,7 +7,7 @@ npm workspaces monorepo (Node 24, npm 11, TypeScript strict, ESM, Vitest).
 | Path | Package | What it is |
 | --- | --- | --- |
 | `packages/shared` | `@clippy/shared` | Every shared contract: zod schemas and types, settings, local API routes, data-dir paths, `ClippyClient`, Electron IPC contract, Worker relay protocol. TypeScript source only (no build step). |
-| `apps/desktop` | `@clippy/desktop` | Electron + electron-vite + React. Hosts the local API (127.0.0.1), SQLite store, scheduler and Clippy's brain. |
+| `apps/desktop` | `@clippy/desktop` | Electron + electron-vite + React. Hosts the local API (127.0.0.1), SQLite store, scheduler and Clippy's brain. The character (`src/renderer/src/clippy/`) is a set of painted robot sprites driven by a pure mood state machine (`mood.ts`): `poses.ts` maps moods to sprites and aligns them on one stage, CSS does the motion, and clicks pass through his transparent pixels (alpha masks built when the sprites are preloaded). |
 | `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. |
 | `apps/hook` | `@clippy/hook` | Claude Code hook; posts a note when an agent finishes or needs permission. Built like `apps/mcp`. |
 | `apps/worker` | `@clippy/worker` | Cloudflare Worker plus one SQLite-backed Durable Object (`ClippyDO`, binding `CLIPPY`) relaying WhatsApp Cloud API traffic. |

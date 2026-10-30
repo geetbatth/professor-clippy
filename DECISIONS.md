@@ -8,7 +8,7 @@ Grilled in chat (T3 Code question forms).
 2. Agents hand messages to Clippy through an MCP server (tools like `leave_message`, `remind_me`, `ask_user`).
 3. Clippy handles notes/notifications, one-off scheduled reminders, recurring reminders, and questions that need an answer.
 4. The window is always on top, collapses to a mini Clippy in a corner when idle, and expands with a wiggle on a new message.
-5. Look: an original paperclip professor (googly eyes, mortarboard, glasses) clipped to a yellow sticky note, animated in SVG/CSS.
+5. Look: an original paperclip professor (googly eyes, mortarboard, glasses) clipped to a yellow sticky note, animated in SVG/CSS. Later replaced by painted sprites of a robot (a riveted canister stencilled "PROF. CLIPPY" with a paperclip head, goggles, mortarboard, arms and caster wheels) standing on the note, still moved with CSS.
 6. WhatsApp is two-way: every message is mirrored there, and you can reply or chat with Clippy from your phone.
 7. Only agents on this PC can post to Clippy; nothing on the PC is exposed to the internet.
 8. The app is built with Electron and TypeScript.

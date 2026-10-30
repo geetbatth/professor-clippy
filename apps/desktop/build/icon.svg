@@ -1,109 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Professor Clippy's head on a sticky note: the app icon. Drawn from the same rig as the
-       animated character (src/renderer/src/clippy), in its resting pose. Rasterised to
-       icon.png / icon.ico by scripts/make-icons.mjs. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Professor Clippy peeking over a sticky note: the app icon. A head-and-goggles crop of the
+       idle sprite (src/renderer/src/clippy/sprites/idle.webp) on the yellow note. Rasterised to
+       icon.png / icon.ico by scripts/make-icons.mjs, which inlines the sprite (an SVG drawn as an
+       image can't load files). -->
   <defs>
     <linearGradient id="note" x1="0" y1="0" x2="0.15" y2="1">
       <stop offset="0" stop-color="#fff9a8"/>
       <stop offset="1" stop-color="#ffe45c"/>
     </linearGradient>
-    <linearGradient id="steel" x1="0" y1="0" x2="1" y2="0.25">
-      <stop offset="0" stop-color="#f3f6f9"/>
-      <stop offset="0.35" stop-color="#c9d1db"/>
-      <stop offset="0.6" stop-color="#97a3b2"/>
-      <stop offset="1" stop-color="#dde3ea"/>
-    </linearGradient>
-    <radialGradient id="eyeball" cx="0.4" cy="0.35" r="0.75">
-      <stop offset="0.6" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#dfe4ea"/>
-    </radialGradient>
-    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffd75e"/>
-      <stop offset="1" stop-color="#d99a1e"/>
-    </linearGradient>
     <clipPath id="noteClip">
       <rect x="20" y="20" width="472" height="472" rx="64"/>
     </clipPath>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#5a4a08" flood-opacity="0.35"/>
+    </filter>
   </defs>
 
   <!-- The note -->
   <rect x="20" y="28" width="472" height="472" rx="64" fill="#7a6410" opacity="0.28"/>
   <rect x="20" y="20" width="472" height="472" rx="64" fill="url(#note)" stroke="#d9b42a" stroke-width="4"/>
-  <path d="M 420 492 L 492 420 L 492 428 Q 492 492 428 492 Z" fill="#e7c63a"/>
 
+  <!-- His head, goggles and mortarboard, the canister rim cut off by the bottom edge -->
   <g clip-path="url(#noteClip)">
-    <!-- rig units → icon: centre between the eyes (71, 62) at (256, 262), 4.3x -->
-    <g transform="translate(-49.3 -4.6) scale(4.3)">
-      <!-- Wire (the clip body) -->
-      <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M 92 62 L 92 133 A 21 21 0 0 1 50 133 L 50 52 A 17 17 0 0 1 84 52 L 84 124 A 11 11 0 0 1 62 124 L 62 80" stroke="#3f4855" stroke-width="8.6"/>
-        <path d="M 92 62 L 92 133 A 21 21 0 0 1 50 133 L 50 52 A 17 17 0 0 1 84 52 L 84 124 A 11 11 0 0 1 62 124 L 62 80" stroke="url(#steel)" stroke-width="6"/>
-        <path d="M 92 62 L 92 133 A 21 21 0 0 1 50 133 L 50 52 A 17 17 0 0 1 84 52 L 84 124 A 11 11 0 0 1 62 124 L 62 80" stroke="#ffffff" stroke-width="1.5" opacity="0.8" stroke-dasharray="34 9 52 14 18 8 70 12" transform="translate(-1.3 -1.2)"/>
-      </g>
-
-      <!-- Bow tie -->
-      <g stroke="#7c1515" stroke-width="1.2" stroke-linejoin="round">
-        <path d="M 68.5 97 L 55.5 89.5 Q 52.5 97 55.5 104.5 Z" fill="#d23232"/>
-        <path d="M 73.5 97 L 86.5 89.5 Q 89.5 97 86.5 104.5 Z" fill="#d23232"/>
-        <rect x="67.5" y="93.5" width="7" height="7.5" rx="2.2" fill="#b02424"/>
-      </g>
-      <g fill="#fff4e8">
-        <circle cx="59" cy="94" r="1.1"/><circle cx="62.5" cy="100" r="1.1"/><circle cx="58.5" cy="99.5" r="1.1"/>
-        <circle cx="83" cy="94" r="1.1"/><circle cx="79.5" cy="100" r="1.1"/><circle cx="83.5" cy="99.5" r="1.1"/>
-      </g>
-
-      <!-- Cheeks and smile -->
-      <ellipse cx="51" cy="80" rx="4.2" ry="2.4" fill="#ff8a8a" opacity="0.38"/>
-      <ellipse cx="91" cy="79" rx="4.2" ry="2.4" fill="#ff8a8a" opacity="0.38"/>
-      <path d="M 63.5 82 Q 71 89 78.5 81.5" fill="none" stroke="#2d2424" stroke-width="2.1" stroke-linecap="round"/>
-
-      <!-- Googly eyes, looking at you -->
-      <circle cx="56" cy="62" r="10.5" fill="url(#eyeball)"/>
-      <circle cx="57.2" cy="63.4" r="4.6" fill="#121418"/>
-      <circle cx="55.7" cy="61.7" r="1.35" fill="#ffffff"/>
-      <circle cx="56" cy="62" r="10.5" fill="none" stroke="#23272e" stroke-width="1.5"/>
-      <circle cx="85" cy="61" r="11.5" fill="url(#eyeball)"/>
-      <circle cx="83.6" cy="62.6" r="4.6" fill="#121418"/>
-      <circle cx="82.1" cy="60.9" r="1.35" fill="#ffffff"/>
-      <circle cx="85" cy="61" r="11.5" fill="none" stroke="#23272e" stroke-width="1.5"/>
-
-      <!-- Round spectacles, a touch crooked -->
-      <g transform="rotate(-3 70.5 61)" fill="none" stroke="#5a3517" stroke-width="2.2" stroke-linecap="round">
-        <path d="M 43.3 61 L 38.3 58.5"/>
-        <path d="M 98.7 60 L 103.7 57.5"/>
-        <path d="M 68.2 60 Q 70 55.5 71.8 59"/>
-        <circle cx="56" cy="62" r="12.7" fill="#aad7ff" fill-opacity="0.16"/>
-        <circle cx="85" cy="61" r="13.7" fill="#aad7ff" fill-opacity="0.16"/>
-        <path d="M 48.13 60.48 A 8.38 8.38 0 0 1 54.73 53.87" stroke="#ffffff" stroke-width="1.5" opacity="0.75"/>
-        <path d="M 76.51 59.36 A 9.04 9.04 0 0 1 83.63 52.23" stroke="#ffffff" stroke-width="1.5" opacity="0.75"/>
-      </g>
-
-      <!-- Mortarboard with a gold tassel -->
-      <g transform="rotate(-9 67 30)">
-        <path d="M 53.5 25 L 53.5 35.5 Q 67 42.5 80.5 35.5 L 80.5 25 Z" fill="#232836" stroke="#0e1016" stroke-width="1.2"/>
-        <path d="M 53.5 31 Q 67 37 80.5 31 L 80.5 35.5 Q 67 42.5 53.5 35.5 Z" fill="#151923"/>
-        <path d="M 38 24 L 67 35.5 L 96 24 L 96 27.5 L 67 39 L 38 27.5 Z" fill="#0e1016"/>
-        <path d="M 38 24 L 67 12.5 L 96 24 L 67 35.5 Z" fill="#2c3344" stroke="#0e1016" stroke-width="1.2" stroke-linejoin="round"/>
-        <path d="M 43 23.6 L 67 14.2" stroke="#56607a" stroke-width="1.2" stroke-linecap="round"/>
-        <path d="M 67 24 Q 81 23 93.5 25.5" fill="none" stroke="#e2a92a" stroke-width="1.5" stroke-linecap="round"/>
-        <circle cx="67" cy="24" r="2.3" fill="#f1bd38" stroke="#9a6a10" stroke-width="0.8"/>
-        <path d="M 93.5 25.5 Q 95.5 33 94 40" fill="none" stroke="#e2a92a" stroke-width="1.5" stroke-linecap="round"/>
-        <circle cx="94" cy="40.5" r="2" fill="#f1bd38" stroke="#9a6a10" stroke-width="0.8"/>
-        <path d="M 91.6 41.5 L 90.2 52.5 Q 94 54 97.8 52.5 L 96.4 41.5 Z" fill="url(#gold)" stroke="#9a6a10" stroke-width="0.8"/>
-        <path d="M 92.6 44 L 92 52 M 94 44 L 94 52.8 M 95.4 44 L 96 52" stroke="#a8740f" stroke-width="0.6"/>
-      </g>
-
-      <!-- Bushy white professor's eyebrows -->
-      <g fill="none" stroke-linecap="round">
-        <path d="M 44 46.5 Q 51 38.5 63.5 41.5" stroke="#2b3038" stroke-width="7.2"/>
-        <path d="M 46.5 43.5 l -2.6 -3.2 M 52.5 40.4 l -0.8 -3.6 M 58.5 39.8 l 1 -3.4 M 62.5 41 l 3 -2.2" stroke="#2b3038" stroke-width="3.6"/>
-        <path d="M 44 46.5 Q 51 38.5 63.5 41.5" stroke="#f4f5f7" stroke-width="4.6"/>
-        <path d="M 46.5 43.5 l -2.6 -3.2 M 52.5 40.4 l -0.8 -3.6 M 58.5 39.8 l 1 -3.4 M 62.5 41 l 3 -2.2" stroke="#f4f5f7" stroke-width="1.4"/>
-        <path d="M 98 45.5 Q 90 37 77.5 40.5" stroke="#2b3038" stroke-width="7.2"/>
-        <path d="M 95.5 42.4 l 2.6 -3.2 M 89.5 39.2 l 0.8 -3.6 M 83 39 l -1 -3.4 M 78.8 40.3 l -3 -2.2" stroke="#2b3038" stroke-width="3.6"/>
-        <path d="M 98 45.5 Q 90 37 77.5 40.5" stroke="#f4f5f7" stroke-width="4.6"/>
-        <path d="M 95.5 42.4 l 2.6 -3.2 M 89.5 39.2 l 0.8 -3.6 M 83 39 l -1 -3.4 M 78.8 40.3 l -3 -2.2" stroke="#f4f5f7" stroke-width="1.4"/>
-      </g>
-    </g>
+    <svg x="20" y="20" width="472" height="472" viewBox="248 -4 192 192" filter="url(#shadow)">
+      <image href="../src/renderer/src/clippy/sprites/idle.webp" x="0" y="0" width="516" height="689"/>
+    </svg>
   </g>
+
+  <!-- The curled-up corner -->
+  <path d="M 420 492 L 492 420 L 492 428 Q 492 492 428 492 Z" fill="#e7c63a"/>
 </svg>

@@ -2,7 +2,9 @@
 
 # Professor Clippy
 
-A Windows desktop sticky note with a paperclip professor on it. Your AI agents (Claude Code and
+A Windows desktop sticky note with a robot professor standing on it: Professor Clippy is a riveted
+steel canister stencilled "PROF. CLIPPY", with a paperclip head in mismatched goggles and a
+mortarboard, robot arms and caster wheels. Your AI agents (Claude Code and
 any other MCP client on this PC) leave him notes, reminders and questions; he pops up, wiggles,
 and waits until you deal with them. Every note and question is mirrored to your WhatsApp, and
 you can answer, or just chat with him, from your phone.
@@ -70,10 +72,10 @@ npm run package
   `%APPDATA%\professor-clippy\` are kept.
 
 Electron-builder may download its NSIS and signing tools on the first run (into its cache); that
-is normal. The app icon is `apps/desktop/build/icon.svg`, rasterised to `icon.png` (512 px) and
-`icon.ico` (16–256 px) by
+is normal. The app icon is `apps/desktop/build/icon.svg` (a head-and-goggles crop of the idle
+sprite on a sticky note), rasterised to `icon.png` (512 px) and `icon.ico` (16–256 px) by
 `node apps/desktop/scripts/launch-electron.mjs apps/desktop/scripts/make-icons.mjs`; rerun that
-only after editing the SVG.
+only after editing the SVG or the idle sprite.
 
 ## Connecting Claude Code
 
@@ -137,7 +139,10 @@ npm run dev:renderer -w apps/desktop   # the UI alone in a browser, on a mock ba
 ```
 
 In the browser preview, add `?mock=1` for the mock backend, `&firstrun=1` for the wizard,
-`?mode=expanded&tab=chat` and so on for a given view, and `?gallery=1` for the character sheet.
+`?mode=expanded&tab=chat` and so on for a given view, and `?gallery=1` for the character sheet
+(`&align=pairs` overlays each pose on idle, for tuning the pose table in
+`apps/desktop/src/renderer/src/clippy/poses.ts`). To retake the README screenshots, build, then run
+`node apps/desktop/scripts/launch-electron.mjs apps/desktop/scripts/capture-gallery.mjs docs/screenshots apps/desktop/scripts/docs-shots.json`.
 
 Some shells (VS Code, T3 Code) export `ELECTRON_RUN_AS_NODE=1`, which turns Electron into plain
 Node. The npm scripts clear it; if you start Electron yourself, clear it first

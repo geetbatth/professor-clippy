@@ -1,7 +1,8 @@
-// Rasterise build/icon.svg into build/icon.png (512 px) and build/icon.ico (16–256 px),
+// Rasterise build/icon.svg (with the idle sprite it crops) into build/icon.png (512 px) and
+// build/icon.ico (16–256 px),
 // with Electron's own Chromium (no extra dependencies). Run as Electron, not Node:
 //   node apps/desktop/scripts/launch-electron.mjs apps/desktop/scripts/make-icons.mjs
-// The outputs are committed; rerun this only after editing icon.svg.
+// The outputs are committed; rerun this only after editing icon.svg or the idle sprite.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, BrowserWindow } from 'electron';
@@ -35,7 +36,14 @@ function encodeIco(images) {
 }
 
 async function main() {
-  const svg = readFileSync(join(buildDir, 'icon.svg'));
+  // The SVG places the idle sprite by relative path; inline it, since an SVG drawn as an image
+  // can't load other files.
+  const svg = Buffer.from(
+    readFileSync(join(buildDir, 'icon.svg'), 'utf8').replace(/href="([^"]+\.webp)"/g, (_, rel) => {
+      const webp = readFileSync(join(buildDir, rel));
+      return `href="data:image/webp;base64,${webp.toString('base64')}"`;
+    }),
+  );
   const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
   await win.loadURL('data:text/html;charset=utf-8,<!doctype html><title>icons</title>');
   const sizes = [...ICO_SIZES, PNG_SIZE];
