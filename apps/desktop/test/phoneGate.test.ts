@@ -84,6 +84,45 @@ describe('PhoneGate', () => {
     expect(mirrored).toEqual([]);
   });
 
+  it('never mirrors a held ask that was dismissed at the desk before the user left', () => {
+    const ask = asks.create({ question: 'Ship it?', sender: 'agent' });
+    store.markDone(ask.id); // dismissed, not answered
+    expect(gate.heldIds).toEqual([]);
+    away = true;
+    clock.advance(TICK);
+    expect(mirrored).toEqual([]);
+  });
+
+  it('escalates a held ask unanswered for 10 minutes to the phone even while the user is active', () => {
+    const ask = asks.create({ question: 'Ship it?', sender: 'agent' });
+    clock.advance(9 * 60_000);
+    expect(mirrored).toEqual([]);
+    expect(gate.heldIds).toEqual([ask.id]);
+    clock.advance(60_000 + TICK); // past 10 minutes, next tick
+    expect(mirrored.map((x) => x.id)).toEqual([ask.id]);
+    expect(gate.heldIds).toEqual([]);
+    clock.advance(TICK * 5); // once only
+    expect(mirrored).toHaveLength(1);
+  });
+
+  it('does not escalate an ask that was answered, or one that is snoozed', () => {
+    const answered = asks.create({ question: 'One?', sender: 'agent' });
+    const snoozed = asks.create({ question: 'Two?', sender: 'agent' });
+    asks.answer(answered.id, 'yes', 'desk');
+    store.snooze(snoozed.id, T0 + 60 * 60_000);
+    clock.advance(11 * 60_000);
+    expect(mirrored).toEqual([]);
+    expect(gate.heldIds).toEqual([snoozed.id]);
+  });
+
+  it('does not escalate held notes or reminders, however long they wait', () => {
+    const n = note();
+    const r = store.createMessage({ kind: 'reminder', body: 'stretch', sender: 'agent' });
+    clock.advance(60 * 60_000);
+    expect(mirrored).toEqual([]);
+    expect(gate.heldIds).toEqual([n.id, r.id]);
+  });
+
   it('mirrors a held ask once the user is away if it is still unanswered', () => {
     const ask = asks.create({ question: 'Ship it?', sender: 'agent' });
     away = true;

@@ -90,8 +90,9 @@ Nothing mirrors to the phone on `message:new`. `PhoneGate` (`main/phoneGate.ts`)
 `message:mirror`, which the relay (notes and asks) and Telegram (also reminders) subscribe to
 instead. Away (or the `phoneWhen` setting is `always`): at once. At the PC: the id is held, and a
 `tickMs` (30 s) timer re-reads held messages from the store; once the user is away the ones still
-pending (asks: still unanswered) are mirrored, once. Dismissed or answered ones are dropped, a
-snoozed one stays held until it wakes. `isUserAway` is built in `startServices`: idle time at or
+unread are mirrored, once. Dismissed or answered ones are dropped, a
+snoozed one stays held until it wakes. A held ask still unanswered `askEscalateMs` (10 min) after it was
+created goes anyway on the next tick, even at the PC; notes and reminders never escalate. `isUserAway` is built in `startServices`: idle time at or
 over `awayThresholdS` (0 = always away); without an idle source, always away. Telegram's startup
 replay of missed reminders skips the gate, and WhatsApp reminders still come from the Worker.
 `test/phoneGate.test.ts` covers the rules; relay/Telegram tests use `test/alwaysMirror.ts`.

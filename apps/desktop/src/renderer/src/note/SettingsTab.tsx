@@ -120,10 +120,10 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
           )}
           {key === 'hookEnabled' && (
             <>
-              <label className={`setting setting--sub${settings.hookEnabled ? '' : ' setting--off'}`}>
+              <label className="setting">
                 <span className="setting-text">
-                  <span className="setting-label">Agent-finished pings: only when I've been away for</span>
-                  <span className="setting-hint">At the PC, they go quietly into History. 0 = always. Permission requests always come through.</span>
+                  <span className="setting-label">I count as away after</span>
+                  <span className="setting-hint">No keyboard or mouse for this long. Agent-finished pings and phone messages wait for it. 0 = always away.</span>
                 </span>
                 <span className="setting-number">
                   <input
@@ -131,8 +131,7 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
                     inputMode="numeric"
                     className={`field-input${awayError ? ' field-input--bad' : ''}`}
                     value={away}
-                    disabled={!settings.hookEnabled}
-                    aria-label="Minutes away before agent-finished pings"
+                    aria-label="Minutes before I count as away"
                     aria-invalid={awayError}
                     onChange={(e) => {
                       setAway(e.target.value);
@@ -148,10 +147,10 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
                 </span>
               </label>
               {awayError && <p className="card-error">Whole minutes from 0 to {AWAY_MAX_MINUTES}, please.</p>}
-              <label className="setting setting--sub">
+              <label className="setting">
                 <span className="setting-text">
                   <span className="setting-label">Send to my phone</span>
-                  <span className="setting-hint">Away means the minutes above. Held notes follow once you leave; WhatsApp reminders still go out on time.</span>
+                  <span className="setting-hint">Notes wait until you are away; a question left unanswered for 10 minutes goes anyway. WhatsApp reminders always go out on time.</span>
                 </span>
                 <select
                   className="field-input setting-select"

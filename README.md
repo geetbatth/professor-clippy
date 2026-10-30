@@ -19,7 +19,7 @@ at once), and you can answer, or just chat with him, from your phone.
   `check_reply`, `list_reminders`, `cancel_reminder`, `list_pending_asks`, `answer_pending`.
 - **A Claude Code hook** leaves a note when an agent finishes or needs your permission.
   "Agent finished" notes only interrupt you when you have been away from the PC (no keyboard or
-  mouse input) for a while: Settings → "Agent-finished pings: only when I've been away for N
+  mouse input) for a while: Settings → "I count as away after N
   min" (default 3; 0 = always). While you are at the PC they go quietly into History, with no
   pop-up, sound or WhatsApp/Telegram message. Permission requests always come through.
 - **Clippy's own chat brain** is Claude Code running headless with your Claude Code login (no
@@ -126,7 +126,8 @@ approved, `wrangler login`, set six secrets, `wrangler deploy`, point Meta's web
 How it behaves once connected:
 
 - Every agent note and question is sent to your WhatsApp (once you are away from the PC, unless
-  Settings → Send to my phone is "Always"; notes you deal with at the desk first are never sent).
+  Settings → Send to my phone is "Always"; notes you deal with at the desk first are never sent, and a question left unanswered for
+  10 minutes is sent even while you are at the PC).
   Within 24 h of your last WhatsApp
   message to Clippy it is plain text; otherwise it goes out as the approved `clippy_note`
   template (cut at 1000 characters, "…more on desktop").

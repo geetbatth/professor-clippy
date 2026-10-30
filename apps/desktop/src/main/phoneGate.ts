@@ -4,9 +4,11 @@
  *
  * - User away (or the setting says "always"): a new note, ask or fired reminder is mirrored at once.
  * - User at the PC: it is held. A slow tick (`tickMs`) re-reads each held message from the
- *   store; once the user is away, the ones still unread (asks: still unanswered) are mirrored,
- *   once. A held message dismissed or answered meanwhile is dropped, never sent. A snoozed one
+ *   store; once the user is away, the ones still unread are mirrored,
+ *   once. A held message dismissed (state done) or answered meanwhile is dropped, never sent. A snoozed one
  *   stays held until it wakes.
+ * - A held ask still unanswered after `askEscalateMs` is mirrored on the next tick even while the
+ *   user is at the PC (a question left sitting should reach them). Notes and reminders are not.
  * - Messages that arrive `done` (quiet agent-finished notes, chat lines) are never mirrored.
  *
  * Electron-free: "away" is injected (`startServices` builds it from the idle time and the
@@ -26,9 +28,12 @@ export interface PhoneGateOptions {
   clock?: Clock;
   /** How often held messages are checked once the user may have left. Default 30 s. */
   tickMs?: number;
+  /** A held ask this old (since it was created) goes to the phone even at the PC. Default 10 min. */
+  askEscalateMs?: number;
 }
 
 const DEFAULT_TICK_MS = 30_000;
+const DEFAULT_ASK_ESCALATE_MS = 10 * 60_000;
 
 export class PhoneGate {
   readonly #o: PhoneGateOptions;
@@ -54,7 +59,7 @@ export class PhoneGate {
     this.#unsubscribe.push(
       this.#o.bus.on('message:new', (m) => this.#onNew(m)),
       this.#o.bus.on('message:updated', (m) => {
-        if (!isPending(m)) this.#held.delete(m.id);
+        if (m.state === 'done') this.#held.delete(m.id);
       }),
     );
     this.#arm();
@@ -80,15 +85,15 @@ export class PhoneGate {
   }
 
   #tick(): void {
-    if (this.#held.size > 0 && this.#open()) {
-      for (const id of [...this.#held]) {
-        const m = this.#o.store.getMessage(id);
-        if (!m || !isPending(m)) this.#held.delete(id); // gone, dismissed or answered meanwhile
-        else if (m.state !== 'snoozed') {
-          this.#held.delete(id);
-          this.#o.bus.emit('message:mirror', m);
-        } // snoozed: stays held until it wakes
-      }
+    const open = this.#open();
+    const escalateMs = this.#o.askEscalateMs ?? DEFAULT_ASK_ESCALATE_MS;
+    for (const id of [...this.#held]) {
+      const m = this.#o.store.getMessage(id);
+      if (!m || m.state === 'done') this.#held.delete(id); // gone, dismissed or answered meanwhile
+      else if (m.state === 'unread' && (open || (m.kind === 'ask' && this.#clock.now() - m.createdAt >= escalateMs))) {
+        this.#held.delete(id);
+        this.#o.bus.emit('message:mirror', m);
+      } // snoozed: stays held until it wakes
     }
     this.#arm();
   }
@@ -97,9 +102,4 @@ export class PhoneGate {
     if (!this.#running) return;
     this.#timer = this.#clock.setTimeout(() => this.#tick(), this.#o.tickMs ?? DEFAULT_TICK_MS);
   }
-}
-
-/** Still worth sending: not dealt with (an ask: not answered; the relay's own rule). Snoozed counts as pending. */
-function isPending(m: Message): boolean {
-  return m.kind === 'ask' ? m.answer === undefined : m.state !== 'done';
 }

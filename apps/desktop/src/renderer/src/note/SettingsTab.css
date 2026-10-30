@@ -117,10 +117,3 @@
   background: #fff1ef;
 }
 
-/* A setting that belongs to the one above it (the away threshold under the hook toggle). */
-.setting--sub {
-  padding-left: 18px;
-}
-.setting--off {
-  opacity: 0.5;
-}
