@@ -421,3 +421,119 @@ describe('Scheduler: failures', () => {
     store.close();
   });
 });
+
+describe('Scheduler: firings reported by the relay Worker (applyRemoteFiring)', () => {
+  let ctx: ReturnType<typeof setup>;
+  // Computed per test: an earlier block changes TZ, and Node keeps that zone after it is unset.
+  let S: number;
+  beforeEach(() => {
+    S = local(2026, 10, 30, 8);
+    ctx = setup(S);
+    ctx.scheduler.start();
+  });
+  afterEach(() => {
+    ctx.scheduler.stop();
+    ctx.store.close();
+  });
+
+  it('desktop already showed a one-off: attaches the waId, creates nothing, stays inactive', () => {
+    const { clock, scheduler, store, fired, reminderMessages } = ctx;
+    const r = scheduler.create(input(S + HOUR));
+    clock.advanceTo(S + HOUR);
+    expect(fired()).toHaveLength(1);
+    clock.advance(3000);
+    const out = scheduler.applyRemoteFiring({ reminderId: r.id, firedAt: S + HOUR + 500, waId: 'wamid.R1' });
+    expect(out.message).toMatchObject({ id: fired()[0]!.message.id, waId: 'wamid.R1' });
+    expect(reminderMessages()).toHaveLength(1);
+    expect(store.findMessageByWaId('wamid.R1')?.kind).toBe('reminder');
+    expect(fired()).toHaveLength(1);
+    // Redelivered frame: nothing changes.
+    scheduler.applyRemoteFiring({ reminderId: r.id, firedAt: S + HOUR + 500, waId: 'wamid.R1' });
+    expect(reminderMessages()).toHaveLength(1);
+    expect(store.getReminder(r.id)?.active).toBe(false);
+  });
+
+  it('Worker fired before the desktop did: shows it now (with the waId) and the local timer does not fire it again', () => {
+    const { clock, scheduler, fired, reminderMessages } = ctx;
+    const r = scheduler.create(input(S + HOUR));
+    clock.jump(HOUR - 2000); // desktop clock a little behind: its timer hasn't run yet
+    const out = scheduler.applyRemoteFiring({ reminderId: r.id, firedAt: S + HOUR, waId: 'wamid.early' });
+    expect(out.message).toMatchObject({ kind: 'reminder', waId: 'wamid.early', body: 'Stand up and stretch' });
+    expect(out.message?.missed).toBeUndefined();
+    expect(out.reminder?.active).toBe(false);
+    expect(fired()).toHaveLength(1);
+    clock.advance(DAY);
+    expect(reminderMessages()).toHaveLength(1);
+  });
+
+  it('marks a Worker firing missed when it is shown long after it was due', () => {
+    const { clock, scheduler } = ctx;
+    scheduler.stop(); // the PC was off: no local catch-up yet
+    const r = scheduler.create(input(S + HOUR));
+    clock.jump(3 * HOUR);
+    const out = scheduler.applyRemoteFiring({ reminderId: r.id, firedAt: S + HOUR, waId: 'w' });
+    expect(out.message?.missed).toBe(true);
+  });
+
+  it('recurring: takes a future nextDueAt from the Worker and ignores past ones from stale frames', () => {
+    const { clock, scheduler, store, fired, reminderMessages } = ctx;
+    const r = scheduler.create(input(local(2026, 10, 30, 9), { rrule: 'FREQ=DAILY' }));
+    clock.advanceTo(local(2026, 10, 30, 9));
+    expect(store.getReminder(r.id)?.dueAt).toBe(local(2026, 10, 31, 9));
+
+    // A stale frame (its nextDueAt is already past) must not pull dueAt back.
+    scheduler.applyRemoteFiring({ reminderId: r.id, firedAt: local(2026, 10, 29, 9), nextDueAt: local(2026, 10, 30, 9) });
+    expect(store.getReminder(r.id)?.dueAt).toBe(local(2026, 10, 31, 9));
+
+    // The Worker's schedule differs (e.g. it evaluated the rule itself): follow it.
+    const out = scheduler.applyRemoteFiring({
+      reminderId: r.id,
+      firedAt: local(2026, 10, 30, 9) + 1000,
+      waId: 'w1',
+      nextDueAt: local(2026, 10, 31, 9, 30),
+    });
+    expect(out.reminder).toMatchObject({ active: true, dueAt: local(2026, 10, 31, 9, 30) });
+    expect(reminderMessages()).toHaveLength(1);
+    expect(reminderMessages()[0]!.waId).toBe('w1');
+    // The local timer follows the new due time.
+    clock.advanceTo(local(2026, 10, 31, 9, 29));
+    expect(fired()).toHaveLength(1);
+    clock.advanceTo(local(2026, 10, 31, 9, 30));
+    expect(fired()).toHaveLength(2);
+  });
+
+  it('recurring: no nextDueAt means the Worker finished it, so the desktop copy is deactivated', () => {
+    const { clock, scheduler, store } = ctx;
+    const r = scheduler.create(input(local(2026, 10, 30, 9), { rrule: 'FREQ=DAILY' }));
+    clock.advanceTo(local(2026, 10, 30, 9));
+    scheduler.applyRemoteFiring({ reminderId: r.id, firedAt: local(2026, 10, 30, 9) });
+    expect(store.getReminder(r.id)?.active).toBe(false);
+    expect(scheduler.list()).toEqual([]);
+  });
+
+  it('recurring and not yet shown with a past nextDueAt: shows it once and advances past now', () => {
+    const { clock, scheduler, store, fired } = ctx;
+    scheduler.stop();
+    const r = scheduler.create(input(local(2026, 10, 30, 9), { rrule: 'FREQ=DAILY' }));
+    clock.jump(3 * DAY); // Mon 2 Nov 08:00
+    const out = scheduler.applyRemoteFiring({
+      reminderId: r.id,
+      firedAt: local(2026, 10, 30, 9),
+      waId: 'w',
+      nextDueAt: local(2026, 10, 31, 9),
+    });
+    expect(out.message?.missed).toBe(true);
+    expect(store.getReminder(r.id)?.dueAt).toBe(local(2026, 11, 2, 9));
+    expect(fired()).toHaveLength(1);
+  });
+
+  it('ignores unknown reminders and cancelled ones stay cancelled', () => {
+    const { scheduler, store, reminderMessages } = ctx;
+    expect(scheduler.applyRemoteFiring({ reminderId: '01ARZ3NDEKTSV4RRFFQ69G5FAV', firedAt: S })).toEqual({});
+    const r = scheduler.create(input(S + HOUR, { rrule: 'FREQ=DAILY' }));
+    scheduler.cancel(r.id);
+    scheduler.applyRemoteFiring({ reminderId: r.id, firedAt: S + HOUR, waId: 'w', nextDueAt: S + DAY + HOUR });
+    expect(store.getReminder(r.id)?.active).toBe(false);
+    expect(reminderMessages()).toEqual([]);
+  });
+});

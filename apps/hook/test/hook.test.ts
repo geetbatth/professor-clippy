@@ -178,6 +178,17 @@ describe('guards', () => {
     }
     expect(posted).toEqual([]);
   });
+
+  it("ignores Professor Clippy's own brain turns (CLIPPY_BRAIN=1)", async () => {
+    await startApp();
+    const env = { CLIPPY_BRAIN: '1' };
+    expect(await runHook(stop(), { env })).toBe('ignored');
+    expect(await runHook(JSON.stringify({ hook_event_name: 'Notification', cwd: '/p', message: 'hi' }), { env })).toBe(
+      'ignored',
+    );
+    expect(posted).toEqual([]);
+    expect(await runHook(stop(), { env: {} })).toBe('posted');
+  });
 });
 
 describe('transcript helpers', () => {

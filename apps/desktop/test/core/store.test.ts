@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Message, Reminder } from '@clippy/shared';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Bus, type CoreEventMap } from '../../src/main/core/bus';
 import { Store, toFtsQuery } from '../../src/main/core/store';
 import { FakeClock } from './fakeClock';
@@ -211,6 +212,31 @@ describe('Store', () => {
     expect(store.listMessages({ q: 'rolled' })).toEqual([]);
   });
 
+  it('transaction() is usable again after BEGIN itself throws', () => {
+    const exec = vi.spyOn(DatabaseSync.prototype, 'exec');
+    exec.mockImplementationOnce(() => {
+      throw new Error('database is locked');
+    });
+    expect(() => store.transaction(() => 1)).toThrow('database is locked');
+    exec.mockRestore();
+    // Before the fix the deferred-event list stayed set and every later call said "not reentrant".
+    expect(store.transaction(() => store.createMessage({ kind: 'note', body: 'after', sender: 's' }).body)).toBe('after');
+    expect(events.map(([e]) => e)).toEqual(['message:new']);
+  });
+
+  it('creates messages in a given state and links reminder messages to their reminder', () => {
+    const chat = store.createMessage({ kind: 'chat', role: 'user', body: 'hi', sender: 'user', state: 'done' });
+    expect(chat).toMatchObject({ state: 'done', doneAt: T0 });
+    expect(Message.parse(chat)).toEqual(chat);
+    expect(store.findLatestReminderMessage('R1')).toBeUndefined();
+    const first = store.createMessage({ kind: 'reminder', body: 'stretch', sender: 's', reminderId: 'R1' });
+    clock.advance(1000);
+    const second = store.createMessage({ kind: 'reminder', body: 'stretch', sender: 's', reminderId: 'R1' });
+    store.createMessage({ kind: 'reminder', body: 'other', sender: 's', reminderId: 'R2' });
+    expect(store.findLatestReminderMessage('R1')?.id).toBe(second.id);
+    expect(first).not.toHaveProperty('reminderId'); // internal link, not part of the shared Message
+  });
+
   it('has a key/value table', () => {
     expect(store.getKv('session')).toBeUndefined();
     store.setKv('session', 'abc');
@@ -231,14 +257,37 @@ describe('Store on disk', () => {
   it('migrates once and persists data and the FTS index across reopen', () => {
     const path = join(dir, 'clippy.db');
     const first = new Store({ path });
-    expect(first.schemaVersion).toBe(1);
+    expect(first.schemaVersion).toBe(2);
     const m = first.createMessage({ kind: 'note', body: 'persist me please', sender: 's' });
     first.close();
 
     const second = new Store({ path });
-    expect(second.schemaVersion).toBe(1);
+    expect(second.schemaVersion).toBe(2);
     expect(second.getMessage(m.id)).toEqual(m);
     expect(second.listMessages({ q: 'persist' }).map((x) => x.id)).toEqual([m.id]);
     second.close();
+  });
+
+  it('upgrades a version-1 database (adds the reminder link column) without losing data', () => {
+    const path = join(dir, 'v1.db');
+    const v1 = new DatabaseSync(path);
+    v1.exec(`CREATE TABLE messages (seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, body TEXT NOT NULL,
+      title TEXT, sender TEXT NOT NULL, project TEXT, urgent INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL,
+      created_at INTEGER NOT NULL, done_at INTEGER, snoozed_until INTEGER, wa_id TEXT, options TEXT, answer TEXT,
+      answered_via TEXT, role TEXT, missed INTEGER);
+      CREATE VIRTUAL TABLE messages_fts USING fts5(title, body, content = 'messages', content_rowid = 'seq');
+      CREATE TABLE reminders (id TEXT PRIMARY KEY, body TEXT NOT NULL, sender TEXT NOT NULL, project TEXT,
+        start_at INTEGER NOT NULL, due_at INTEGER NOT NULL, rrule TEXT, active INTEGER NOT NULL,
+        created_at INTEGER NOT NULL, last_fired_at INTEGER);
+      CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO messages (id, kind, body, sender, state, created_at) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', 'note', 'old', 's', 'unread', 1);
+      PRAGMA user_version = 1;`);
+    v1.close();
+    const store = new Store({ path });
+    expect(store.schemaVersion).toBe(2);
+    expect(store.getMessage('01ARZ3NDEKTSV4RRFFQ69G5FAV')?.body).toBe('old');
+    store.createMessage({ kind: 'reminder', body: 'new', sender: 's', reminderId: 'R' });
+    expect(store.findLatestReminderMessage('R')?.body).toBe('new');
+    store.close();
   });
 });

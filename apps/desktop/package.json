@@ -12,7 +12,8 @@
     "start": "electron-vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "harness": "node scripts/run-harness.mjs"
+    "harness": "node scripts/run-harness.mjs",
+    "e2e": "vitest run --config e2e/vitest.config.ts"
   },
   "dependencies": {
     "@clippy/shared": "0.1.0",

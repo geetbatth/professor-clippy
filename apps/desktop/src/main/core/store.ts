@@ -31,6 +31,10 @@ export interface NewMessageRecord {
   role?: ChatRole;
   missed?: boolean;
   waId?: string;
+  /** Initial state; default `'unread'` (chat lines are stored straight into history as `'done'`). */
+  state?: MessageState;
+  /** For `kind: 'reminder'`: the Reminder that produced it (internal link, not part of the shared Message). */
+  reminderId?: string;
 }
 
 /** Mutable message fields. `null` clears an optional field. */
@@ -122,6 +126,11 @@ const MIGRATIONS: readonly string[] = [
     value TEXT NOT NULL
   );
   `,
+  // 2: link fired reminder messages to their Reminder (relay reconciliation of Worker firings).
+  `
+  ALTER TABLE messages ADD COLUMN reminder_id TEXT;
+  CREATE INDEX messages_reminder ON messages (reminder_id, created_at) WHERE reminder_id IS NOT NULL;
+  `,
 ];
 
 type Row = Record<string, SQLOutputValue>;
@@ -165,8 +174,9 @@ export class Store {
   transaction<T>(fn: () => T): T {
     if (this.#deferred) throw new Error('Store.transaction is not reentrant');
     const deferred: (() => void)[] = [];
-    this.#deferred = deferred;
+    // BEGIN first: if it throws (e.g. the database is closed) nothing is left half-open.
     this.#db.exec('BEGIN');
+    this.#deferred = deferred;
     let result: T;
     try {
       result = fn();
@@ -183,27 +193,32 @@ export class Store {
 
   // ---- messages -------------------------------------------------------------
 
-  /** Store a new unread message and emit `message:new`. */
+  /** Store a new message (unread unless `record.state` says otherwise) and emit `message:new`. */
   createMessage(record: NewMessageRecord): Message {
     const id = this.newId();
+    const createdAt = this.#clock.now();
+    const state = record.state ?? 'unread';
     this.#db
       .prepare(
-        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, wa_id, options, role, missed)
-         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, 'unread', $createdAt, $waId, $options, $role, $missed)`,
+        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, done_at, wa_id, options, role, missed, reminder_id)
+         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, $state, $createdAt, $doneAt, $waId, $options, $role, $missed, $reminderId)`,
       )
       .run({
         id,
         kind: record.kind,
+        state,
         body: record.body,
         title: record.title ?? null,
         sender: record.sender,
         project: record.project ?? null,
         urgent: record.urgent ? 1 : 0,
-        createdAt: this.#clock.now(),
+        createdAt,
+        doneAt: state === 'done' ? createdAt : null,
         waId: record.waId ?? null,
         options: record.options ? JSON.stringify(record.options) : null,
         role: record.role ?? null,
         missed: record.missed === undefined ? null : record.missed ? 1 : 0,
+        reminderId: record.reminderId ?? null,
       });
     const message = this.getMessage(id)!;
     this.#emit('message:new', message);
@@ -218,6 +233,14 @@ export class Store {
   /** The message mirrored to WhatsApp as `waId` (for matching quote-replies). */
   findMessageByWaId(waId: string): Message | undefined {
     const row = this.#db.prepare('SELECT * FROM messages WHERE wa_id = ?').get(waId);
+    return row && toMessage(row);
+  }
+
+  /** The most recent message fired for reminder `reminderId` (see {@link NewMessageRecord.reminderId}). */
+  findLatestReminderMessage(reminderId: string): Message | undefined {
+    const row = this.#db
+      .prepare('SELECT * FROM messages WHERE reminder_id = ? ORDER BY created_at DESC, seq DESC LIMIT 1')
+      .get(reminderId);
     return row && toMessage(row);
   }
 
@@ -332,6 +355,12 @@ export class Store {
   getReminder(id: string): Reminder | undefined {
     const row = this.#db.prepare('SELECT * FROM reminders WHERE id = ?').get(id);
     return row && toReminder(row);
+  }
+
+  /** A reminder with its recurrence anchor. */
+  getScheduledReminder(id: string): ScheduledReminder | undefined {
+    const row = this.#db.prepare('SELECT * FROM reminders WHERE id = ?').get(id);
+    return row && { ...toReminder(row), startAt: Number(row.start_at) };
   }
 
   /** Active reminders, soonest first. */

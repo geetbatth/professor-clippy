@@ -14,7 +14,7 @@
  * - Each reminder fires in its own transaction; after any failure the timer
  *   backs off ERROR_BACKOFF_MS instead of retrying in a busy loop.
  */
-import type { NewReminderInput, Reminder } from '@clippy/shared';
+import type { Message, NewReminderInput, Reminder } from '@clippy/shared';
 import type { Bus } from './bus';
 import { systemClock, type Clock, type TimerHandle } from './clock';
 import { NotFoundError, ValidationError } from './errors';
@@ -129,6 +129,75 @@ export class Scheduler {
     return this.#store.listActiveReminders();
   }
 
+  /**
+   * Reconcile a firing done by the relay Worker (which already sent it to WhatsApp, so
+   * nothing here ever sends anything). Idempotent: applying the same firing twice changes
+   * nothing the second time.
+   *
+   * - If the desktop has not shown that occurrence yet (the reminder is active and its
+   *   `dueAt` is at or before `firedAt`), the reminder Message is created now, carrying the
+   *   Worker's `waId`, and the reminder advances (emits `message:new` + `reminder:fired`).
+   * - Otherwise the desktop already showed it: the Worker's `waId` is attached to the
+   *   reminder's latest message if that has none yet.
+   * - Schedule: `nextDueAt` absent means the Worker finished the reminder, so the desktop
+   *   copy is deactivated; a future `nextDueAt` becomes the desktop `dueAt`. A past one
+   *   belongs to a stale (redelivered or caught-up) firing and is ignored.
+   */
+  applyRemoteFiring(firing: { reminderId: string; firedAt: number; waId?: string; nextDueAt?: number }): {
+    reminder?: Reminder;
+    message?: Message;
+  } {
+    const r = this.#store.getScheduledReminder(firing.reminderId);
+    if (!r) return {};
+    const now = this.#clock.now();
+    const futureNext = firing.nextDueAt !== undefined && firing.nextDueAt > now ? firing.nextDueAt : undefined;
+    try {
+      if (r.active && r.dueAt <= firing.firedAt) {
+        const fired = this.#store.transaction(() => {
+          const message = this.#store.createMessage({
+            kind: 'reminder',
+            body: r.body,
+            sender: r.sender,
+            reminderId: r.id,
+            ...(r.project !== undefined && { project: r.project }),
+            ...(firing.waId !== undefined && { waId: firing.waId }),
+            ...(now - r.dueAt > this.#missedGraceMs && { missed: true }),
+          });
+          // Recurring: the Worker's next occurrence, or (if that is already past) our own next one after now.
+          const next =
+            firing.nextDueAt === undefined || r.rrule === undefined
+              ? undefined
+              : (futureNext ?? nextOccurrence(r.rrule, r.startAt, now));
+          const reminder = this.#store.updateReminder(r.id, {
+            lastFiredAt: now,
+            ...(next === undefined ? { active: false } : { dueAt: next }),
+          })!;
+          return { reminder, message };
+        });
+        this.#bus.emit('reminder:fired', fired);
+        return fired;
+      }
+
+      let message: Message | undefined;
+      if (firing.waId !== undefined) {
+        const latest = this.#store.findLatestReminderMessage(r.id);
+        message = latest?.waId === undefined && latest ? this.#store.updateMessage(latest.id, { waId: firing.waId }) : latest;
+      }
+      let reminder: Reminder = r;
+      if (r.active && firing.nextDueAt === undefined) reminder = this.#store.updateReminder(r.id, { active: false })!;
+      else if (r.active && futureNext !== undefined && futureNext !== r.dueAt) {
+        reminder = this.#store.updateReminder(r.id, { dueAt: futureNext })!;
+      }
+      return { reminder: stripAnchor(reminder), ...(message && { message }) };
+    } finally {
+      try {
+        this.#arm();
+      } catch (err) {
+        console.error('[clippy] scheduler re-arm failed:', err);
+      }
+    }
+  }
+
   #run(catchUp: boolean): void {
     let failed = this.#fireDue(catchUp);
     try {
@@ -166,6 +235,7 @@ export class Scheduler {
             kind: 'reminder',
             body: r.body,
             sender: r.sender,
+            reminderId: r.id,
             ...(r.project !== undefined && { project: r.project }),
             ...(missed && { missed: true }),
           });
@@ -212,4 +282,11 @@ export class Scheduler {
     this.#clock.clearTimeout(this.#timer);
     this.#timer = undefined;
   }
+}
+
+/** A plain Reminder (without the internal `startAt` anchor). */
+function stripAnchor(r: Reminder | ScheduledReminder): Reminder {
+  if (!('startAt' in r)) return r;
+  const { startAt: _startAt, ...rest } = r;
+  return rest;
 }

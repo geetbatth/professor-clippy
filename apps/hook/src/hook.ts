@@ -43,6 +43,8 @@ export type HookOutcome =
 
 export interface HookDeps {
   now?: () => number;
+  /** Environment to check for `CLIPPY_BRAIN` (default `process.env`). */
+  env?: NodeJS.ProcessEnv;
   connect?: () => Promise<ClippyClient>;
 }
 
@@ -171,6 +173,8 @@ export async function runHook(raw: string, deps: HookDeps = {}): Promise<HookOut
     return 'ignored';
   }
   if (!input || typeof input !== 'object') return 'ignored';
+  // Clippy's own brain runs Claude Code with CLIPPY_BRAIN=1: its turns are chat, not agent work.
+  if ((deps.env ?? process.env).CLIPPY_BRAIN === '1') return 'ignored';
   const event = input.hook_event_name;
   if (event !== 'Stop' && event !== 'Notification') return 'ignored';
   if (!(await hookEnabled())) return 'disabled';
