@@ -68,8 +68,8 @@ export const RelayReminderPut = z.object({
   startAt: Timestamp.optional(),
   /**
    * IANA time zone the RRULE is evaluated in (the PC's local zone). The rule runs on
-   * floating local wall time anchored at `startAt`'s (else `dueAt`'s) wall time, so "09:00" stays 09:00
-   * local across DST. Omitted: UTC.
+   * floating local wall time anchored at the wall time of `startAt` (else `dueAt`), so
+   * "09:00" stays 09:00 local across DST. Omitted: UTC.
    */
   tz: z.string().min(1).refine(isValidTimeZone, 'Unknown IANA time zone').optional(),
 });
