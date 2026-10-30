@@ -9,7 +9,7 @@
  * This module is type-only apart from the channel-name constants, so it is safe
  * to import from sandboxed preload and renderer code.
  */
-import type { AskResult, Message, MessageFilter, NewWatchInput, StandingOrder, Watch } from './schemas';
+import type { AskResult, Message, MessageFilter, NewPageInput, NewWatchInput, Page, PageChange, PageFilter, StandingOrder, Watch } from './schemas';
 import type { Settings, SettingsPatch } from './settings';
 
 /** Brain activity, for Clippy's thinking animation. */
@@ -80,6 +80,12 @@ export interface HotkeyStatus {
   error?: string;
 }
 
+/**
+ * Result of saving a page from the renderer: saved, or refused because the page changed since
+ * the editor last saw it (`conflict` is the page as it is now; the editor keeps the user's text).
+ */
+export type WritePageResult = { ok: true; page: Page } | { ok: false; conflict: Page };
+
 /** Request/response API the renderer calls (all async, via `ipcRenderer.invoke`). */
 export interface ClippyBackend {
   /** Messages matching a filter (e.g. `{ state: 'unread' }` for the sticky-note stack). */
@@ -131,6 +137,21 @@ export interface ClippyBackend {
   cancelWatch(id: string): Promise<void>;
   /** Is Windows in dark mode right now (Electron `nativeTheme.shouldUseDarkColors`)? Changes arrive as `theme:system`. */
   systemDark(): Promise<boolean>;
+  /** Pages on the Pad (not archived unless `archived`), pinned first, then most recently changed. */
+  listPages(filter: PageFilter): Promise<Page[]>;
+  getPage(id: string): Promise<Page>;
+  /** A new page written by the user (seen). */
+  createPage(input: NewPageInput): Promise<Page>;
+  /** Save the user's change to a page; with `baseUpdatedAt`, refused as a conflict if it changed since. */
+  writePage(id: string, change: PageChange): Promise<WritePageResult>;
+  /** The user opened a page: it is no longer `unseen`. */
+  markPageSeen(id: string): Promise<Page>;
+  archivePage(id: string): Promise<Page>;
+  restorePage(id: string): Promise<Page>;
+  /** Delete an archived page for good (a page that is not archived is refused). */
+  deletePage(id: string): Promise<void>;
+  /** Open a page as its own window on the desktop (`true`) or put it back in the Pad. */
+  popPage(id: string, popped: boolean): Promise<Page>;
 }
 
 /** `ipcMain.handle` / `ipcRenderer.invoke` channel for each backend method. */
@@ -157,6 +178,15 @@ export const IpcInvoke = {
   addWatch: 'clippy:addWatch',
   cancelWatch: 'clippy:cancelWatch',
   systemDark: 'clippy:systemDark',
+  listPages: 'clippy:listPages',
+  getPage: 'clippy:getPage',
+  createPage: 'clippy:createPage',
+  writePage: 'clippy:writePage',
+  markPageSeen: 'clippy:markPageSeen',
+  archivePage: 'clippy:archivePage',
+  restorePage: 'clippy:restorePage',
+  deletePage: 'clippy:deletePage',
+  popPage: 'clippy:popPage',
 } as const satisfies { [K in keyof ClippyBackend]: `clippy:${K}` };
 
 /** Push-event channels (main → renderer via `webContents.send`). */
@@ -167,6 +197,8 @@ export const IpcEvents = {
   chatDone: 'chat:done',
   brainState: 'brain:state',
   themeSystem: 'theme:system',
+  pageChanged: 'page:changed',
+  pageDeleted: 'page:deleted',
 } as const satisfies Record<string, keyof ClippyEventMap>;
 
 /** Event channel name → payload type. */
@@ -178,6 +210,10 @@ export interface ClippyEventMap {
   'brain:state': BrainState;
   /** Windows switched between light and dark: `true` = dark (sent to every window). */
   'theme:system': boolean;
+  /** A page was created or changed, by anyone (sent to every window). */
+  'page:changed': Page;
+  /** A page was deleted for good (sent to every window). */
+  'page:deleted': { id: string };
 }
 
 /** A push-event channel name. */

@@ -39,7 +39,13 @@ export type HookEvent = (typeof HOOK_EVENTS)[number];
  */
 export const PERMISSION_HOOK_TIMEOUT_S = 1800;
 export const CLAUDE_MD_HINT =
-  'When the user asks you to leave a message, remind them, notify them, or check with them, use the Professor Clippy MCP tools (leave_message / remind_me / ask_user).';
+  'When the user asks you to leave a message, remind them, notify them, or check with them, use the Professor Clippy MCP tools (leave_message / remind_me / ask_user). ' +
+  'To leave them something to keep (a checklist, a summary), write a page on their Pad with write_page instead of a note.';
+/** Hints earlier versions wrote; install replaces one in place and uninstall removes it too. */
+export const LEGACY_CLAUDE_MD_HINTS: readonly string[] = [
+  'When the user asks you to leave a message, remind them, notify them, or check with them, use the Professor Clippy MCP tools (leave_message / remind_me / ask_user).',
+];
+const isOurHint = (line: string) => line.trim() === CLAUDE_MD_HINT || LEGACY_CLAUDE_MD_HINTS.includes(line.trim());
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const DEFAULT_MCP_PATH = join(repoRoot, 'apps', 'mcp', 'dist', 'index.js');
@@ -161,6 +167,11 @@ export function removeHooks(settings: SettingsJson): SettingsJson {
 
 export function addHint(markdown: string): string {
   if (markdown.split(/\r?\n/).some((line) => line.trim() === CLAUDE_MD_HINT)) return markdown;
+  // An older hint is brought up to date where it is, keeping its line ending.
+  const lines = markdown.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+  if (lines.some(isOurHint)) {
+    return lines.map((line) => (isOurHint(line) ? CLAUDE_MD_HINT + line.slice(line.trimEnd().length) : line)).join('');
+  }
   const eol = markdown.includes('\r\n') ? '\r\n' : '\n';
   const sep = markdown === '' ? '' : markdown.endsWith('\n') ? eol : eol + eol;
   return markdown + sep + CLAUDE_MD_HINT + eol;
@@ -173,10 +184,10 @@ export function addHint(markdown: string): string {
  */
 export function removeHint(markdown: string): string {
   const lines = markdown.match(/[^\n]*\n|[^\n]+$/g) ?? []; // each line with its own terminator
-  if (!lines.some((line) => line.trim() === CLAUDE_MD_HINT)) return markdown;
+  if (!lines.some(isOurHint)) return markdown;
   const out: string[] = [];
   for (const line of lines) {
-    if (line.trim() !== CLAUDE_MD_HINT) out.push(line);
+    if (!isOurHint(line)) out.push(line);
     else if (out.length > 0 && /^\r?\n$/.test(out.at(-1)!)) out.pop();
   }
   return out.join('');

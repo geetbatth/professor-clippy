@@ -1,7 +1,7 @@
 /**
  * The `clippy` MCP server: tools agents use to leave the user notes, set
- * reminders and ask questions on Professor Clippy's sticky note. Every tool
- * forwards to the desktop app's local API through `ClippyClient`.
+ * reminders, ask questions on Professor Clippy's sticky note and write pages
+ * on the Pad. Every tool forwards to the desktop app's local API through `ClippyClient`.
  */
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -14,15 +14,19 @@ import {
   ClippyNotRunningError,
   DarkThemeId,
   DEFAULT_SETTINGS,
+  findPageByTitle,
   IsoDateTime,
   LookPatch,
   Settings,
   NewWatchInput,
+  PageBody,
+  PageTitle,
   settingsPath,
   ThemeId,
   type AskResult,
   type ClippyClient,
   type Message,
+  type Page,
 } from '@clippy/shared';
 import { NOT_RUNNING_MESSAGE, connectToClippy } from './connect';
 
@@ -59,6 +63,22 @@ function noteView(m: Message) {
     state: m.state,
     snoozedUntil: m.snoozedUntil === undefined ? undefined : iso(m.snoozedUntil),
     created: iso(m.createdAt),
+  };
+}
+
+/** Most pages `list_pages` returns. */
+const PAGE_LIST_MAX = 50;
+/** Longest first line `list_pages` shows. */
+const FIRST_LINE_MAX = 120;
+
+/** A page as `list_pages` shows it. */
+function pageView(p: Page) {
+  return {
+    id: p.id,
+    title: p.title,
+    firstLine: (p.body.split('\n', 1)[0] ?? '').slice(0, FIRST_LINE_MAX),
+    author: p.author,
+    updated: iso(p.updatedAt),
   };
 }
 
@@ -298,7 +318,89 @@ export function createClippyServer(options: ClippyServerOptions = {}): McpServer
     },
   );
 
+  server.registerTool(
+    'write_page',
+    {
+      title: 'Write a page on the Pad',
+      description:
+        "Write a page on the user's Pad in Professor Clippy: a page they keep, unlike a note, which they dismiss. " +
+        'Use it for something worth keeping, such as a checklist, a summary or steps to follow, or when the user asks you to jot something down. ' +
+        'mode append (default) adds the text as a new line to the page with this title (matched ignoring case, or a unique start of a title) ' +
+        'or to page_id, and creates the page if there is none; replace overwrites that page; new always starts a new page. ' +
+        'You can only change pages you wrote yourself; pages the user or other agents wrote are refused.',
+      inputSchema: {
+        title: PageTitle.describe('The page title, e.g. "Deploy checklist". Also how an existing page is found.'),
+        text: PageBody.min(1).describe('The text to write, kept exactly as written.'),
+        mode: z.enum(['new', 'append', 'replace']).optional().describe('append (default), replace or new.'),
+        page_id: z.string().min(1).optional().describe('Write this page (from list_pages or an earlier write_page) instead of finding it by title.'),
+      },
+    },
+    async ({ title, text, mode = 'append', page_id }) => {
+      const page = await withClient(async (c) => {
+        const targetId = mode === 'new' ? undefined : (page_id ?? findPageByTitle(await c.listPages(), title)?.id);
+        if (targetId === undefined) return { page: await c.createPage({ title, body: text, sender: sender(), project }), created: true };
+        const change = mode === 'replace' ? { body: text } : { append: text };
+        return { page: await c.writePage(targetId, { ...change, sender: sender() }), created: false };
+      });
+      return ok(
+        JSON.stringify({ id: page.page.id, title: page.page.title }),
+        `${page.created ? 'Created' : mode === 'replace' ? 'Replaced the text of' : 'Added to'} the page "${page.page.title}" (id ${page.page.id}).`,
+      );
+    },
+  );
+
+  server.registerTool(
+    'read_page',
+    {
+      title: 'Read a page on the Pad',
+      description: "Read one of the pages on the user's Pad, by page_id or by title (ignoring case, or a unique start of a title).",
+      inputSchema: {
+        page_id: z.string().min(1).optional().describe('Page id from list_pages.'),
+        title: z.string().min(1).optional().describe('The page title, if you have no id.'),
+      },
+    },
+    async ({ page_id, title }) => {
+      if (page_id === undefined && title === undefined) throw new Error('Give page_id or title');
+      const page = await withClient(async (c) => {
+        if (page_id !== undefined) return c.getPage(page_id);
+        const found = findPageByTitle(await c.listPages(), title!);
+        if (!found) throw new Error(`No page titled "${title}". Use list_pages to see the pages.`);
+        return found;
+      });
+      return ok(`${page.title} (id ${page.id}, by ${page.author}, changed ${iso(page.updatedAt)})`, page.body === '' ? '(empty)' : page.body);
+    },
+  );
+
+  server.registerTool(
+    'list_pages',
+    {
+      title: 'List pages on the Pad',
+      description:
+        "List the pages on the user's Pad (pinned first, then the most recently changed, at most 50): id, title, first line, author and when it last changed. " +
+        'query finds pages whose title or text contains it.',
+      inputSchema: { query: z.string().min(1).optional().describe('Words the title or text contains.') },
+    },
+    async ({ query }) => {
+      const pages = await withClient((c) => c.listPages(query === undefined ? {} : { q: query }));
+      if (pages.length === 0) return ok(query === undefined ? 'No pages yet.' : `No pages contain "${query}".`);
+      return ok(JSON.stringify(pages.slice(0, PAGE_LIST_MAX).map(pageView), null, 2));
+    },
+  );
+
   brainOnly(() => {
+    server.registerTool(
+      'archive_page',
+      {
+        title: 'Archive a page',
+        description: "Archive one of the pages on the user's Pad when they ask you to (it leaves the Pad; they can restore it). Get the id from list_pages.",
+        inputSchema: { page_id: z.string().min(1).describe('Page id from list_pages.') },
+      },
+      async ({ page_id }) => {
+        const page = await withClient((c) => c.archivePage(page_id, sender()));
+        return ok(`Archived the page "${page.title}" (id ${page.id}).`);
+      },
+    );
+
     server.registerTool(
       'list_notes',
       {

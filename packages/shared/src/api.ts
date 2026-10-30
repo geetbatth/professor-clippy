@@ -5,10 +5,10 @@
  * `port` file. Every request needs `Authorization: Bearer <token>` (token from
  * the `token` file); otherwise 401. Request/response bodies are JSON.
  * Errors are `{ error: string }` with a 4xx/5xx status (400 invalid input,
- * 401 bad/missing token, 403 not allowed, 404 unknown id).
+ * 401 bad/missing token, 403 not allowed, 404 unknown id, 409 conflicts with the current state).
  */
 import { z } from 'zod';
-import { AnsweredVia, Timestamp } from './schemas';
+import { AnsweredVia, NewPageInput, Page, PAGE_USER_AUTHOR, PageChange, Timestamp } from './schemas';
 import { Settings, SettingsPatch } from './settings';
 
 /** HTTP method of a route. */
@@ -45,7 +45,15 @@ export interface RouteDef {
  * - `listApps` → OpenApp[] (windowed apps)
  * - `requestApproval` (body ApprovalRequestBody) → ApprovalResult (201 when `waiting`, else 200)
  * - `withdrawApproval` → 204, no body (also for an unknown or already closed approval)
+ * - `setLook` (body LookPatch) → Look
+ * - `listPages` (query `q`, `archived` = `true` / `false`) → Page[] (pinned first, then most recently changed)
+ * - `getPage` → Page
+ * - `createPage` (body NewPageBody) → Page (201)
+ * - `writePage` (body PageChangeBody) → Page; 409 `{ error, page }` (the page as it is now) for a stale `baseUpdatedAt`
+ * - `archivePage` (body PageSenderBody) → Page
  *
+ * `writePage` and `archivePage` answer 403 when an agent changes a page another sender (or the
+ * user) wrote; only the page's author, Clippy's brain and the user may. No route deletes a page.
  * The three power routes answer 403 while the `allowPowerActions` setting is off.
  * `answerAsk` answers 403 for an open restart confirmation or phone approval: only the user's own
  * taps (in-process, from the desk and the phones) answer those.
@@ -75,6 +83,11 @@ export const Routes = {
   requestApproval: { method: 'POST', path: '/approvals' },
   withdrawApproval: { method: 'POST', path: '/approvals/:id/withdraw' },
   setLook: { method: 'POST', path: '/look' },
+  listPages: { method: 'GET', path: '/pages' },
+  getPage: { method: 'GET', path: '/pages/:id' },
+  createPage: { method: 'POST', path: '/pages' },
+  writePage: { method: 'POST', path: '/pages/:id' },
+  archivePage: { method: 'POST', path: '/pages/:id/archive' },
 } as const satisfies Record<string, RouteDef>;
 
 /** Fill a route's `:id` placeholder (URL-encoded). */
@@ -214,6 +227,41 @@ export type LookPatch = z.infer<typeof LookPatch>;
 /** `POST /look` response: the theme settings as they are now. */
 export const Look = Settings.pick({ theme: true, followSystemDark: true, darkTheme: true });
 export type Look = z.infer<typeof Look>;
+
+/**
+ * Who is writing a page through the API: the agent's own name. `you` (any case or spacing) is the
+ * user's, which only the app itself writes as, so the API refuses it.
+ */
+export const PageSender = z
+  .string()
+  .min(1)
+  .max(200)
+  .refine((s) => s.trim().toLowerCase() !== PAGE_USER_AUTHOR, `"${PAGE_USER_AUTHOR}" is the user's own name; use yours`);
+
+/** `POST /pages` body. */
+export const NewPageBody = NewPageInput.extend({ sender: PageSender }).strict();
+export type NewPageBody = z.infer<typeof NewPageBody>;
+
+/** `POST /pages/:id` body. */
+export const PageChangeBody = PageChange.extend({ sender: PageSender }).strict();
+export type PageChangeBody = z.infer<typeof PageChangeBody>;
+
+/** `POST /pages/:id/archive` body. */
+export const PageSenderBody = z.object({ sender: PageSender }).strict();
+export type PageSenderBody = z.infer<typeof PageSenderBody>;
+
+/** `GET /pages` query. */
+export const PageListQuery = z.object({
+  q: z.string().optional(),
+  archived: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
+});
+
+/** The 409 body of `POST /pages/:id` when the page changed since the writer last saw it. */
+export const PageConflictBody = z.object({ error: z.string(), page: Page });
+export type PageConflictBody = z.infer<typeof PageConflictBody>;
 
 /** Error response body for any non-2xx status. */
 export const ApiError = z.object({ error: z.string() });

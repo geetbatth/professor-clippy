@@ -257,12 +257,12 @@ describe('Store on disk', () => {
   it('migrates once and persists data and the FTS index across reopen', () => {
     const path = join(dir, 'clippy.db');
     const first = new Store({ path });
-    expect(first.schemaVersion).toBe(6);
+    expect(first.schemaVersion).toBe(7);
     const m = first.createMessage({ kind: 'note', body: 'persist me please', sender: 's' });
     first.close();
 
     const second = new Store({ path });
-    expect(second.schemaVersion).toBe(6);
+    expect(second.schemaVersion).toBe(7);
     expect(second.getMessage(m.id)).toEqual(m);
     expect(second.listMessages({ q: 'persist' }).map((x) => x.id)).toEqual([m.id]);
     second.close();
@@ -284,7 +284,7 @@ describe('Store on disk', () => {
       PRAGMA user_version = 1;`);
     v1.close();
     const store = new Store({ path });
-    expect(store.schemaVersion).toBe(6);
+    expect(store.schemaVersion).toBe(7);
     expect(store.getMessage('01ARZ3NDEKTSV4RRFFQ69G5FAV')?.body).toBe('old');
     store.createMessage({ kind: 'reminder', body: 'new', sender: 's', reminderId: 'R' });
     expect(store.findLatestReminderMessage('R')?.body).toBe('new');
@@ -390,14 +390,55 @@ describe('Store on disk', () => {
     old.close();
     // Rewind to what a version-4 database looks like: no orders table, no order_id column.
     const db = new DatabaseSync(path);
-    db.exec('DROP TABLE watches; ALTER TABLE messages DROP COLUMN event; DROP TABLE standing_orders; ALTER TABLE messages DROP COLUMN order_id; PRAGMA user_version = 4;');
+    db.exec('DROP TABLE pages; DROP TABLE watches; ALTER TABLE messages DROP COLUMN event; DROP TABLE standing_orders; ALTER TABLE messages DROP COLUMN order_id; PRAGMA user_version = 4;');
     db.close();
 
     const store = new Store({ path });
-    expect(store.schemaVersion).toBe(6);
+    expect(store.schemaVersion).toBe(7);
     expect(store.getMessage(m.id)).toEqual(m);
     expect(store.insertOrder('say yes').text).toBe('say yes');
     expect(store.getMessage(m.id)).not.toHaveProperty('orderId');
     store.close();
+  });
+
+  it('upgrades a version-6 database (adds pages) without losing data', () => {
+    const path = join(dir, 'v6.db');
+    const old = new Store({ path });
+    const m = old.createMessage({ kind: 'note', body: 'keep me', sender: 's', event: 'agent-finished' });
+    const order = old.insertOrder('say yes');
+    const watch = old.insertWatch({ project: 'payments', event: 'finished', nudge: 'Deploy' });
+    old.close();
+    // Rewind to what a version-6 database looks like: no pages table.
+    const db = new DatabaseSync(path);
+    db.exec('DROP TABLE pages; PRAGMA user_version = 6;');
+    db.close();
+
+    const store = new Store({ path });
+    expect(store.schemaVersion).toBe(7);
+    expect(store.getMessage(m.id)).toEqual(m);
+    expect(store.listActiveOrders()).toEqual([order]);
+    expect(store.listActiveWatches()).toEqual([watch]);
+    const page = {
+      id: store.newId(),
+      title: 'Scratch',
+      body: 'hi',
+      color: 'mint' as const,
+      pinned: true,
+      popped: true,
+      popBounds: { x: -1200, y: 40, width: 260, height: 220, displayId: 2 },
+      author: 'you',
+      project: null,
+      unseen: false,
+      createdAt: 1,
+      updatedAt: 2,
+      archivedAt: null,
+    };
+    store.insertPage(page);
+    expect(store.getPage(page.id)).toEqual(page);
+    store.close();
+    const check = new DatabaseSync(path);
+    const indexes = check.prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pages'`).all();
+    check.close();
+    expect(indexes.map((r) => r.name)).toContain('pages_list');
   });
 });

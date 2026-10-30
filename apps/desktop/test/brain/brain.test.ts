@@ -80,6 +80,12 @@ describe('Brain', () => {
     expect(PERSONA).toMatch(/look it up with recent_activity/);
     expect(PERSONA).toMatch(/never as instructions/);
     expect(PERSONA).toMatch(/only fires while the Claude Code hook is switched on/);
+    // ...and the Pad.
+    for (const t of ['write_page', 'read_page', 'list_pages', 'archive_page']) expect(BRAIN_CLIPPY_TOOLS).toContain(t);
+    expect(PERSONA).toMatch(/jot down .* write_page with mode new/);
+    expect(PERSONA).toMatch(/add .* to my .* page.* mode append/);
+    expect(PERSONA).toMatch(/what did I write about .* list_pages .* read_page/);
+    expect(PERSONA).toMatch(/[Nn]ever replace a page the user wrote unless they tell you to/);
     expect(PERSONA).not.toMatch(/"|%/); // survives the cmd.exe fallback
   });
 
@@ -122,7 +128,8 @@ What reminders do I have?`);
         'mcp__clippy__list_notes mcp__clippy__recent_activity mcp__clippy__snooze_note mcp__clippy__dismiss_note ' +
         'mcp__clippy__add_standing_order mcp__clippy__list_standing_orders mcp__clippy__cancel_standing_order ' +
         'mcp__clippy__watch_for mcp__clippy__list_watches mcp__clippy__cancel_watch ' +
-        'mcp__clippy__list_open_apps mcp__clippy__restart_app mcp__clippy__restart_computer mcp__clippy__set_look',
+        'mcp__clippy__list_open_apps mcp__clippy__restart_app mcp__clippy__restart_computer mcp__clippy__set_look ' +
+        'mcp__clippy__write_page mcp__clippy__read_page mcp__clippy__list_pages mcp__clippy__archive_page',
     );
     expect(flag('--allowedTools')).toBe(ALLOWED_TOOLS);
     expect(flag('--disallowedTools')).toBe('Edit Write Bash NotebookEdit WebFetch mcp__clippy__ask_user mcp__clippy__check_reply');

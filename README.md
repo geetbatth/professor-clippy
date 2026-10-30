@@ -17,7 +17,8 @@ that have waited less than an hour are sent; older ones stay on the desk.
 
 - **Agents talk to Clippy through an MCP server** (`clippy`): `leave_message`, `remind_me`
   (ISO time, optional RRULE), `ask_user` (blocks until you answer, 10 minutes by default),
-  `check_reply`, `list_reminders`, `cancel_reminder`, `list_pending_asks`, `answer_pending`.
+  `check_reply`, `list_reminders`, `cancel_reminder`, `list_pending_asks`, `answer_pending`,
+  and the Pad tools `write_page`, `read_page`, `list_pages` (below).
 - **A Claude Code hook** leaves a note when an agent finishes or needs your permission.
   "Agent finished" notes only interrupt you when you have been away from the PC (no keyboard or
   mouse input) for a while: Settings → "I count as away after N
@@ -34,10 +35,20 @@ that have waited less than an hour are sent; older ones stay on the desk.
   an app or the PC, below). Of the `clippy` tools
   it gets all but `ask_user` and `check_reply` (a brain turn waiting for your answer would hold
   up every chat turn behind it), so when it needs something from you it simply asks in its reply.
-  It also has eleven tools no agent sees: `list_notes`, `recent_activity`, `snooze_note`,
-  `dismiss_note`, `set_look` (colour themes, below) and the standing-order and watch tools below. Tell him "not now, bring it back after
+  It also has twelve tools no agent sees: `list_notes`, `recent_activity`, `snooze_note`,
+  `dismiss_note`, `set_look` (colour themes, below), `archive_page` and the standing-order and watch tools below. Tell him "not now, bring it back after
   lunch" and he snoozes the newest unread note; ask "what happened while I was at lunch?" or
   "what's waiting on me?" and he summarises.
+- **The Pad** is a set of pages you keep (a scratch page, a shopping list, a call to make), unlike
+  notes, which you dismiss. Clippy writes them for you ("jot down: call Dave about the invoice",
+  "add milk to my shopping page", "what did I write about the deploy?"), and agents can leave
+  you one to keep, such as a checklist or a summary, with `write_page`. An agent can only change
+  the pages it wrote itself; yours, and other agents', are refused. If Clippy or an agent changes a
+  page while you are typing in it, your save is refused rather than overwriting theirs (so nothing
+  is silently lost). A page written by someone else counts as new until you open it. Pages nobody
+  has changed for 30 days are archived (not pinned ones, or ones popped out on the desktop); you
+  can restore them. The Pad tab itself comes next; for now the pages live in the database and
+  through the tools.
 - **Colour themes**: the note can be classic yellow, mint, blush, sky or peach, or one of two dark
   ones, night and chalkboard (Clippy gets a soft rim light on those). "Follow Windows dark mode"
   switches to your chosen dark theme while Windows is dark and back again, within a second and
@@ -163,7 +174,9 @@ The wiring does three things, all at user scope:
    matches every tool and has `"timeout": 1800`, since it may wait for your answer; it does
    nothing unless phone approvals are on and you are away. Running the wiring again over an older
    install adds it.
-3. Appends a one-line hint to `~/.claude/CLAUDE.md` telling agents to use the Clippy tools.
+3. Appends a one-line hint to `~/.claude/CLAUDE.md` telling agents to use the Clippy tools (and
+   `write_page` for something to keep, like a checklist). Running it again brings an older hint up
+   to date in place.
 
 From the app: the first-run wizard, or Settings → Claude Code → **Connect Claude Code…**. It
 always shows the dry run first.

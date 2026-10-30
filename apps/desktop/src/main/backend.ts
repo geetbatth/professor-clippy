@@ -2,9 +2,10 @@
  * The `ClippyBackend` the renderer talks to over IPC, implemented over the core service,
  * the brain and the settings store.
  */
-import type { ClippyBackend, HotkeyStatus, Settings, TelegramStatus, TelegramTestResult } from '@clippy/shared';
+import { PAGE_USER_AUTHOR, type ClippyBackend, type HotkeyStatus, type Page, type Settings, type TelegramStatus, type TelegramTestResult } from '@clippy/shared';
 import type { Asks } from './core/asks';
-import { NotFoundError } from './core/errors';
+import { ConflictError, NotFoundError } from './core/errors';
+import type { Pages } from './core/pages';
 import type { Store } from './core/store';
 import type { BrainReply, Channel } from './brain/brain';
 import type { ClaudeWiring } from './claudeWiring';
@@ -13,6 +14,8 @@ import type { SettingsStore } from './settings';
 export interface BackendDeps {
   store: Store;
   asks: Asks;
+  /** The Pad's pages; the renderer writes as the user (`'you'`). */
+  pages: Pages;
   brain: { ask(text: string, opts?: { channel?: Channel }): Promise<BrainReply>; newChat(): void };
   settings: SettingsStore;
   /** "Connect Claude Code" (preview, then install). */
@@ -39,7 +42,7 @@ export function forRenderer(settings: Settings): Settings {
   return rest;
 }
 
-export function createBackend({ store, asks, brain, settings, claudeWiring, telegram, hotkey, systemDark }: BackendDeps): ClippyBackend {
+export function createBackend({ store, asks, pages, brain, settings, claudeWiring, telegram, hotkey, systemDark }: BackendDeps): ClippyBackend {
   const found = <T>(value: T | undefined, id: string): T => {
     if (value === undefined) throw new NotFoundError(`No message ${id}`);
     return value;
@@ -115,6 +118,40 @@ export function createBackend({ store, asks, brain, settings, claudeWiring, tele
     },
     async systemDark() {
       return systemDark();
+    },
+    async listPages(filter) {
+      return pages.list(filter);
+    },
+    async getPage(id) {
+      return pages.get(id);
+    },
+    async createPage(input) {
+      return pages.create(input, PAGE_USER_AUTHOR);
+    },
+    async writePage(id, change) {
+      try {
+        return { ok: true, page: pages.write(id, change, PAGE_USER_AUTHOR) };
+      } catch (err) {
+        // Changed meanwhile (by Clippy or an agent): the editor keeps the user's text and offers both.
+        if (err instanceof ConflictError && err.details?.page) return { ok: false, conflict: err.details.page as Page };
+        throw err;
+      }
+    },
+    async markPageSeen(id) {
+      return pages.markSeen(id);
+    },
+    async archivePage(id) {
+      return pages.archive(id);
+    },
+    async restorePage(id) {
+      return pages.restore(id);
+    },
+    async deletePage(id) {
+      pages.remove(id);
+    },
+    async popPage(id, popped) {
+      // Only records it (and emits page:changed); no window is opened here.
+      return pages.setPopped(id, popped);
     },
   };
 }

@@ -5,7 +5,18 @@
  */
 import { ulid } from 'ulid';
 import type { ClippyEvent, ClippyEventMap, ClippyWindowApi, TelegramStatus } from '@clippy/shared/ipc';
-import type { AskResult, Message, MessageFilter, StandingOrder, Watch } from '@clippy/shared/schemas';
+import {
+  appendToBody,
+  NewPageInput,
+  PAGE_USER_AUTHOR,
+  PageChange,
+  type AskResult,
+  type Message,
+  type MessageFilter,
+  type Page,
+  type StandingOrder,
+  type Watch,
+} from '@clippy/shared/schemas';
 import { applySettingsPatch, DEFAULT_SETTINGS, SettingsPatch, type Settings } from '@clippy/shared/settings';
 import type { ThemeId } from '@clippy/shared/theme';
 import { MOCK_REPLIES, sampleMessages } from './sampleData';
@@ -28,6 +39,11 @@ export interface MockOptions {
 export interface MockBackend extends ClippyWindowApi {
   /** Simulate an agent posting a note (emits `message:new`). */
   pushMessage(input: Partial<Message> & Pick<Message, 'body'>): Message;
+  /**
+   * Simulate Clippy (or, with `author`, an agent) writing a page: a new one, or with the `id` of an
+   * existing one, changing it (it becomes unseen and newer, so a save based on before conflicts).
+   */
+  pushPage(input: Partial<Page> & Pick<Page, 'title'>): Page;
   /** Simulate `/start <code>` from Telegram (pairs if the code is right). */
   telegramStart(code: string, chat?: { id: number; firstName: string }): boolean;
 }
@@ -74,6 +90,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
   };
   const orders = new Map<string, StandingOrder>();
   const watches = new Map<string, Watch>();
+  const pages = new Map<string, Page>();
   let previewed = false;
   let replyIndex = 0;
   const listeners = new Map<ClippyEvent, Set<(payload: never) => void>>();
@@ -93,6 +110,38 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     messages.set(id, next);
     emit('message:updated', { ...next });
     return { ...next };
+  }
+
+  function getPage(id: string): Page {
+    const page = pages.get(id);
+    if (!page) throw new Error(`No page ${id}`);
+    return page;
+  }
+
+  function setPage(id: string, patch: Partial<Page>): Page {
+    const next = { ...getPage(id), ...patch };
+    pages.set(id, next);
+    emit('page:changed', { ...next });
+    return { ...next };
+  }
+
+  /** Store a whole page (new or replacing one), filling in what `input` leaves out. */
+  function putPage(input: Partial<Page> & Pick<Page, 'title' | 'body' | 'color' | 'project' | 'author'>): Page {
+    const t = now();
+    const page: Page = {
+      pinned: false,
+      popped: false,
+      popBounds: null,
+      unseen: input.author !== PAGE_USER_AUTHOR,
+      createdAt: t,
+      updatedAt: t,
+      archivedAt: null,
+      ...input,
+      id: input.id ?? ulid(t),
+    };
+    pages.set(page.id, page);
+    emit('page:changed', { ...page });
+    return { ...page };
   }
 
   function streamReply(): void {
@@ -239,6 +288,72 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     },
     async systemDark() {
       return false; // the preview pretends Windows is in light mode
+    },
+    async listPages(filter) {
+      const q = filter.q?.trim().toLowerCase() ?? '';
+      return [...pages.values()]
+        .filter((p) => (p.archivedAt !== null) === (filter.archived ?? false))
+        .filter((p) => !q || `${p.title}\n${p.body}`.toLowerCase().includes(q))
+        .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt)
+        .map((p) => ({ ...p }));
+    },
+    async getPage(id) {
+      return { ...getPage(id) };
+    },
+    async createPage(input) {
+      return putPage({
+        ...NewPageInput.parse(input),
+        body: input.body ?? '',
+        color: input.color ?? null,
+        project: input.project ?? null,
+        author: PAGE_USER_AUTHOR,
+      });
+    },
+    async writePage(id, change) {
+      const page = getPage(id);
+      const { title, body, append, color, pinned, baseUpdatedAt } = PageChange.parse(change);
+      if (baseUpdatedAt !== undefined && baseUpdatedAt !== page.updatedAt) return { ok: false, conflict: { ...page } };
+      return {
+        ok: true,
+        page: setPage(id, {
+          title: title ?? page.title,
+          body: append !== undefined ? appendToBody(page.body, append) : (body ?? page.body),
+          color: color === undefined ? page.color : color,
+          pinned: pinned ?? page.pinned,
+          unseen: false,
+          updatedAt: Math.max(now(), page.updatedAt + 1),
+        }),
+      };
+    },
+    async markPageSeen(id) {
+      return setPage(id, { unseen: false });
+    },
+    async archivePage(id) {
+      return setPage(id, { archivedAt: now(), popped: false });
+    },
+    async restorePage(id) {
+      return setPage(id, { archivedAt: null, updatedAt: Math.max(now(), getPage(id).updatedAt + 1) });
+    },
+    async deletePage(id) {
+      if (getPage(id).archivedAt === null) throw new Error('Archive the page before deleting it.');
+      pages.delete(id);
+      emit('page:deleted', { id });
+    },
+    async popPage(id, popped) {
+      return setPage(id, { popped });
+    },
+    pushPage(input) {
+      const existing = input.id === undefined ? undefined : pages.get(input.id);
+      return putPage({
+        body: '',
+        color: null,
+        project: null,
+        author: 'clippy-brain',
+        ...existing,
+        ...input,
+        unseen: true,
+        updatedAt: Math.max(now(), (existing?.updatedAt ?? 0) + 1),
+      });
     },
     telegramStart(code, chat = { id: 123456789, firstName: 'You' }) {
       if (!telegramToken || settings.telegramChatId !== undefined || code.toUpperCase() !== pairingCode) return false;

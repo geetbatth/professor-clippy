@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatDone } from '@clippy/shared/ipc';
-import { Message } from '@clippy/shared/schemas';
+import { Message, Page } from '@clippy/shared/schemas';
 import { DEFAULT_SETTINGS } from '@clippy/shared/settings';
 import { createMockBackend } from '../../src/renderer/src/mock/mockBackend';
 
@@ -139,6 +139,37 @@ describe('mock backend', () => {
     });
     expect((await b.setSettings({ workerUrl: null })).workerUrl).toBeUndefined();
     await expect(b.setSettings({ workerUrl: 'not a url' })).rejects.toThrow();
+  });
+
+  it('keeps pages in memory like the app: seen when you write, stale saves come back as a conflict', async () => {
+    const b = createMockBackend();
+    const changed = vi.fn();
+    b.on('page:changed', changed);
+    const page = await b.createPage({ title: 'Scratch', body: 'a' });
+    expect(Page.parse(page)).toEqual(page);
+    expect(page).toMatchObject({ author: 'you', unseen: false });
+    vi.advanceTimersByTime(1000);
+    const appended = await b.writePage(page.id, { append: 'b', baseUpdatedAt: page.updatedAt });
+    expect(appended).toEqual({ ok: true, page: expect.objectContaining({ body: 'a\nb' }) });
+    // Clippy writes meanwhile; a save based on the old version is refused with his.
+    const theirs = b.pushPage({ ...page, body: 'from Clippy', author: 'clippy-brain' });
+    expect(theirs.unseen).toBe(true);
+    expect(await b.writePage(page.id, { body: 'mine', baseUpdatedAt: page.updatedAt })).toEqual({ ok: false, conflict: theirs });
+    expect(await b.markPageSeen(page.id)).toMatchObject({ unseen: false });
+    await b.createPage({ title: 'Other' });
+    expect((await b.listPages({ q: 'clippy' })).map((p) => p.title)).toEqual(['Scratch']);
+    expect(await b.popPage(page.id, true)).toMatchObject({ popped: true });
+    expect(await b.archivePage(page.id)).toMatchObject({ popped: false, archivedAt: expect.any(Number) });
+    expect((await b.listPages({ archived: true })).map((p) => p.id)).toEqual([page.id]);
+    expect((await b.restorePage(page.id)).archivedAt).toBeNull();
+    await expect(b.deletePage(page.id)).rejects.toThrow();
+    await b.archivePage(page.id);
+    const deleted = vi.fn();
+    b.on('page:deleted', deleted);
+    await b.deletePage(page.id);
+    expect(deleted).toHaveBeenCalledWith({ id: page.id });
+    await expect(b.getPage(page.id)).rejects.toThrow();
+    expect(changed).toHaveBeenCalled();
   });
 
   it('pushMessage emits message:new; unsubscribe stops delivery', async () => {

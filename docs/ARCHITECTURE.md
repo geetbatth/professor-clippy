@@ -8,7 +8,7 @@ npm workspaces monorepo (Node 24, npm 11, TypeScript strict, ESM, Vitest).
 | --- | --- | --- |
 | `packages/shared` | `@clippy/shared` | Every shared contract: zod schemas and types, settings, local API routes, data-dir paths, `ClippyClient`, Electron IPC contract, Worker relay protocol. TypeScript source only (no build step). |
 | `apps/desktop` | `@clippy/desktop` | Electron + electron-vite + React. Hosts the local API (127.0.0.1), SQLite store, scheduler and Clippy's brain. The character (`src/renderer/src/clippy/`) is a set of painted robot sprites driven by a pure mood state machine (`mood.ts`): `poses.ts` maps moods to sprites and aligns them on one stage, CSS does the motion, and clicks pass through his transparent pixels (alpha masks built when the sprites are preloaded). |
-| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Eleven extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `set_look`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`, `watch_for`, `list_watches`, `cancel_watch`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. Three more (`list_open_apps`, `restart_app`, `restart_computer`) need env `CLIPPY_POWER_TOOLS=1`, also set only for the brain (see "Restarting apps and the PC"). |
+| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Twelve extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `set_look`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`, `watch_for`, `list_watches`, `cancel_watch`, `archive_page`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. Three more (`list_open_apps`, `restart_app`, `restart_computer`) need env `CLIPPY_POWER_TOOLS=1`, also set only for the brain (see "Restarting apps and the PC"). |
 | `apps/hook` | `@clippy/hook` | Claude Code hook; posts a note when an agent finishes or needs permission, and (away, opt-in) turns a `PermissionRequest` into a phone approval. Built like `apps/mcp`. |
 | `apps/worker` | `@clippy/worker` | Cloudflare Worker plus one SQLite-backed Durable Object (`ClippyDO`, binding `CLIPPY`) relaying WhatsApp Cloud API traffic. |
 | `scripts/` | | Repo scripts: the Claude Code wiring (`install-claude-wiring.ts`, also bundled into the app for "Connect Claude Code"), SQLite smoke test, run-in-Electron helper. |
@@ -273,6 +273,57 @@ three theme keys, at least one) saves through `ApiDeps.setLook`, which `startSer
 `SettingsStore.update`; `ClippyClient.setLook` and the brain-only MCP tool `set_look` use it, so
 "go dark" works. The renderer re-reads the settings when the brain finishes a turn
 (`brain:state` idle), since that is when `set_look` may have changed them.
+
+## Pages (the Pad)
+
+A page (`Page`, table `pages`, schema version 7, index `pages_list` on `(archived_at, pinned,
+updated_at)`; `pop_bounds` is JSON) is a note the user keeps: title (1–120), body (at most
+100 000 characters), colour (`PageColor` or `null` = the theme's paper), pinned, popped (open as its
+own window, with `popBounds`), author, project, unseen, and created / updated / archived times.
+`Pages` (`core/pages.ts`, created in `startCore` as `core.pages`) holds the rules; the store only
+stores. Every change emits `page:changed` (the page) and a delete `page:deleted` (`{ id }`), which
+`main/index.ts` sends to every `BrowserWindow`.
+
+- **Authors.** The user writes as `'you'` (`PAGE_USER_AUTHOR`), only through IPC. The routes take
+  the body's `sender`, and refuse `you` in any case or spacing (400, `PageSender`), so no caller of
+  the local API gets the user's powers. The user and the brain (`BRAIN_SENDER`) may change any page;
+  any other sender only pages whose `author` is itself, else `ForbiddenError` (403) "Only the person
+  who wrote this page (or you) can change it." That covers `archivePage` too.
+- **Conflicts.** `write(id, change, author)` with a `baseUpdatedAt` that is not the stored
+  `updatedAt` throws `ConflictError` with `details.page` = the page as it is now, and changes
+  nothing. The API answers 409 `{ error, page }` (the error handler spreads a `ConflictError`'s
+  `details` into the body); IPC `writePage` resolves to `{ ok: false, conflict }` instead of
+  rejecting, so the editor can keep the user's text and offer both versions. `updatedAt` strictly
+  increases (`max(now, previous + 1)`), so two writes in one millisecond still conflict. A change
+  that alters nothing is not stored and emits nothing.
+- **Unseen.** A page created or changed by anyone but the user is `unseen` until `markSeen` (the
+  user opening it); the user's own change clears it. `markSeen` and `setPopped` leave `updatedAt`
+  alone.
+- **Append** adds a newline first unless the body is empty or already ends in one
+  (`appendToBody`). **Finding by title** (`findPageByTitle`, shared so the MCP server matches the
+  same way): an exact title in any case (the most recently changed of several), else the only title
+  that starts with it; archived pages are not searched. **Search** (`q`) is `LIKE` over title and
+  body with `%`, `_` and `\` escaped.
+- **Archive.** `archive` also un-pops the page; `restore` counts as a change (`updatedAt` = now) so
+  the page is not archived again at once; `remove` takes only archived pages (IPC only, no route).
+  `startStaleArchiver` (`startServices`, at start and every 6 h; `Services.pageArchiver`, stopped on
+  quit) archives pages that are not pinned, popped or archived and unchanged for
+  `PAGE_ARCHIVE_AFTER_MS` (30 days).
+
+Routes: `GET /pages?q=&archived=true|false`, `GET /pages/:id`, `POST /pages` (`NewPageBody`), `POST
+/pages/:id` (`PageChangeBody`: title, body or append, colour, pinned, baseUpdatedAt; nothing else),
+`POST /pages/:id/archive` (`{ sender }`), with `ClippyClient` methods of the same names. IPC (as the
+user): `listPages`, `getPage`, `createPage`, `writePage`, `markPageSeen`, `archivePage`,
+`restorePage`, `deletePage`, `popPage(id, popped)` (only `setPopped` so far: no window opens yet).
+MCP, for every agent: `write_page` (`title`, `text`, `mode` new / append (default) / replace,
+`page_id`; append and replace write `page_id` or the page the title finds and create one if there
+is none), `read_page` (`page_id` or `title`), `list_pages` (`query`; id, title, first line, author,
+time; at most 50); brain-only: `archive_page`. The persona maps "jot down" to `write_page` new, "add
+X to my Y page" to append, "what did I write about" to `list_pages` + `read_page`, and never
+replaces a page the user wrote unless told to. The CLAUDE.md hint tells agents to leave a page to
+keep (a checklist, a summary) instead of a note; installing over an older hint replaces it in place
+(`LEGACY_CLAUDE_MD_HINTS`), and uninstall removes either. The browser preview keeps pages in memory
+(`mockBackend.pushPage` simulates Clippy writing one).
 
 ## Storage
 

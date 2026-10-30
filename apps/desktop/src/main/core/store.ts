@@ -1,6 +1,6 @@
 /**
  * SQLite persistence (built-in `node:sqlite`): messages (+ FTS5 history search),
- * reminders, standing orders, watches and a small key/value table.
+ * reminders, standing orders, watches, pages and a small key/value table.
  *
  * Message writes emit `message:new` / `message:updated` on the bus, so every
  * caller (local API, IPC backend, scheduler, relay) produces the same events.
@@ -14,6 +14,9 @@ import type {
   MessageFilter,
   MessageKind,
   MessageState,
+  Page,
+  PageBounds,
+  PageColor,
   Reminder,
   StandingOrder,
   Watch,
@@ -74,6 +77,9 @@ export interface ReminderPatch {
   active?: boolean;
   lastFiredAt?: number;
 }
+
+/** Mutable page fields (everything but id, author, project and createdAt). */
+export type PagePatch = Partial<Pick<Page, 'title' | 'body' | 'color' | 'pinned' | 'popped' | 'popBounds' | 'unseen' | 'updatedAt' | 'archivedAt'>>;
 
 export interface StoreOptions {
   /** SQLite file path, or `':memory:'`. */
@@ -178,6 +184,25 @@ const MIGRATIONS: readonly string[] = [
     fired_at INTEGER
   );
   ALTER TABLE messages ADD COLUMN event TEXT;
+  `,
+  // 7: pages (the Pad).
+  `
+  CREATE TABLE pages (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    color TEXT,
+    pinned INTEGER NOT NULL,
+    popped INTEGER NOT NULL,
+    pop_bounds TEXT,                    -- JSON PageBounds
+    author TEXT NOT NULL,
+    project TEXT,
+    unseen INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    archived_at INTEGER
+  );
+  CREATE INDEX pages_list ON pages (archived_at, pinned, updated_at);
   `,
 ];
 
@@ -537,6 +562,92 @@ export class Store {
     return Number(this.#db.prepare('UPDATE watches SET active = 0, fired_at = ? WHERE id = ? AND active = 1').run(at, id).changes) === 1;
   }
 
+  // ---- pages ------------------------------------------------------------------
+  // Plain storage: the rules (who may write, conflicts, events) are in `Pages` (core/pages.ts).
+
+  insertPage(page: Page): void {
+    this.#db
+      .prepare(
+        `INSERT INTO pages (id, title, body, color, pinned, popped, pop_bounds, author, project, unseen, created_at, updated_at, archived_at)
+         VALUES ($id, $title, $body, $color, $pinned, $popped, $popBounds, $author, $project, $unseen, $createdAt, $updatedAt, $archivedAt)`,
+      )
+      .run({
+        id: page.id,
+        title: page.title,
+        body: page.body,
+        color: page.color,
+        pinned: page.pinned ? 1 : 0,
+        popped: page.popped ? 1 : 0,
+        popBounds: page.popBounds && JSON.stringify(page.popBounds),
+        author: page.author,
+        project: page.project,
+        unseen: page.unseen ? 1 : 0,
+        createdAt: page.createdAt,
+        updatedAt: page.updatedAt,
+        archivedAt: page.archivedAt,
+      });
+  }
+
+  getPage(id: string): Page | undefined {
+    const row = this.#db.prepare('SELECT * FROM pages WHERE id = ?').get(id);
+    return row && toPage(row);
+  }
+
+  /**
+   * Pages, pinned first, then most recently changed. Archived ones only (and only those) with
+   * `archived`. `q` matches part of the title or body, ignoring case; `%` and `_` in it are literal.
+   */
+  listPages(filter: { q?: string | undefined; archived?: boolean | undefined } = {}): Page[] {
+    const where = [filter.archived ? 'archived_at IS NOT NULL' : 'archived_at IS NULL'];
+    const params: Record<string, SQLInputValue> = {};
+    if (filter.q !== undefined && filter.q !== '') {
+      where.push(`(title LIKE $q ESCAPE '\\' OR body LIKE $q ESCAPE '\\')`);
+      params.q = `%${filter.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    }
+    return this.#db
+      .prepare(`SELECT * FROM pages WHERE ${where.join(' AND ')} ORDER BY pinned DESC, updated_at DESC, id DESC`)
+      .all(params)
+      .map(toPage);
+  }
+
+  /** Overwrite a page's mutable fields. Returns undefined for an unknown id. */
+  updatePage(id: string, patch: PagePatch): Page | undefined {
+    const current = this.getPage(id);
+    if (!current) return undefined;
+    const next = { ...current, ...patch };
+    this.#db
+      .prepare(
+        `UPDATE pages SET title = $title, body = $body, color = $color, pinned = $pinned, popped = $popped, pop_bounds = $popBounds,
+           unseen = $unseen, updated_at = $updatedAt, archived_at = $archivedAt WHERE id = $id`,
+      )
+      .run({
+        id,
+        title: next.title,
+        body: next.body,
+        color: next.color,
+        pinned: next.pinned ? 1 : 0,
+        popped: next.popped ? 1 : 0,
+        popBounds: next.popBounds && JSON.stringify(next.popBounds),
+        unseen: next.unseen ? 1 : 0,
+        updatedAt: next.updatedAt,
+        archivedAt: next.archivedAt,
+      });
+    return this.getPage(id);
+  }
+
+  /** Delete a page. False if there was none. */
+  deletePage(id: string): boolean {
+    return Number(this.#db.prepare('DELETE FROM pages WHERE id = ?').run(id).changes) === 1;
+  }
+
+  /** Pages to archive for being old: not pinned, popped or archived, last changed before `before`. */
+  listStalePages(before: number): Page[] {
+    return this.#db
+      .prepare('SELECT * FROM pages WHERE archived_at IS NULL AND pinned = 0 AND popped = 0 AND updated_at < ? ORDER BY updated_at')
+      .all(before)
+      .map(toPage);
+  }
+
   // ---- kv -------------------------------------------------------------------
 
   getKv(key: string): string | undefined {
@@ -623,6 +734,24 @@ function toMessage(row: Row): Message {
   if (row.order_id !== null && row.order_id !== undefined) message.orderId = String(row.order_id);
   if (row.event !== null && row.event !== undefined) message.event = String(row.event) as AgentEvent;
   return message;
+}
+
+function toPage(row: Row): Page {
+  return {
+    id: String(row.id),
+    title: String(row.title),
+    body: String(row.body),
+    color: row.color === null ? null : (String(row.color) as PageColor),
+    pinned: row.pinned === 1,
+    popped: row.popped === 1,
+    popBounds: row.pop_bounds === null ? null : (JSON.parse(String(row.pop_bounds)) as PageBounds),
+    author: String(row.author),
+    project: row.project === null ? null : String(row.project),
+    unseen: row.unseen === 1,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+    archivedAt: row.archived_at === null ? null : Number(row.archived_at),
+  };
 }
 
 function toWatch(row: Row): Watch {

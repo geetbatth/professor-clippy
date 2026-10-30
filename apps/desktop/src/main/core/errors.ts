@@ -33,9 +33,16 @@ export class NotFoundError extends CoreError {
   }
 }
 
-/** The operation conflicts with the current state (e.g. answering an ask twice). */
+/**
+ * The operation conflicts with the current state (e.g. answering an ask twice, or saving a page
+ * that changed meanwhile). `details` are added to the API's error body (a page conflict carries
+ * the page as it is now: `{ error, page }`).
+ */
 export class ConflictError extends CoreError {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly details?: Record<string, unknown>,
+  ) {
     super(409, message);
   }
 }

@@ -8,7 +8,7 @@
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import { IpcInvoke, type ClippyBackend, type ClippyEvent, type ClippyEventMap } from '@clippy/shared/ipc';
-import { MessageFilter, NewStandingOrderInput, NewWatchInput, Timestamp } from '@clippy/shared/schemas';
+import { MessageFilter, NewPageInput, NewStandingOrderInput, NewWatchInput, PageChange, PageFilter, Timestamp } from '@clippy/shared/schemas';
 import { SettingsPatch } from '@clippy/shared/settings';
 
 const id = z.string().min(1);
@@ -38,6 +38,15 @@ const argSchemas: { [K in keyof ClippyBackend]: z.ZodType<Parameters<ClippyBacke
   addWatch: z.tuple([NewWatchInput]),
   cancelWatch: z.tuple([id]),
   systemDark: z.tuple([]),
+  listPages: z.tuple([PageFilter.strict()]),
+  getPage: z.tuple([id]),
+  createPage: z.tuple([NewPageInput.strict()]),
+  writePage: z.tuple([id, PageChange]),
+  markPageSeen: z.tuple([id]),
+  archivePage: z.tuple([id]),
+  restorePage: z.tuple([id]),
+  deletePage: z.tuple([id]),
+  popPage: z.tuple([id, z.boolean()]),
 };
 
 export interface ClippyIpc {

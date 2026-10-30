@@ -29,6 +29,9 @@ export const SESSION_KV_KEY = 'brainSessionId';
  * `CLIPPY_POWER_TOOLS=1`, which `buildMcpConfig` sets for the brain alone.
  *
  * `set_look` changes the colour theme ("go dark"); it is brain-only like the note tools.
+ *
+ * The page tools write the user's Pad; as `clippy-brain` the brain may change any page (agents
+ * only their own), and `archive_page` is brain-only.
  */
 export const BRAIN_CLIPPY_TOOLS = [
   'leave_message',
@@ -51,6 +54,10 @@ export const BRAIN_CLIPPY_TOOLS = [
   'restart_app',
   'restart_computer',
   'set_look',
+  'write_page',
+  'read_page',
+  'list_pages',
+  'archive_page',
 ] as const;
 /** clippy MCP tools the brain must never see (removed from its context, not just denied). */
 export const BRAIN_BLOCKED_CLIPPY_TOOLS = ['ask_user', 'check_reply'] as const;

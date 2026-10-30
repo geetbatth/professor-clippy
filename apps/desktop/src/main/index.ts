@@ -52,6 +52,14 @@ async function main(): Promise<void> {
   const bus = new Bus();
   bus.on('message:new', (m) => emit('message:new', m));
   bus.on('message:updated', (m) => emit('message:updated', m));
+  // Page events go to every window: the note and any page popped out on the desktop.
+  const broadcast = <E extends ClippyEvent>(event: E, payload: ClippyEventMap[E]) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed() && !w.webContents.isDestroyed()) w.webContents.send(event, payload);
+    }
+  };
+  bus.on('page:changed', (page) => broadcast('page:changed', page));
+  bus.on('page:deleted', (deleted) => broadcast('page:deleted', deleted));
 
   const mcpServerPath = resolveMcpServerPath({
     override: process.env.CLIPPY_MCP_PATH,
@@ -61,7 +69,7 @@ async function main(): Promise<void> {
   if (!mcpServerPath) console.warn('[clippy] MCP server not built (apps/mcp/dist/index.js); the brain runs without clippy tools');
   // Settings, core, brain, relay and Telegram; both channels are subscribed before any API
   // request is handled.
-  const { core, settings, brain, phoneGate, watcher, brief, relay, telegram } = await startServices({
+  const { core, settings, brain, phoneGate, watcher, brief, pageArchiver, relay, telegram } = await startServices({
     dataDir,
     settingsFile: settingsPath(),
     version: app.getVersion(),
@@ -93,7 +101,7 @@ async function main(): Promise<void> {
   // The Tell Clippy hotkey; its status is what Settings shows.
   let tellHotkey: TellHotkey | undefined;
   let tellStatus: HotkeyStatus = { accelerator: settings.get().tellHotkey, ok: true };
-  const backend = createBackend({ store: core.store, asks: core.asks, brain, settings, claudeWiring, telegram, hotkey: () => tellStatus, systemDark: () => nativeTheme.shouldUseDarkColors });
+  const backend = createBackend({ store: core.store, asks: core.asks, pages: core.pages, brain, settings, claudeWiring, telegram, hotkey: () => tellStatus, systemDark: () => nativeTheme.shouldUseDarkColors });
   clippy = createClippyWindow({
     loadPos: () => settings.get().windowPos,
     savePos: (windowPos) => {
@@ -171,6 +179,7 @@ async function main(): Promise<void> {
     phoneGate.stop();
     watcher.stop();
     brief.stop();
+    pageArchiver.stop();
     relay.stop();
     // Aborts the long-poll in flight; never wait long for an update being handled.
     const telegramStopped = Promise.race([telegram.stop(), new Promise((r) => setTimeout(r, 2000))]);

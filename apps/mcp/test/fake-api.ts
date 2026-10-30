@@ -7,7 +7,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import type { AnsweredVia, AskResult, Message, Reminder, StandingOrder, Watch } from '@clippy/shared';
+import type { AnsweredVia, AskResult, Message, Page, Reminder, StandingOrder, Watch } from '@clippy/shared';
 
 export const TOKEN = 'f'.repeat(64);
 
@@ -28,6 +28,7 @@ export async function startFakeApi(appDataDir?: string) {
   const reminders: Reminder[] = [];
   const orders: StandingOrder[] = [];
   const watches: Watch[] = [];
+  const pages: Page[] = [];
   const waiters = new Map<string, Array<() => void>>();
   /** What `/power/*` answers: 'on' (the setting is on) or 'off' (403, as the app does). */
   const power = { mode: 'on' as 'on' | 'off' };
@@ -168,6 +169,53 @@ export async function startFakeApi(appDataDir?: string) {
         w.active = false;
         return send(204);
       }
+      case 'GET /pages': {
+        const q = url.searchParams.get('q')?.toLowerCase() ?? '';
+        const archived = url.searchParams.get('archived') === 'true';
+        const list = pages.filter((p) => (p.archivedAt !== null) === archived && `${p.title}\n${p.body}`.toLowerCase().includes(q));
+        return send(200, [...list].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt));
+      }
+      case 'GET /pages/:id': {
+        const p = pages.find((x) => x.id === id);
+        return p ? send(200, p) : send(404, { error: 'no such page' });
+      }
+      case 'POST /pages': {
+        const t = Date.now();
+        const p: Page = {
+          id: nextId(),
+          title: body.title,
+          body: body.body ?? '',
+          color: body.color ?? null,
+          pinned: false,
+          popped: false,
+          popBounds: null,
+          author: body.sender,
+          project: body.project ?? null,
+          unseen: true,
+          createdAt: t,
+          updatedAt: t,
+          archivedAt: null,
+        };
+        pages.push(p);
+        return send(201, p);
+      }
+      case 'POST /pages/:id':
+      case 'POST /pages/:id/archive': {
+        const p = pages.find((x) => x.id === id);
+        if (!p) return send(404, { error: 'no such page' });
+        if (p.author !== body.sender && body.sender !== 'clippy-brain') {
+          return send(403, { error: 'Only the person who wrote this page (or you) can change it.' });
+        }
+        if (action === 'archive') p.archivedAt = Date.now();
+        else {
+          if (body.append !== undefined) p.body = p.body === '' || p.body.endsWith('\n') ? p.body + body.append : `${p.body}\n${body.append}`;
+          if (body.body !== undefined) p.body = body.body;
+          if (body.title !== undefined) p.title = body.title;
+          p.unseen = true;
+          p.updatedAt = Date.now();
+        }
+        return send(200, p);
+      }
       case 'POST /asks': {
         const m: Message = {
           id: nextId(),
@@ -235,6 +283,7 @@ export async function startFakeApi(appDataDir?: string) {
     reminders,
     orders,
     watches,
+    pages,
     power,
     answer,
     close: () =>

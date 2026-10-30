@@ -400,6 +400,111 @@ describe('standing orders', () => {
   });
 });
 
+describe('pages', () => {
+  let dir: string;
+  let core: Core | undefined;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'clippy-pages-'));
+  });
+  afterEach(async () => {
+    await core?.stop();
+    core = undefined;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const start = async () => {
+    core = await startCore({ dataDir: dir, clock: new FakeClock(T0) });
+    return async (method: string, path: string, body?: unknown) => {
+      const res = await fetch(`http://127.0.0.1:${core!.port}${path}`, {
+        method,
+        headers: { authorization: `Bearer ${core!.token}`, ...(body !== undefined && { 'content-type': 'application/json' }) },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const text = await res.text();
+      return { status: res.status, json: (text ? JSON.parse(text) : undefined) as any };
+    };
+  };
+  const ONLY_AUTHOR = { error: 'Only the person who wrote this page (or you) can change it.' };
+
+  it('creates (as the sender, unseen), gets, lists, searches and archives pages', async () => {
+    const call = await start();
+    const events: CoreEventMap['page:changed'][] = [];
+    core!.bus.on('page:changed', (p) => events.push(p));
+    const created = await call('POST', '/pages', { title: 'Deploy steps', body: '1. build', project: 'payments', sender: 'claude-code' });
+    expect(created).toMatchObject({ status: 201, json: { title: 'Deploy steps', author: 'claude-code', project: 'payments', unseen: true } });
+    expect(events).toEqual([created.json]);
+    const id = created.json.id;
+    expect(await call('GET', `/pages/${id}`)).toEqual({ status: 200, json: created.json });
+    await call('POST', '/pages', { title: 'Groceries', body: 'milk', sender: 'clippy-brain' });
+    expect((await call('GET', '/pages')).json.map((p: { title: string }) => p.title)).toEqual(['Groceries', 'Deploy steps']);
+    expect((await call('GET', '/pages?q=BUILD')).json.map((p: { title: string }) => p.title)).toEqual(['Deploy steps']);
+
+    expect(await call('POST', `/pages/${id}/archive`, { sender: 'claude-code' })).toMatchObject({ status: 200, json: { archivedAt: T0 } });
+    expect((await call('GET', '/pages')).json.map((p: { title: string }) => p.title)).toEqual(['Groceries']);
+    expect((await call('GET', '/pages?archived=true')).json.map((p: { title: string }) => p.title)).toEqual(['Deploy steps']);
+    expect((await call('GET', '/pages/01JB2Z3K4M5N6P7Q8R9S0T1V2Z')).status).toBe(404);
+  });
+
+  it('writes a page: replace, append, colour and pin, then answers 409 with the current page for a stale base', async () => {
+    const call = await start();
+    const page = (await call('POST', '/pages', { title: 'Notes', body: 'a', sender: 'claude-code' })).json;
+    const appended = await call('POST', `/pages/${page.id}`, { append: 'b', sender: 'claude-code' });
+    expect(appended).toMatchObject({ status: 200, json: { body: 'a\nb' } });
+    const replaced = await call('POST', `/pages/${page.id}`, { body: 'new', color: 'sky', pinned: true, sender: 'claude-code' });
+    expect(replaced).toMatchObject({ status: 200, json: { body: 'new', color: 'sky', pinned: true } });
+
+    const stale = await call('POST', `/pages/${page.id}`, { body: 'mine', baseUpdatedAt: page.updatedAt, sender: 'claude-code' });
+    expect(stale.status).toBe(409);
+    expect(stale.json).toEqual({ error: expect.stringMatching(/changed/i), page: replaced.json });
+    expect(core!.pages.get(page.id).body).toBe('new');
+  });
+
+  it("answers 403 when an agent changes a page someone else wrote, and lets Clippy's brain change any", async () => {
+    const call = await start();
+    const yours = core!.pages.create({ title: 'Mine', body: 'my text' }, 'you');
+    expect(await call('POST', `/pages/${yours.id}`, { body: 'gone', sender: 'claude-code' })).toEqual({ status: 403, json: ONLY_AUTHOR });
+    expect(await call('POST', `/pages/${yours.id}/archive`, { sender: 'claude-code' })).toEqual({ status: 403, json: ONLY_AUTHOR });
+    const codex = (await call('POST', '/pages', { title: 'Codex', sender: 'codex' })).json;
+    expect(await call('POST', `/pages/${codex.id}`, { append: 'x', sender: 'claude-code' })).toEqual({ status: 403, json: ONLY_AUTHOR });
+    expect(core!.pages.get(yours.id).body).toBe('my text');
+
+    expect(await call('POST', `/pages/${yours.id}`, { append: 'from Clippy', sender: 'clippy-brain' })).toMatchObject({
+      status: 200,
+      json: { body: 'my text\nfrom Clippy', author: 'you', unseen: true },
+    });
+    // The agent can still make and change its own pages.
+    const own = (await call('POST', '/pages', { title: 'Checklist', sender: 'claude-code' })).json;
+    expect((await call('POST', `/pages/${own.id}`, { append: '- [ ] ship', sender: 'claude-code' })).status).toBe(200);
+  });
+
+  it("never gives a caller claiming to be 'you' the user's powers", async () => {
+    const call = await start();
+    const yours = core!.pages.create({ title: 'Mine', body: 'my text' }, 'you');
+    for (const sender of ['you', 'You', ' you ']) {
+      expect((await call('POST', `/pages/${yours.id}`, { body: 'gone', sender })).status).toBe(400);
+      expect((await call('POST', '/pages', { title: 'Fake', sender })).status).toBe(400);
+      expect((await call('POST', `/pages/${yours.id}/archive`, { sender })).status).toBe(400);
+    }
+    expect(core!.pages.get(yours.id)).toEqual(yours);
+    expect(core!.pages.list()).toHaveLength(1);
+  });
+
+  it('validates bodies and queries', async () => {
+    const call = await start();
+    const page = (await call('POST', '/pages', { title: 'P', sender: 's' })).json;
+    expect((await call('POST', '/pages', { title: 'P' })).status).toBe(400); // no sender
+    expect((await call('POST', '/pages', { title: '', sender: 's' })).status).toBe(400);
+    expect((await call('POST', '/pages', { title: 'x'.repeat(121), sender: 's' })).status).toBe(400);
+    expect((await call('POST', '/pages', { title: 'Big', body: 'x'.repeat(100_001), sender: 's' })).status).toBe(400);
+    expect((await call('POST', '/pages', { title: 'P', color: 'neon', sender: 's' })).status).toBe(400);
+    expect((await call('POST', `/pages/${page.id}`, { body: 'a', append: 'b', sender: 's' })).status).toBe(400);
+    expect((await call('POST', `/pages/${page.id}`, { popped: true, sender: 's' })).status).toBe(400); // not a route change
+    expect((await call('GET', '/pages?archived=maybe')).status).toBe(400);
+    expect((await call('POST', `/pages/01JB2Z3K4M5N6P7Q8R9S0T1V2Z`, { body: 'a', sender: 's' })).status).toBe(404);
+    expect((await call('DELETE', `/pages/${page.id}`)).status).toBe(404); // deleting is for the user only, in the app
+  });
+});
+
 describe('startCore files', () => {
   let dir: string;
   beforeEach(() => {

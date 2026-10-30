@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClippyApiError, ClippyClient, ClippyNotRunningError } from '../src/client';
-import type { AskResult, Message, Reminder, StandingOrder, Watch } from '../src/schemas';
+import type { AskResult, Message, Page, Reminder, StandingOrder, Watch } from '../src/schemas';
 
 const TOKEN = 'a'.repeat(64);
 const ASK_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2W';
@@ -34,6 +34,22 @@ const ORDER_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2Y';
 const order: StandingOrder = { id: ORDER_ID, text: 'say staging', active: true, createdAt: 1000 };
 const WATCH_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2C';
 const watch: Watch = { id: WATCH_ID, project: 'payments', event: 'finished', nudge: 'Deploy', active: true, createdAt: 1000 };
+const PAGE_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2D';
+const page: Page = {
+  id: PAGE_ID,
+  title: 'Deploy steps',
+  body: '1. build',
+  color: null,
+  pinned: false,
+  popped: false,
+  popBounds: null,
+  author: 'claude-code',
+  project: 'payments',
+  unseen: true,
+  createdAt: 1000,
+  updatedAt: 2000,
+  archivedAt: null,
+};
 const reminder: Reminder = { id: REM_ID, body: 'stretch', sender: 'test', dueAt: 5000, active: true, createdAt: 1000 };
 
 /** Tiny fake of the desktop app's local API. `answerAfterPolls` makes the ask answered on the Nth getAsk. */
@@ -118,6 +134,16 @@ function fakeApi() {
         return send(204);
       case 'POST /look':
         return send(200, { theme: body.theme ?? 'classic', followSystemDark: body.followSystemDark ?? false, darkTheme: body.darkTheme ?? 'night' });
+      case 'GET /pages':
+        return send(200, [page]);
+      case 'POST /pages':
+        return send(201, { ...page, title: body.title, author: body.sender });
+      case `GET /pages/${PAGE_ID}`:
+        return send(200, page);
+      case `POST /pages/${PAGE_ID}`:
+        return send(200, { ...page, body: body.body ?? `${page.body}\n${body.append}` });
+      case `POST /pages/${PAGE_ID}/archive`:
+        return send(200, { ...page, archivedAt: 3000 });
       case 'GET /broken':
         return send(200, { not: 'a message' });
       default:
@@ -276,6 +302,22 @@ describe('ClippyClient.setLook', () => {
   it('posts the patch and returns the resulting look', async () => {
     await expect(client.setLook({ theme: 'night' })).resolves.toEqual({ theme: 'night', followSystemDark: false, darkTheme: 'night' });
     expect(last()).toMatchObject({ method: 'POST', path: '/look', body: { theme: 'night' } });
+  });
+});
+
+describe('ClippyClient pages', () => {
+  it('lists (q and archived in the query), gets, creates, writes and archives pages', async () => {
+    await expect(client.listPages()).resolves.toEqual([page]);
+    expect(last().query).toEqual({});
+    await client.listPages({ q: '50%', archived: true });
+    expect(last()).toMatchObject({ method: 'GET', path: '/pages', query: { q: '50%', archived: 'true' } });
+    await expect(client.getPage(PAGE_ID)).resolves.toEqual(page);
+    await expect(client.createPage({ title: 'Checklist', sender: 'codex' })).resolves.toMatchObject({ title: 'Checklist', author: 'codex' });
+    expect(last()).toMatchObject({ method: 'POST', path: '/pages', body: { title: 'Checklist', sender: 'codex' } });
+    await expect(client.writePage(PAGE_ID, { append: '2. ship', sender: 'claude-code' })).resolves.toMatchObject({ body: '1. build\n2. ship' });
+    expect(last()).toMatchObject({ method: 'POST', path: `/pages/${PAGE_ID}`, body: { append: '2. ship', sender: 'claude-code' } });
+    await expect(client.archivePage(PAGE_ID, 'clippy-brain')).resolves.toMatchObject({ archivedAt: 3000 });
+    expect(last()).toMatchObject({ method: 'POST', path: `/pages/${PAGE_ID}/archive`, body: { sender: 'clippy-brain' } });
   });
 });
 

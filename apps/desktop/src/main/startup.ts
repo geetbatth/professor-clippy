@@ -11,7 +11,8 @@
  *    Telegram, which subscribe to the bus (the gate first: the two channels mirror on the gate's
  *    `message:mirror`, not on `message:new`); Telegram is then handed the catch-up messages,
  *    restart requests and phone approvals left from before are expired (so the phone copies are updated too), and
- *    the morning brief starts (a late start sends it at once, to listening channels). An agent
+ *    the morning brief starts (a late start sends it at once, to listening channels), and so does
+ *    the archiver of pages nobody changed for a month (at once, then every 6 hours). An agent
  *    (often the MCP server that just launched the app) can post as soon as `/health`
  *    answers; its request is only handled on a later turn of the event loop, by which time
  *    both channels are listening.
@@ -20,7 +21,9 @@
  */
 import { BriefScheduler, type BriefSchedulerOptions } from './brief';
 import { Bus } from './core/bus';
+import type { Clock } from './core/clock';
 import { startCore as defaultStartCore, type Core, type StartCoreOptions } from './core/core';
+import { startStaleArchiver } from './core/pages';
 import { Brain, type BrainOptions } from './brain/brain';
 import { writeBrainFiles, type McpConfigInput } from './brain/mcpConfig';
 import type { Message } from '@clippy/shared';
@@ -65,6 +68,8 @@ export interface StartServicesOptions {
   powerExecutor?: PowerExecutor;
   /** Morning brief clock (test seam). */
   brief?: Pick<BriefSchedulerOptions, 'clock'>;
+  /** Clock of the old-page archiver (test seam). */
+  pageArchive?: { clock?: Clock };
   /** Telegram test seams (fake Bot API server, short timings). */
   telegram?: Omit<TelegramManagerOptions, 'store' | 'bus' | 'asks' | 'brain' | 'settings'>;
 }
@@ -76,6 +81,8 @@ export interface Services {
   phoneGate: PhoneGate;
   watcher: Watcher;
   brief: BriefScheduler;
+  /** Archives pages nobody changed for 30 days, at start and every 6 hours. */
+  pageArchiver: { stop(): void };
   relay: RelayManager;
   telegram: TelegramManager;
 }
@@ -179,6 +186,8 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
   // here, once the relay and Telegram are listening for what the gate mirrors.
   const brief = new BriefScheduler({ ...options.brief, store: core.store, settings: () => settings.get() });
   brief.start();
+  // Pages nobody touched for a month leave the Pad for its archive (pinned and popped ones stay).
+  const pageArchiver = { stop: startStaleArchiver(core.pages, options.pageArchive?.clock) };
   settings.onChange((next, prev) => {
     relay.apply(next);
     telegram.apply();
@@ -186,5 +195,5 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
       brief.reschedule();
     }
   });
-  return { core, settings, brain, phoneGate, watcher, brief, relay, telegram };
+  return { core, settings, brain, phoneGate, watcher, brief, pageArchiver, relay, telegram };
 }

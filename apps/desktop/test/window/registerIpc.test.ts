@@ -52,6 +52,15 @@ function fakeBackend(): ClippyBackend {
     addWatch: vi.fn(async (input: { nudge: string }) => ({ id: 'W1', event: 'finished' as const, nudge: input.nudge, active: true, createdAt: 1 })),
     cancelWatch: vi.fn(async () => {}),
     systemDark: vi.fn(async () => true),
+    listPages: vi.fn(async () => []),
+    getPage: vi.fn(async (id: string) => ({ id }) as never),
+    createPage: vi.fn(async (input: { title: string }) => ({ title: input.title }) as never),
+    writePage: vi.fn(async () => ({ ok: true as const, page: {} as never })),
+    markPageSeen: vi.fn(async () => ({}) as never),
+    archivePage: vi.fn(async () => ({}) as never),
+    restorePage: vi.fn(async () => ({}) as never),
+    deletePage: vi.fn(async () => {}),
+    popPage: vi.fn(async () => ({}) as never),
   };
 }
 
@@ -95,6 +104,18 @@ describe('registerIpc', () => {
     await handlers.get(IpcInvoke.cancelWatch)!(e, 'W1');
     expect(backend.cancelWatch).toHaveBeenCalledWith('W1');
     await expect(handlers.get(IpcInvoke.systemDark)!(e)).resolves.toBe(true);
+    await handlers.get(IpcInvoke.listPages)!(e, { q: 'deploy', archived: true });
+    expect(backend.listPages).toHaveBeenCalledWith({ q: 'deploy', archived: true });
+    await handlers.get(IpcInvoke.createPage)!(e, { title: 'Scratch', color: 'mint' });
+    expect(backend.createPage).toHaveBeenCalledWith({ title: 'Scratch', color: 'mint' });
+    await handlers.get(IpcInvoke.writePage)!(e, 'P1', { body: 'hi', baseUpdatedAt: 5 });
+    expect(backend.writePage).toHaveBeenCalledWith('P1', { body: 'hi', baseUpdatedAt: 5 });
+    await handlers.get(IpcInvoke.popPage)!(e, 'P1', true);
+    expect(backend.popPage).toHaveBeenCalledWith('P1', true);
+    for (const m of ['getPage', 'markPageSeen', 'archivePage', 'restorePage', 'deletePage'] as const) {
+      await handlers.get(IpcInvoke[m])!(e, 'P1');
+      expect(backend[m]).toHaveBeenCalledWith('P1');
+    }
   });
 
   it('rejects bad arguments before they reach the backend', () => {
@@ -117,6 +138,12 @@ describe('registerIpc', () => {
     expect(() => handlers.get(IpcInvoke.addOrder)!(e, '')).toThrow();
     expect(() => handlers.get(IpcInvoke.addOrder)!(e, 'x'.repeat(501))).toThrow();
     expect(() => handlers.get(IpcInvoke.cancelOrder)!(e)).toThrow();
+    expect(() => handlers.get(IpcInvoke.createPage)!(e, { title: '' })).toThrow();
+    expect(() => handlers.get(IpcInvoke.createPage)!(e, { title: 'x', body: 'x'.repeat(100_001) })).toThrow();
+    expect(() => handlers.get(IpcInvoke.writePage)!(e, 'P1', { color: 'neon' })).toThrow();
+    expect(() => handlers.get(IpcInvoke.writePage)!(e, 'P1', { popped: true })).toThrow();
+    expect(() => handlers.get(IpcInvoke.popPage)!(e, 'P1', 'yes')).toThrow();
+    expect(() => handlers.get(IpcInvoke.listPages)!(e, { archived: 'true' })).toThrow();
     expect(backend.snooze).not.toHaveBeenCalled();
     expect(backend.markDone).not.toHaveBeenCalled();
   });

@@ -7,16 +7,24 @@ describe('IPC channels', () => {
       'addOrder',
       'addWatch',
       'answerAsk',
+      'archivePage',
       'cancelOrder',
       'cancelWatch',
       'connectClaude',
+      'createPage',
+      'deletePage',
+      'getPage',
       'getSettings',
       'hotkeyStatus',
       'listMessages',
       'listOrders',
+      'listPages',
       'listWatches',
       'markDone',
+      'markPageSeen',
       'newChat',
+      'popPage',
+      'restorePage',
       'searchHistory',
       'sendChat',
       'setSettings',
@@ -26,6 +34,7 @@ describe('IPC channels', () => {
       'telegramSendTest',
       'telegramStatus',
       'telegramUnpair',
+      'writePage',
     ]);
     expectTypeOf<keyof typeof IpcInvoke>().toEqualTypeOf<keyof ClippyBackend>();
     expect(new Set(Object.values(IpcInvoke)).size).toBe(Object.keys(IpcInvoke).length);
@@ -38,6 +47,8 @@ describe('IPC channels', () => {
       'chat:done',
       'message:new',
       'message:updated',
+      'page:changed',
+      'page:deleted',
       'theme:system',
     ]);
     expectTypeOf<(typeof IpcEvents)[keyof typeof IpcEvents]>().toEqualTypeOf<ClippyEvent>();

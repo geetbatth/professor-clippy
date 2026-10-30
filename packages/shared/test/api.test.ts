@@ -5,6 +5,10 @@ import {
   ApprovalRequestBody,
   ApprovalResult,
   LookPatch,
+  NewPageBody,
+  PageChangeBody,
+  PageListQuery,
+  PageSenderBody,
   RestartAppBody,
   RestartPcBody,
   Routes,
@@ -39,6 +43,11 @@ describe('Routes', () => {
       'POST /approvals',
       'POST /approvals/:id/withdraw',
       'POST /look',
+      'GET /pages',
+      'GET /pages/:id',
+      'POST /pages',
+      'POST /pages/:id',
+      'POST /pages/:id/archive',
     ]);
   });
 });
@@ -113,5 +122,25 @@ describe('routePath', () => {
 
   it('throws when an id is required but missing', () => {
     expect(() => routePath(Routes.markDone)).toThrow(/needs an id/);
+  });
+});
+
+describe('page bodies', () => {
+  it("take the sender's own name, never the user's", () => {
+    expect(NewPageBody.parse({ title: 'T', sender: 'claude-code' })).toEqual({ title: 'T', sender: 'claude-code' });
+    expect(PageChangeBody.parse({ append: 'x', sender: 'clippy-brain' })).toEqual({ append: 'x', sender: 'clippy-brain' });
+    for (const sender of ['you', 'YOU', ' you ', '']) {
+      expect(NewPageBody.safeParse({ title: 'T', sender }).success, sender).toBe(false);
+      expect(PageChangeBody.safeParse({ append: 'x', sender }).success, sender).toBe(false);
+      expect(PageSenderBody.safeParse({ sender }).success, sender).toBe(false);
+    }
+    expect(PageChangeBody.safeParse({ unseen: false, sender: 's' }).success).toBe(false);
+  });
+
+  it('reads archived from the query as true or false', () => {
+    expect(PageListQuery.parse({})).toEqual({});
+    expect(PageListQuery.parse({ q: 'x', archived: 'true' })).toEqual({ q: 'x', archived: true });
+    expect(PageListQuery.parse({ archived: 'false' })).toEqual({ archived: false });
+    expect(PageListQuery.safeParse({ archived: 'yes' }).success).toBe(false);
   });
 });
