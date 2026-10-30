@@ -6,7 +6,7 @@
   "description": "Professor Clippy Claude Code hook; posts a note when an agent finishes or needs permission.",
   "scripts": {
     "build": "vite build",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
