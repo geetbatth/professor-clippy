@@ -1,0 +1,85 @@
+{
+  "build": [
+    "Splendid! It compiled. Let us never speak of how.",
+    "A passing build. I shall frame it next to my diploma.",
+    "Green across the board. I've taken the liberty of feeling smug on your behalf.",
+    "Shipped! My tassel is swinging with pride.",
+    "Tests passed. Statistically, one of them is lying.",
+    "The build is done. Shall I cancel the ceremony, or merely the confetti?",
+    "Deployed. I'll be in my office, pretending I helped.",
+    "All green! The colour of success, and of my old chalkboard.",
+    "It worked first time. Highly suspicious. Proceed.",
+    "Another build, another footnote in your magnum opus."
+  ],
+  "error": [
+    "Ah. An error. In academia we call this 'preliminary results'.",
+    "Something broke. I've bent myself into a question mark about it.",
+    "Red text! My favourite ink, for marking.",
+    "Fear not: a stack trace is just a bibliography of mistakes.",
+    "It failed. I'd offer a hug, but I am mostly wire.",
+    "An exception! How exceptional. Not in the good way.",
+    "Error spotted. Let me fetch my reading glasses. Oh. I'm wearing them.",
+    "This is fine. I'm a paperclip; I've held worse things together.",
+    "The tests disagree with you. Peer review can be brutal.",
+    "Something crashed. Shall we blame the intern? I am the intern."
+  ],
+  "reminder": [
+    "Ahem. You asked me to nag you. I live for this.",
+    "Reminder! I've been holding onto this. Holding things is my whole job.",
+    "Tick tock. This is me, being the clock.",
+    "Past-you left a note for present-you. Past-you was very organised.",
+    "Attendance is mandatory. I will be taking a register.",
+    "I set an alarm in my tassel. It's going off now.",
+    "Don't shoot the messenger. I'm only a millimetre thick.",
+    "You told me to remind you. I never forget. I'm a clip; retention is my thing.",
+    "Gentle reminder. The next one will be less gentle.",
+    "Your calendar sent me. It looked worried."
+  ],
+  "ask": [
+    "An agent seeks your wisdom. Choose wisely; I'm grading.",
+    "A question from the field! Multiple choice, my favourite.",
+    "Someone needs a decision. I'd decide, but I'm biased towards staples.",
+    "Pop quiz! There is a right answer. Probably.",
+    "Your agent is waiting, pencil poised.",
+    "A query! Raise your hand, or just click a button.",
+    "They asked nicely. Mostly.",
+    "Decision time. Take your time. But not too much time.",
+    "A question for my favourite student: you."
+  ],
+  "lateNight": [
+    "It's late. Even my tassel has gone to bed.",
+    "Burning the midnight oil? I'll hold the lamp. Figuratively.",
+    "Past midnight. Code written now gets reviewed by a grumpier you.",
+    "The owls are up. And you. Mainly the owls should be.",
+    "A late-night note. Bold. Possibly unwise.",
+    "My office hours ended hours ago, and yet here we are.",
+    "Go to sleep. The bugs will still be there tomorrow. They're loyal.",
+    "Night shift! I'd put the kettle on, but I can't lift a kettle."
+  ],
+  "generic": [
+    "A note has arrived! I've clipped it for you.",
+    "News from your agents. I read it first. Sorry.",
+    "Fresh off the press. Well, off the MCP.",
+    "Mail call! Nobody ever writes to the paperclip.",
+    "Something for you. I've underlined the important bits, mentally.",
+    "Ahem. Your attention, please. Just a smidge.",
+    "A message! I adjusted my glasses for the occasion.",
+    "Incoming! I braced myself. Mostly by bending.",
+    "Psst. Over here. On the sticky note.",
+    "Your agent has spoken. I merely relay. With flair."
+  ],
+  "advice": [
+    "I sense you're working. Would you like me to sense harder?",
+    "Tip: water is a fine beverage. Drink some.",
+    "Have you tried turning the problem off and on again?",
+    "Posture check! Sit up straight. Straighter than me, ideally.",
+    "Name your variables as if the next reader owns an axe.",
+    "Stand up and stretch. I'll guard the screen.",
+    "Commit early, commit often, commit to lunch.",
+    "Rubber-duck debugging works. I'm no duck, but I'll listen.",
+    "Your screen has been bright for a long time. So have you. Rest your eyes.",
+    "Blink. No, really. I'll do it with you.",
+    "Fun fact: paperclips were patented in the 1800s. I'm vintage.",
+    "Write the test first. Or at least feel guilty, as tradition demands."
+  ]
+}

@@ -1,0 +1,98 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { IpcInvoke, type ClippyBackend } from '@clippy/shared/ipc';
+
+type Handler = (e: { sender: unknown }, ...args: unknown[]) => unknown;
+const handlers = new Map<string, Handler>();
+
+vi.mock('electron', () => ({
+  ipcMain: {
+    handle: (channel: string, fn: Handler) => {
+      if (handlers.has(channel)) throw new Error(`duplicate handler ${channel}`);
+      handlers.set(channel, fn);
+    },
+    removeHandler: (channel: string) => handlers.delete(channel),
+  },
+}));
+
+const { registerIpc } = await import('../../src/main/window/registerIpc');
+
+function fakeWindow() {
+  const closed: (() => void)[] = [];
+  const contents = { send: vi.fn(), isDestroyed: vi.fn(() => false) };
+  const win = {
+    webContents: contents,
+    once: (event: string, cb: () => void) => {
+      if (event === 'closed') closed.push(cb);
+    },
+  };
+  return { win, contents, close: () => closed.forEach((cb) => cb()) };
+}
+
+function fakeBackend(): ClippyBackend {
+  return {
+    listMessages: vi.fn(async () => []),
+    markDone: vi.fn(async (id: string) => ({ id }) as never),
+    snooze: vi.fn(async () => ({}) as never),
+    answerAsk: vi.fn(async (id: string, answer: string) => ({ id, status: 'answered' as const, answer })),
+    sendChat: vi.fn(async () => ({}) as never),
+    newChat: vi.fn(async () => {}),
+    searchHistory: vi.fn(async () => []),
+    getSettings: vi.fn(async () => ({}) as never),
+    setSettings: vi.fn(async () => ({}) as never),
+  };
+}
+
+describe('registerIpc', () => {
+  beforeEach(() => handlers.clear());
+
+  it('handles every IpcInvoke channel and forwards to the backend', async () => {
+    const { win, contents } = fakeWindow();
+    const backend = fakeBackend();
+    registerIpc(backend, win as never);
+    expect([...handlers.keys()].sort()).toEqual(Object.values(IpcInvoke).sort());
+
+    const e = { sender: contents };
+    await handlers.get(IpcInvoke.listMessages)!(e, { state: 'unread' });
+    expect(backend.listMessages).toHaveBeenCalledWith({ state: 'unread' });
+    await expect(handlers.get(IpcInvoke.answerAsk)!(e, 'A1', 'Yes')).resolves.toMatchObject({ answer: 'Yes' });
+    await handlers.get(IpcInvoke.snooze)!(e, 'A1', 1_700_000_000_000);
+    expect(backend.snooze).toHaveBeenCalledWith('A1', 1_700_000_000_000);
+    await handlers.get(IpcInvoke.setSettings)!(e, { soundEnabled: false, workerUrl: null });
+    expect(backend.setSettings).toHaveBeenCalledWith({ soundEnabled: false, workerUrl: null });
+    await handlers.get(IpcInvoke.newChat)!(e);
+    expect(backend.newChat).toHaveBeenCalledOnce();
+  });
+
+  it('rejects bad arguments before they reach the backend', () => {
+    const { win, contents } = fakeWindow();
+    const backend = fakeBackend();
+    registerIpc(backend, win as never);
+    const e = { sender: contents };
+    expect(() => handlers.get(IpcInvoke.snooze)!(e, 'A1', 'tomorrow')).toThrow();
+    expect(() => handlers.get(IpcInvoke.markDone)!(e)).toThrow();
+    expect(() => handlers.get(IpcInvoke.listMessages)!(e, { state: 'bogus' })).toThrow();
+    expect(() => handlers.get(IpcInvoke.setSettings)!(e, { askTimeoutDefaultS: -1 })).toThrow();
+    expect(() => handlers.get(IpcInvoke.sendChat)!(e, '')).toThrow();
+    expect(backend.snooze).not.toHaveBeenCalled();
+    expect(backend.markDone).not.toHaveBeenCalled();
+  });
+
+  it('rejects calls from other web contents', () => {
+    const { win } = fakeWindow();
+    const backend = fakeBackend();
+    registerIpc(backend, win as never);
+    expect(() => handlers.get(IpcInvoke.getSettings)!({ sender: {} })).toThrow(/not allowed/);
+    expect(backend.getSettings).not.toHaveBeenCalled();
+  });
+
+  it('emit pushes events to the window and stops after close', () => {
+    const { win, contents, close } = fakeWindow();
+    const ipc = registerIpc(fakeBackend(), win as never);
+    ipc.emit('brain:state', 'thinking');
+    expect(contents.send).toHaveBeenCalledWith('brain:state', 'thinking');
+    close();
+    expect(handlers.size).toBe(0);
+    ipc.emit('brain:state', 'idle');
+    expect(contents.send).toHaveBeenCalledTimes(1);
+  });
+});

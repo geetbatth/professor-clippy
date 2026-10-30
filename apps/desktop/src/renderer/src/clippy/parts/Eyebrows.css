@@ -1,0 +1,121 @@
+.brow path {
+  fill: none;
+  stroke-linecap: round;
+}
+.brow-outline {
+  stroke: #2b3038;
+  stroke-width: 7.2;
+}
+.brow-hair-outline {
+  stroke: #2b3038;
+  stroke-width: 3.6;
+}
+.brow-main {
+  stroke: #f4f5f7;
+  stroke-width: 4.6;
+}
+.brow-hair {
+  stroke: #f4f5f7;
+  stroke-width: 1.4;
+}
+.brow {
+  transition: transform 350ms cubic-bezier(0.3, 1.7, 0.5, 1);
+}
+.brow-l {
+  transform-origin: 54px 42px;
+}
+.brow-r {
+  transform-origin: 88px 41px;
+}
+
+/* idle: every so often, a quick double eyebrow waggle */
+.clippy[data-mood='idle'] .brow {
+  animation: brow-waggle 9s ease-in-out infinite;
+}
+.clippy[data-mood='idle'] .brow-r {
+  animation-delay: 60ms;
+}
+@keyframes brow-waggle {
+  0%,
+  88%,
+  93%,
+  98%,
+  100% {
+    transform: none;
+  }
+  90.5%,
+  95.5% {
+    transform: translateY(-4px);
+  }
+}
+
+/* read: one eyebrow raised, sceptically */
+.clippy[data-mood='read'] .brow-l {
+  transform: translateY(-5px) rotate(-6deg);
+}
+.clippy[data-mood='read'] .brow-r {
+  transform: translateY(1.5px) rotate(5deg);
+}
+
+/* think: furrowed, one cocked */
+.clippy[data-mood='think'] .brow-l {
+  transform: translateY(1px) rotate(10deg);
+}
+.clippy[data-mood='think'] .brow-r {
+  transform: translateY(-4px) rotate(-4deg);
+}
+
+/* sleep: relaxed and low */
+.clippy[data-mood='sleep'] .brow {
+  transform: translateY(2.5px);
+}
+
+/* wake: shoot up over the hat brim */
+.clippy[data-mood='wake'] .brow {
+  animation: brow-shock 1200ms ease-out;
+}
+@keyframes brow-shock {
+  0% {
+    transform: translateY(2.5px);
+  }
+  12%,
+  65% {
+    transform: translateY(-10px);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* jump: up and bouncing */
+.clippy[data-mood='jump'] .brow {
+  animation: brow-bounce 1100ms ease-out;
+}
+.clippy[data-mood='jump'][data-big='true'] .brow {
+  animation: brow-bounce 600ms ease-out 3;
+}
+@keyframes brow-bounce {
+  0%,
+  100% {
+    transform: none;
+  }
+  30% {
+    transform: translateY(-7px);
+  }
+  60% {
+    transform: translateY(-3px);
+  }
+}
+
+/* tapGlass: stern, inner ends down */
+.clippy[data-mood='tapGlass'] .brow-l {
+  transform: translateY(2px) rotate(16deg);
+}
+.clippy[data-mood='tapGlass'] .brow-r {
+  transform: translateY(2px) rotate(-16deg);
+}
+
+/* celebrate: delighted, bobbing */
+.clippy[data-mood='celebrate'] .brow {
+  animation: brow-bounce 600ms ease-in-out 4;
+}

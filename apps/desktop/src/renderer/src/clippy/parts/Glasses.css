@@ -1,0 +1,96 @@
+.clippy-glasses {
+  transform-origin: 70.5px 61px;
+  transition: transform 450ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.glasses-frame {
+  transform-origin: 70.5px 61px;
+  transform: rotate(-3deg);
+}
+.glasses-lens {
+  fill: rgba(170, 215, 255, 0.16);
+  stroke: #5a3517;
+  stroke-width: 2.2;
+}
+.glasses-bridge,
+.glasses-temple {
+  fill: none;
+  stroke: #5a3517;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.glasses-glare {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0.75;
+}
+
+/* read: glasses slide down the nose so he can peer over them */
+.clippy[data-mood='read'] .clippy-glasses {
+  transform: translateY(4.5px);
+}
+
+/* sleep: knocked askew */
+.clippy[data-mood='sleep'] .clippy-glasses {
+  transform: translateY(2.5px) rotate(-7deg);
+}
+
+/* wake: they jump off his face for a moment */
+.clippy[data-mood='wake'] .clippy-glasses {
+  animation: glasses-jolt 1200ms ease-out;
+}
+@keyframes glasses-jolt {
+  0% {
+    transform: translateY(2.5px) rotate(-7deg);
+  }
+  14% {
+    transform: translateY(-9px) rotate(9deg);
+  }
+  40% {
+    transform: translateY(1px) rotate(-3deg);
+  }
+  60% {
+    transform: translateY(-1px) rotate(2deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* jump: they lag behind and bounce */
+.clippy[data-mood='jump'] .clippy-glasses {
+  animation: glasses-lag 1100ms ease-out;
+}
+@keyframes glasses-lag {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: translateY(4px);
+  }
+  50% {
+    transform: translateY(-4px) rotate(4deg);
+  }
+  75% {
+    transform: translateY(2px) rotate(-2deg);
+  }
+}
+
+/* tapGlass and celebrate: a glint sweeps across the lenses */
+.clippy[data-mood='tapGlass'] .glasses-glare,
+.clippy[data-mood='celebrate'] .glasses-glare {
+  animation: glasses-glint 800ms ease-in-out 2;
+}
+@keyframes glasses-glint {
+  0%,
+  100% {
+    opacity: 0.75;
+    stroke-width: 1.5;
+  }
+  50% {
+    opacity: 1;
+    stroke-width: 3.2;
+  }
+}

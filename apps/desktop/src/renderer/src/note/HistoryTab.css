@@ -1,0 +1,26 @@
+.history-search {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+  padding: 6px 12px;
+}
+.history-empty {
+  margin: 24px 0;
+  text-align: center;
+  color: rgba(74, 61, 18, 0.7);
+  font-size: 13px;
+}
+.card--history {
+  opacity: 0.92;
+}
+.history-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.history-via {
+  color: rgba(74, 61, 18, 0.65);
+  font-size: 11.5px;
+}
