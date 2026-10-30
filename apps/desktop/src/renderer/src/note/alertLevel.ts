@@ -12,3 +12,11 @@ export function alertLevel(m: Message, popUpFor: Settings['popUpFor']): 'loud' |
   if (m.kind === 'ask' || m.kind === 'reminder' || m.urgent || m.sender === 'clippy') return 'loud';
   return 'quiet';
 }
+
+/**
+ * How many of `messages` are loud. This (not the badge total) drives Clippy's nagging and
+ * waking, so a quiet note never earns a tap on the glass or a boing.
+ */
+export function loudCount(messages: readonly Message[], popUpFor: Settings['popUpFor']): number {
+  return messages.filter((m) => alertLevel(m, popUpFor) === 'loud').length;
+}

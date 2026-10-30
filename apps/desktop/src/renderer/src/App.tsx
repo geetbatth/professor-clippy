@@ -11,7 +11,7 @@ import { useClickThrough } from './hooks/useClickThrough';
 import { useSettings } from './hooks/useSettings';
 import { useUnread } from './hooks/useUnread';
 import { useWindowDrag } from './hooks/useWindowDrag';
-import { alertLevel } from './note/alertLevel';
+import { alertLevel, loudCount } from './note/alertLevel';
 import { ChatTab } from './note/ChatTab';
 import { FirstRunWizard } from './note/FirstRunWizard';
 import { HistoryTab } from './note/HistoryTab';
@@ -104,7 +104,8 @@ export function App({ runtime }: { runtime: Runtime }) {
   const stack = useUnread(api, onNewMessage);
   const unread = stack.messages.length;
 
-  const mood = useClippyMood({ unread, thinking: chat.thinking, expanded: mode === 'expanded' });
+  // Only loud notes make him read, nag (tap, boing) or wake; quiet ones are just the badge.
+  const mood = useClippyMood({ unread: loudCount(stack.messages, popUpFor.current), thinking: chat.thinking, expanded: mode === 'expanded' });
   moodRef.current = mood;
 
   // Antics come with sound effects.
