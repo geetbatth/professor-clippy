@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "statusMessage": "Checking for an active plan…",
+            "timeout": 15,
+            "command": "$d=Join-Path (Get-Location) 'Plans'; if(Test-Path $d){ $p=Get-ChildItem $d -Filter '*-plan.html' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if($p){ $h=Get-Content -Raw -Encoding UTF8 $p.FullName; if($h -match '(?s)id=.plan-state.[^>]*>(.*?)</script>'){ $s=$matches[1].Trim(); try{ $o=$s | ConvertFrom-Json }catch{ $o=$null }; $vals=@(); if($o -and $o.status){ $vals=@($o.status.PSObject.Properties.Value) }; $done=($vals.Count -gt 0 -and -not ($vals | Where-Object { $_ -ne 'done' })); if(-not $done){ $ctx=\"Active plan for this repo: $($p.FullName)`n#plan-state:`n$s`nTo continue, read that file, find the next non-done phase, and proceed.\"; @{ hookSpecificOutput=@{ hookEventName='SessionStart'; additionalContext=$ctx } } | ConvertTo-Json -Compress -Depth 5 } } } }"
+          }
+        ]
+      }
+    ]
+  }
+}

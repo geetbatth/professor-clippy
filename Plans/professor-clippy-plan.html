@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<!--
+  HTML PLAN TEMPLATE
+  ------------------
+  Fill in the CONTENT only. Do NOT rewrite the <style> or <script> blocks.
+
+  Wiring rules (keep these consistent or the tracker breaks):
+   • Each TRACKED build section needs a stable id, e.g. id="phase2".
+   • That id must appear as data-track="<id>" in THREE places:
+       1) the sidebar nav link,  2) the roadmap node,  3) the section's .status pill.
+   • List every tracked id in the script's `ids = [...]` array (bottom of file).
+   • Reference sections (context, critical files, verification, deferred) use
+     class="card plain" and have NO status pill / no data-track.
+
+  Component cheatsheet (all defined in <style>):
+   • <section class="card phase">         tracked build section (violet accent)
+   • <section class="card phase" data-accent="green|blue">   recolor the left accent
+   • <section class="card plain">          reference section
+   • <div class="callout [warn|ok]">       highlighted note
+
+  Diagrams — REACH FOR THESE OFTEN (a diagram beats a paragraph for flows, models,
+  sequences, choices, hierarchies). All live inside <div class="diagram"> with a .dg-title:
+   • .flow     horizontal pipeline of .node boxes joined by .arrow (→); .node.q / .node.hl /
+               .node.ans tint cyan / accent / green. Use for data flow, request lifecycle, q→answer.
+   • .schema   record/table mock: .row > .col-name / .col-type / .col-note. Use for data models.
+   • .tree     file tree / decomposition; author with ├─ └─ │ + indent; <span class="dir">,
+               <span class="nm">, <small> color dirs / files / notes.
+  Standalone (no .diagram wrapper needed):
+   • <ol class="steps">  numbered vertical procedure with a connecting rail (ordered steps).
+   • <div class="compare"> > div.good / .bad / .pick (each with a .ct label)  side-by-side
+               comparison cards (before/after, option A vs B, trade-offs).
+   • <table>, <ul>, <ol>, <code>, .pill, .chip, .legend
+
+  Quantitative — STATIC, author-baked numbers (compute widths/spans at write time; no JS):
+   • .hbar     labelled bars. One series = effort/size per phase; two (.bar.before/.bar.after)
+               = before/after a metric. Author sets each .bar width:% of the row max. Standalone.
+   • .stack    one 100% bar of tinted .seg's (author sets flex:<n> + a palette background);
+               pair with a .legend. Use for composition/breakdown of a whole. Standalone.
+   • .gantt    phases across time (overlap, sequencing, critical path). Grid set --cols:<N>;
+               each .gbar placed by inline grid-column:<start>/<end> (= time units); .gbar.crit
+               tints the critical path. Wrap in <div class="diagram"> with a .dg-title.
+   Use ONLY with real data: .gantt when there are durations/dependencies (not a plain checklist);
+   .hbar before/after when there's a measurable goal; .stack for 2–6 parts (more → a <table>).
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Professor Clippy Plan</title>
+<script>try{var _t=localStorage.getItem('professor-clippy-theme');if(_t)document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --bg-grid: rgba(120,140,180,.045);
+    --panel: #14171f;
+    --panel-2: #1a1e28;
+    --border: #272c38;
+    --border-soft: #1f2430;
+    --text: #e8ebf2;
+    --muted: #98a2b6;
+    --faint: #6b7488;
+    --accent: #56b6ff;
+    --accent-2: #8b7bff;
+    --cyan: #34d3c4;
+    --green: #45c463;
+    --amber: #e0a93b;
+    --code-bg: #0e1016;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.25);
+  }
+  html[data-theme="light"] {
+    --bg: #f5f6f9;
+    --bg-grid: rgba(40,60,100,.04);
+    --panel: #ffffff;
+    --panel-2: #f0f2f6;
+    --border: #dde1e9;
+    --border-soft: #e7eaf0;
+    --text: #1a1e28;
+    --muted: #5a6478;
+    --faint: #8b93a4;
+    --accent: #1f7fd6;
+    --accent-2: #6b54e6;
+    --cyan: #129f92;
+    --green: #2e9e4a;
+    --amber: #b9801b;
+    --code-bg: #f0f2f6;
+    --shadow: 0 1px 2px rgba(20,30,60,.06), 0 8px 24px rgba(20,30,60,.06);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0 / 100% 32px,
+      linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0 / 32px 100%,
+      var(--bg);
+    color: var(--text);
+    font: 15.5px/1.65 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .85em; background: var(--code-bg); border: 1px solid var(--border-soft);
+    padding: 1px 6px; border-radius: 5px; color: var(--text);
+  }
+  strong { color: var(--text); font-weight: 650; }
+  em { color: var(--muted); font-style: italic; }
+
+  .shell { display: grid; grid-template-columns: 264px minmax(0, 1fr); max-width: 1220px; margin: 0 auto; }
+  .sidebar {
+    position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+    padding: 28px 20px 40px; border-right: 1px solid var(--border-soft);
+  }
+  .main { padding: 36px 44px 120px; min-width: 0; }
+  @media (max-width: 940px) {
+    .shell { grid-template-columns: 1fr; }
+    .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border-soft); }
+    .main { padding: 28px 22px 80px; }
+  }
+
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+  .brand b { font-size: 14px; letter-spacing: .2px; }
+  .brand-sub { font-size: 11.5px; color: var(--faint); font-family: ui-monospace, monospace; margin: 0 0 22px 19px; }
+
+  .ring-wrap { display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 18px;
+    background: var(--panel); border: 1px solid var(--border-soft); border-radius: 12px; }
+  .ring { --pct: 0; position: relative; width: 46px; height: 46px; border-radius: 50%; flex: none;
+    background: conic-gradient(var(--green) calc(var(--pct) * 1%), var(--panel-2) 0);
+    display: grid; place-items: center; }
+  .ring::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: var(--panel); }
+  .ring span { position: relative; z-index: 1; font-size: 11px; font-weight: 700; }
+  .ring-meta { font-size: 12px; line-height: 1.35; }
+  .ring-meta b { display: block; font-size: 13px; }
+  .ring-meta span { color: var(--muted); }
+
+  nav.toc { display: flex; flex-direction: column; gap: 1px; }
+  nav.toc a {
+    color: var(--muted); font-size: 13px; padding: 6px 10px; border-radius: 7px;
+    display: flex; align-items: center; gap: 8px; border-left: 2px solid transparent; transition: all .12s;
+  }
+  nav.toc a:hover { color: var(--text); background: var(--panel); text-decoration: none; }
+  nav.toc a.active { color: var(--text); background: var(--panel); border-left-color: var(--accent); font-weight: 600; }
+  nav.toc a .mk { width: 6px; height: 6px; border-radius: 50%; background: var(--border); flex: none; }
+  nav.toc a[data-st="doing"] .mk { background: var(--amber); }
+  nav.toc a[data-st="done"] .mk { background: var(--green); }
+  .toc-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--faint); margin: 18px 0 6px 10px; }
+
+  /* ── Sidebar sub-steps (nested under each phase link) ── */
+  nav.toc .toc-sub { list-style: none; margin: 0 0 2px; padding: 0 0 0 17px; overflow: hidden;
+    max-height: 0; opacity: 0; transition: max-height .28s cubic-bezier(.2,.7,.2,1), opacity .18s; }
+  nav.toc .toc-sub.open { max-height: 420px; opacity: 1; }
+  nav.toc .toc-sub a { font-size: 12px; padding: 4px 10px 4px 6px; color: var(--faint);
+    border-left: 2px solid transparent; gap: 8px; }
+  nav.toc .toc-sub a:hover { color: var(--text); background: var(--panel); text-decoration: none; }
+  nav.toc .toc-sub a .sdot { width: 6px; height: 6px; border-radius: 50%; background: var(--border);
+    flex: none; transition: background .2s, box-shadow .2s; }
+  nav.toc .toc-sub a[data-sst="done"] { color: var(--muted); }
+  nav.toc .toc-sub a[data-sst="done"] .sdot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  nav.toc .toc-sub a[data-sst="current"] .sdot { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  nav.toc .toc-sub a .slabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  nav.toc a .toc-chev { margin-left: auto; flex: none; font-size: 9px; color: var(--faint);
+    cursor: pointer; padding: 2px 5px; transition: transform .2s; }
+  nav.toc a.sub-open .toc-chev { transform: rotate(90deg); }
+  @keyframes step-flash { 0% { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+    100% { background: transparent; } }
+  .steps li.flash { animation: step-flash 1.4s ease-out; border-radius: 6px; }
+  @media (prefers-reduced-motion: reduce) { .steps li.flash { animation: none; } nav.toc .toc-sub { transition: none; } }
+
+  .theme-btn {
+    margin-top: 22px; width: 100%; cursor: pointer; font-family: inherit; font-size: 12px; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border-soft); border-radius: 8px; padding: 8px; transition: all .12s;
+  }
+  .theme-btn:hover { color: var(--text); border-color: var(--border); }
+
+  .hero { margin-bottom: 28px; }
+  .eyebrow { font-family: ui-monospace, monospace; font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); }
+  .hero h1 { font-size: 34px; line-height: 1.1; letter-spacing: -.6px; margin: 10px 0 12px; font-weight: 700; }
+  .hero p { color: var(--muted); font-size: 16px; max-width: 60ch; margin: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border-soft); padding: 5px 11px; border-radius: 999px; }
+  .chip b { color: var(--text); }
+
+  .roadmap { display: flex; gap: 0; margin: 28px 0 8px; padding: 4px; background: var(--panel);
+    border: 1px solid var(--border-soft); border-radius: 14px; overflow-x: auto; }
+  .rm-node { flex: 1 1 0; min-width: 92px; text-align: center; padding: 12px 8px; border-radius: 10px;
+    cursor: pointer; position: relative; transition: background .12s; }
+  .rm-node:hover { background: var(--panel-2); text-decoration: none; }
+  .rm-num { width: 30px; height: 30px; margin: 0 auto 7px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 13px; font-weight: 700; font-family: ui-monospace, monospace;
+    background: var(--panel-2); color: var(--faint); border: 1.5px solid var(--border); transition: all .15s; }
+  .rm-node[data-st="doing"] .rm-num { color: var(--amber); border-color: var(--amber); box-shadow: 0 0 0 3px rgba(224,169,59,.12); }
+  .rm-node[data-st="done"] .rm-num { color: #fff; background: var(--green); border-color: var(--green); }
+  .rm-label { font-size: 11px; color: var(--muted); line-height: 1.25; }
+
+  section { scroll-margin-top: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--border-soft); border-radius: 16px;
+    padding: 26px 30px; margin: 16px 0; box-shadow: var(--shadow); }
+  .card.phase { border-left: 3px solid var(--accent-2); }
+  .card.phase[data-accent="green"] { border-left-color: var(--cyan); }
+  .card.phase[data-accent="blue"] { border-left-color: var(--accent); }
+  .card.deferred { border-left-color: var(--amber); }
+
+  .sec-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 4px; }
+  .sec-head .titles { min-width: 0; }
+  .sec-kicker { font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+  h2 { font-size: 23px; letter-spacing: -.3px; margin: 4px 0 0; font-weight: 700; }
+  h2 .muted-tail { font-size: 14px; color: var(--faint); font-weight: 400; }
+  h3 { font-size: 14px; color: var(--accent); margin: 22px 0 8px; letter-spacing: .01em; }
+  .plain h2 { padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); margin-bottom: 10px; }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0; padding-left: 20px; }
+  li { margin: 6px 0; }
+  li::marker { color: var(--faint); }
+
+  .status { flex: none; font-family: inherit; font-size: 11.5px; font-weight: 650; line-height: 1;
+    padding: 8px 14px; border-radius: 999px; user-select: none; white-space: nowrap;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); transition: all .14s; }
+  .status::before { content: "○ "; }
+  .status[data-state="doing"] { color: var(--amber); border-color: rgba(224,169,59,.5); background: rgba(224,169,59,.13); }
+  .status[data-state="doing"]::before { content: "◐ "; }
+  .status[data-state="done"] { color: var(--green); border-color: rgba(69,196,99,.5); background: rgba(69,196,99,.14); }
+  .status[data-state="done"]::before { content: "✓ "; }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px;
+    background: var(--panel-2); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 13px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+  th { background: color-mix(in srgb, var(--panel-2) 70%, var(--border)); color: var(--text);
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; }
+  td:first-child { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+
+  .callout { border-radius: 10px; padding: 13px 17px; margin: 16px 0; font-size: 14px;
+    background: color-mix(in srgb, var(--accent) 9%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); border-left-width: 3px; }
+  .callout.warn { background: color-mix(in srgb, var(--amber) 10%, var(--panel)); border-color: color-mix(in srgb, var(--amber) 32%, transparent); }
+  .callout.ok { background: color-mix(in srgb, var(--green) 10%, var(--panel)); border-color: color-mix(in srgb, var(--green) 32%, transparent); }
+
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
+  .pill.defer { background: rgba(224,169,59,.14); color: var(--amber); border: 1px solid rgba(224,169,59,.4); }
+
+  .diagram { background: var(--code-bg); border: 1px solid var(--border-soft); border-radius: 12px; padding: 22px; margin: 16px 0; }
+  .dg-title { font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin-bottom: 16px; }
+  .flow { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+  .flow .col { display: flex; flex-direction: column; gap: 8px; justify-content: center; }
+  .node { background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; font-size: 12.5px; min-width: 116px; }
+  .node b { display: block; font-size: 12.5px; }
+  .node small { color: var(--faint); font-size: 10.5px; font-family: ui-monospace, monospace; }
+  .node.hl { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .node.q { border-color: var(--cyan); }
+  .node.ans { border-color: var(--green); }
+  .arrow { align-self: center; color: var(--faint); font-size: 18px; }
+
+  .schema { font-family: ui-monospace, monospace; font-size: 12.5px; }
+  .schema .row { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border-soft); }
+  .schema .row:last-child { border-bottom: none; }
+  .schema .col-name { color: var(--accent); min-width: 150px; }
+  .schema .col-type { color: var(--cyan); min-width: 130px; }
+  .schema .col-note { color: var(--faint); }
+
+  /* sequence — numbered vertical steps with a connecting rail (procedures, ordered work) */
+  .steps { list-style: none; margin: 10px 0; padding: 0; counter-reset: step; }
+  .steps li { position: relative; padding: 0 0 16px 40px; }
+  .steps li::before { content: counter(step); counter-increment: step; position: absolute; left: 0; top: -2px;
+    width: 25px; height: 25px; border-radius: 50%; display: grid; place-items: center; font-family: ui-monospace, monospace;
+    font-size: 12px; font-weight: 700; color: var(--accent); background: var(--panel-2); border: 1.5px solid var(--border); }
+  .steps li::after { content: ""; position: absolute; left: 11.5px; top: 25px; bottom: -2px; width: 1.5px; background: var(--border-soft); }
+  .steps li:last-child { padding-bottom: 0; }
+  .steps li:last-child::after { display: none; }
+  .steps li b { color: var(--text); }
+
+  /* comparison — side-by-side cards (before/after, option A vs B, trade-offs) */
+  .compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 16px 0; }
+  .compare > div { background: var(--panel); border: 1px solid var(--border-soft); border-top: 2px solid var(--border); border-radius: 11px; padding: 13px 16px; }
+  .compare .ct { font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px; }
+  .compare > .good { border-top-color: var(--green); }
+  .compare > .bad  { border-top-color: var(--amber); }
+  .compare > .pick { border-top-color: var(--accent); }
+  .compare ul { margin: 0; padding-left: 16px; font-size: 13px; }
+  .compare li { margin: 4px 0; }
+
+  /* hierarchy — file tree / decomposition (author with ├─ └─ │ and indentation) */
+  .tree { font-family: ui-monospace, monospace; font-size: 12.5px; line-height: 1.75; white-space: pre; color: var(--muted); overflow-x: auto; }
+  .tree .dir { color: var(--cyan); }
+  .tree .nm { color: var(--accent); }
+  .tree small { color: var(--faint); font-family: ui-monospace, monospace; }
+
+  hr { border: none; border-top: 1px solid var(--border-soft); margin: 30px 0; }
+  footer { color: var(--faint); font-size: 12.5px; margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--border-soft); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  /* ── Quantitative primitives — static, author-baked numbers (no runtime JS) ── */
+  /* magnitude — labelled bars; one series = effort/size, two = before/after */
+  .hbar { display: flex; flex-direction: column; gap: 13px; margin: 16px 0; }
+  .hbar .row { display: grid; grid-template-columns: minmax(64px, 22%) 1fr; align-items: center; column-gap: 14px; }
+  .hbar .lbl { font-size: 13px; color: var(--muted); text-align: right; line-height: 1.3; }
+  .hbar .bars { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .hbar .barwrap { display: flex; align-items: center; gap: 9px; }
+  .hbar .ser { font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); min-width: 46px; }
+  .hbar .bar { height: 20px; min-width: 2px; border-radius: 6px; background: var(--accent); }
+  .hbar .bar.before { background: var(--border); }
+  .hbar .bar.after  { background: var(--accent); }
+  .hbar .val { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+  /* composition — one 100% bar split into tinted segments (author writes flex:<n> + a palette colour) */
+  .stack { display: flex; height: 26px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-soft); margin: 16px 0; }
+  .stack .seg { min-width: 3px; display: flex; align-items: center; justify-content: center; font-family: ui-monospace, monospace; font-size: 11px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.4); background: var(--accent); }
+
+  /* time — phases across a column axis; bars placed by inline grid-column (start/end = time units) */
+  .diagram:has(.gantt) { overflow-x: auto; }
+  .gantt { display: grid; grid-template-columns: minmax(64px, max-content) 1fr; align-items: center; gap: 7px 12px; min-width: 380px; }
+  .gantt .corner { content: ""; }
+  .g-head { display: grid; grid-template-columns: repeat(var(--cols), 1fr); }
+  .g-colhead { font-family: ui-monospace, monospace; font-size: 10.5px; letter-spacing: .04em; color: var(--faint); text-align: center; padding-bottom: 3px; border-left: 1px solid var(--border-soft); }
+  .g-task { font-size: 13px; color: var(--muted); text-align: right; line-height: 1.3; }
+  .g-row { display: grid; grid-template-columns: repeat(var(--cols), 1fr); background-image: repeating-linear-gradient(90deg, var(--border-soft) 0 1px, transparent 1px calc(100% / var(--cols))); border-radius: 6px; }
+  .gbar { grid-row: 1; height: 22px; min-width: 4px; border-radius: 6px; background: var(--accent); display: flex; align-items: center; padding: 0 8px; font-family: ui-monospace, monospace; font-size: 11px; color: #fff; white-space: nowrap; box-shadow: var(--shadow); }
+  .gbar.crit { background: var(--amber); }
+
+  /* ── Theatrical animations ── */
+  @keyframes plan-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+  @keyframes pop-done { 0% { transform: scale(1); } 35% { transform: scale(1.16); } 70% { transform: scale(.97); } 100% { transform: scale(1); } }
+  @keyframes glow-done { 0% { box-shadow: 0 0 0 0 rgba(69,196,99,.55); } 100% { box-shadow: 0 0 0 16px rgba(69,196,99,0); } }
+  @keyframes breathe-amber { 0%,100% { box-shadow: 0 0 0 0 rgba(224,169,59,0); } 50% { box-shadow: 0 0 0 6px rgba(224,169,59,.16); } }
+  @keyframes live-ping { 0% { transform: scale(1); opacity: .85; } 70% { transform: scale(2.8); opacity: 0; } 100% { opacity: 0; } }
+  .confetti-cv { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9999; }
+  .status.celebrate-done { animation: pop-done .6s ease, glow-done 1s ease .05s; }
+  .rm-node.celebrate-done .rm-num { animation: pop-done .6s ease, glow-done 1s ease .05s; }
+  .status.celebrate-doing { animation: pop-done .5s ease; }
+  .status.is-breathing { animation: breathe-amber 2.4s ease-in-out infinite; }
+  .rm-node.is-breathing .rm-num { animation: breathe-amber 2.4s ease-in-out infinite; }
+  .live-badge { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; letter-spacing: .14em; color: var(--green); font-family: ui-monospace, monospace; }
+  .live-badge .live-dot { position: relative; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .live-badge .live-dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--green); animation: live-ping 1.6s ease-out infinite; }
+
+  /* "Waiting for your input" banner — shown when #plan-state has a `waiting` field set */
+  .await-bar { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 50;
+    display: none; align-items: center; gap: 11px; max-width: min(760px, 92vw);
+    padding: 10px 18px; border-radius: 999px; text-align: left;
+    background: color-mix(in srgb, var(--amber) 18%, var(--panel));
+    border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent);
+    box-shadow: 0 8px 28px rgba(0,0,0,.4); color: var(--text); font-size: 13.5px; line-height: 1.4;
+    backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    animation: await-pulse 2.2s ease-in-out infinite; }
+  .await-bar.on { display: flex; }
+  .await-bar.clickable { cursor: pointer; }
+  .await-bar.clickable:hover { border-color: var(--amber); }
+  .await-bar .wd { position: relative; width: 9px; height: 9px; border-radius: 50%; background: var(--amber); flex: none; box-shadow: 0 0 10px var(--amber); }
+  .await-bar .wd::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--amber); animation: live-ping 1.6s ease-out infinite; }
+  .await-bar b { color: var(--amber); font-weight: 700; }
+  .await-bar .qt { color: var(--muted); }
+  @keyframes await-pulse { 0%,100% { box-shadow: 0 8px 28px rgba(0,0,0,.4), 0 0 0 0 rgba(224,169,59,0); } 50% { box-shadow: 0 8px 28px rgba(0,0,0,.4), 0 0 0 7px rgba(224,169,59,.16); } }
+
+  /* ── Notify bell (sidebar) ── */
+  .notify-btn { margin-top: 10px; width: 100%; cursor: pointer; font-family: inherit; font-size: 12px; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border-soft); border-radius: 8px; padding: 8px; transition: all .12s; }
+  .notify-btn:hover { color: var(--text); border-color: var(--border); }
+  .notify-btn.on { color: var(--green); border-color: color-mix(in srgb, var(--green) 50%, transparent); background: color-mix(in srgb, var(--green) 10%, var(--panel)); }
+  .notify-btn.blocked { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+  .notify-btn[disabled] { opacity: .5; cursor: default; }
+
+  /* ── Dashboard link (origin-aware fallback; revealed by JS only when the dashboard is reachable) ── */
+  .dash-link { display: block; text-align: center; text-decoration: none; margin-top: 10px; }
+  .dash-link:hover { text-decoration: none; color: var(--text); border-color: var(--border); }
+  .dash-link[hidden] { display: none; }
+
+  /* ── Deep-link action buttons (claude-cli://) — injected by JS when #plan-state.deepLinks is set ── */
+  .cc-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 2px; }
+  .cc-actions.hero-actions { margin: 18px 0 0; }
+  .cc-action { display: inline-flex; align-items: center; gap: 7px; font-family: inherit; font-size: 12.5px; font-weight: 600;
+    padding: 7px 13px; border-radius: 9px; cursor: pointer; text-decoration: none; transition: transform .13s, border-color .13s, box-shadow .13s;
+    background: color-mix(in srgb, var(--accent-2) 13%, var(--panel)); color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--accent-2) 42%, transparent); }
+  .cc-action:hover { text-decoration: none; transform: translateY(-1px); border-color: var(--accent-2); box-shadow: 0 4px 14px rgba(139,123,255,.18); }
+  .cc-action .ic { font-size: 13px; line-height: 1; }
+  .cc-action.start  { background: color-mix(in srgb, var(--accent) 13%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
+  .cc-action.start:hover  { border-color: var(--accent); box-shadow: 0 4px 14px rgba(86,182,255,.18); }
+  .cc-action.ghost  { background: var(--panel-2); border-color: var(--border); color: var(--muted); }
+  .cc-action.ghost:hover  { color: var(--text); border-color: var(--accent); }
+  .await-bar .cc-actions { margin: 0 0 0 4px; }
+  .await-bar .cc-action { padding: 5px 11px; font-size: 12px; }
+
+  /* ── Status filter (sidebar) ── */
+  .filterbar { display: flex; gap: 4px; margin-top: 6px; }
+  .filterbar button { flex: 1; cursor: pointer; font-family: inherit; font-size: 10.5px; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border-soft); border-radius: 7px; padding: 6px 3px; transition: all .12s; }
+  .filterbar button:hover { color: var(--text); }
+  .filterbar button.active { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); font-weight: 600; }
+
+  /* ── Collapsible phases ── */
+  .chev { flex: none; cursor: pointer; width: 24px; height: 24px; margin-top: 2px; border-radius: 6px; border: 1px solid var(--border-soft);
+    background: var(--panel-2); color: var(--muted); font-size: 11px; line-height: 1; display: grid; place-items: center;
+    transition: transform .15s, color .12s; user-select: none; }
+  .chev:hover { color: var(--text); }
+  .card.collapsed .chev { transform: rotate(-90deg); }
+  .card.collapsed > *:not(.sec-head) { display: none; }
+  .card.collapsed .subprog, .card.collapsed .ts-line { display: none; }
+  .sec-head .chev { margin-right: 4px; }
+
+  /* ── Sub-task checklists ── */
+  .step-check { color: var(--green); font-weight: 700; margin-right: 6px; }
+  .step-done { opacity: .55; }
+  .subprog { display: flex; align-items: center; gap: 9px; margin: 10px 0 2px; }
+  .subprog .subbar { position: relative; flex: 1; max-width: 240px; height: 5px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+  .subprog .subbar > i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px; background: var(--green); transition: width .45s cubic-bezier(.2,.7,.2,1); }
+  .subprog .subcount { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .ts-line { font-family: ui-monospace, monospace; font-size: 11px; color: var(--faint); margin: 6px 0 0; }
+  .ts-line b { color: var(--muted); font-weight: 600; }
+
+  /* ── Activity log timeline ── */
+  .timeline { list-style: none; margin: 8px 0 0; padding: 0; }
+  .timeline li { position: relative; padding: 0 0 14px 26px; font-size: 13.5px; }
+  .timeline li::before { content: ""; position: absolute; left: 3px; top: 5px; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--cyan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cyan) 18%, transparent); }
+  .timeline li::after { content: ""; position: absolute; left: 7px; top: 16px; bottom: -2px; width: 1.5px; background: var(--border-soft); }
+  .timeline li:last-child { padding-bottom: 0; }
+  .timeline li:last-child::after { display: none; }
+  .timeline .tl-t { font-family: ui-monospace, monospace; font-size: 11px; color: var(--faint); margin-right: 9px; }
+  .timeline .tl-x { color: var(--text); }
+
+
+  @media (prefers-reduced-motion: reduce) {
+    .status, .rm-num, .card, .hero, .roadmap, .live-badge .live-dot::after, .await-bar, .await-bar .wd::after { animation: none !important; }
+    .subprog .subbar > i, .chev { transition: none !important; }
+    .confetti-cv { display: none; }
+  }
+
+  /* ── Futuristic: background, glass, spotlight, HUD ── */
+  .bgfx { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .bgfx::before, .bgfx::after { content: ""; position: absolute; border-radius: 50%; filter: blur(85px); opacity: .5; mix-blend-mode: screen; }
+  .bgfx::before { width: 60vw; height: 60vw; left: -12vw; top: -22vh; background: radial-gradient(circle, rgba(139,123,255,.55), transparent 60%); animation: aurora-a 26s ease-in-out infinite; }
+  .bgfx::after  { width: 55vw; height: 55vw; right: -16vw; bottom: -26vh; background: radial-gradient(circle, rgba(52,211,196,.45), transparent 60%); animation: aurora-b 32s ease-in-out infinite; }
+  @keyframes aurora-a { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(8vw,6vh) scale(1.15); } }
+  @keyframes aurora-b { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-7vw,-5vh) scale(1.1); } }
+  #stars { position: absolute; inset: 0; display: block; }
+  html[data-theme="light"] .bgfx { opacity: .55; }
+  html[data-theme="light"] .bgfx::before { background: radial-gradient(circle, rgba(107,84,230,.32), transparent 60%); }
+  html[data-theme="light"] .bgfx::after  { background: radial-gradient(circle, rgba(18,159,146,.28), transparent 60%); }
+
+  .shell { position: relative; z-index: 1; }
+  .card { background: color-mix(in srgb, var(--panel) 72%, transparent); backdrop-filter: blur(14px) saturate(1.25); -webkit-backdrop-filter: blur(14px) saturate(1.25); }
+  .sidebar { backdrop-filter: blur(10px) saturate(1.1); -webkit-backdrop-filter: blur(10px) saturate(1.1); background: color-mix(in srgb, var(--bg) 35%, transparent); }
+
+  .spotlight { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity .5s; mix-blend-mode: screen;
+    background: radial-gradient(240px circle at var(--mx,-200px) var(--my,-200px), color-mix(in srgb, var(--accent) 22%, transparent), transparent 72%); }
+  .spotlight.on { opacity: 1; }
+
+  .hero h1 { background: linear-gradient(100deg, var(--text) 22%, var(--cyan) 42%, var(--accent-2) 56%, var(--text) 74%); background-size: 220% auto; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; animation: title-sheen 7.5s linear infinite; }
+  @keyframes title-sheen { to { background-position: 220% center; } }
+
+  .hud { position: fixed; inset: 0; z-index: 3; pointer-events: none; }
+  .hud span { position: absolute; width: 24px; height: 24px; border: 1.5px solid color-mix(in srgb, var(--cyan) 55%, transparent); opacity: .45; }
+  .hud span:nth-child(1) { top: 14px; left: 14px; border-right: none; border-bottom: none; }
+  .hud span:nth-child(2) { top: 14px; right: 14px; border-left: none; border-bottom: none; }
+  .hud span:nth-child(3) { bottom: 14px; left: 14px; border-right: none; border-top: none; }
+  .hud span:nth-child(4) { bottom: 14px; right: 14px; border-left: none; border-top: none; }
+
+  @keyframes ring-surge { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cyan) 70%, transparent); } 100% { box-shadow: 0 0 0 20px transparent; } }
+  .ring.surge { animation: ring-surge 1s ease-out; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bgfx::before, .bgfx::after, .hero h1, .ring.surge { animation: none !important; }
+    .spotlight { display: none; }
+  }
+
+  /* ── Phone: off-canvas drawer sidebar (≤640px). Overrides the 940px static-stack rule. ── */
+  .nav-toggle, .nav-backdrop { display: none; }
+  @media (max-width: 640px) {
+    .nav-toggle {
+      position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 12px; z-index: 60;
+      display: grid; place-items: center; width: 44px; height: 44px; border-radius: 11px;
+      cursor: pointer; font-size: 19px; line-height: 1; color: var(--text); font-family: inherit;
+      background: color-mix(in srgb, var(--panel) 86%, transparent); border: 1px solid var(--border);
+      backdrop-filter: blur(10px) saturate(1.2); -webkit-backdrop-filter: blur(10px) saturate(1.2);
+      box-shadow: 0 6px 20px rgba(0,0,0,.4);
+    }
+    .shell { grid-template-columns: 1fr; }
+    .sidebar {
+      position: fixed; top: 0; left: 0; z-index: 70; height: 100vh; height: 100dvh;
+      width: min(86vw, 320px); border-right: 1px solid var(--border); border-bottom: none;
+      transform: translateX(-100%); transition: transform .26s cubic-bezier(.2,.7,.2,1);
+      padding: calc(20px + env(safe-area-inset-top)) 18px 32px; overflow-y: auto;
+      background: color-mix(in srgb, var(--bg) 92%, transparent);
+    }
+    body.nav-open .sidebar { transform: none; }
+    .nav-backdrop {
+      display: block; position: fixed; inset: 0; z-index: 65; background: rgba(0,0,0,.5);
+      opacity: 0; pointer-events: none; transition: opacity .26s;
+    }
+    body.nav-open .nav-backdrop { opacity: 1; pointer-events: auto; }
+    .main { padding: calc(64px + env(safe-area-inset-top)) 16px 70px; }
+    .hero h1 { font-size: 26px; }
+    .card { padding: 20px 17px; }
+    nav.toc a { padding: 9px 10px; font-size: 13.5px; }       /* larger touch targets */
+    nav.toc .toc-sub a { padding: 7px 10px 7px 6px; }
+    .status { padding: 9px 15px; }
+    /* waiting banner: full-width bar beside the menu button, not a centered tall pill */
+    .await-bar { left: 56px; right: 10px; transform: none; max-width: none; border-radius: 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .sidebar, .nav-backdrop { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="bgfx"><canvas id="stars"></canvas></div>
+<div class="spotlight"></div>
+<div class="hud"><span></span><span></span><span></span><span></span></div>
+
+<!-- "Waiting for your input" banner — populated from #plan-state `waiting` when set -->
+<div class="await-bar" id="await-bar" role="status" title="Jump to the section in question">
+  <span class="wd"></span>
+  <span class="wq"><b>Waiting for your input</b> <span class="qt" id="await-text"></span></span>
+</div>
+
+<!-- Phone nav drawer controls (hidden ≥641px) -->
+<button class="nav-toggle" id="nav-toggle" aria-label="Open navigation" aria-expanded="false">☰</button>
+<div class="nav-backdrop" id="nav-backdrop"></div>
+
+<div class="shell">
+
+  <!-- ───────── Sidebar ───────── -->
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><b>Professor Clippy</b></div>
+    <div class="brand-sub">⎇ main · 27 decisions</div>
+
+    <div class="ring-wrap">
+      <div class="ring" id="ring"><span id="ring-pct">0%</span></div>
+      <div class="ring-meta"><b id="ring-count">0 / N</b><span>build sections done</span></div>
+    </div>
+
+    <div class="toc-label">Plan</div>
+    <nav class="toc" id="toc">
+      <a href="#scaffold" data-track="scaffold"><span class="mk"></span>Scaffold</a>
+      <a href="#core" data-track="core"><span class="mk"></span>Core service</a>
+      <a href="#ui" data-track="ui"><span class="mk"></span>Sticky note + Clippy</a>
+      <a href="#mcp" data-track="mcp"><span class="mk"></span>MCP + agent wiring</a>
+      <a href="#brain" data-track="brain"><span class="mk"></span>Clippy brain</a>
+      <a href="#whatsapp" data-track="whatsapp"><span class="mk"></span>WhatsApp + Worker</a>
+      <a href="#install" data-track="install"><span class="mk"></span>Install + polish</a>
+    </nav>
+    <div class="toc-label">Reference</div>
+    <nav class="toc">
+      <a href="#arch"><span class="mk" style="background:transparent"></span>Architecture</a>
+      <a href="#effort"><span class="mk" style="background:transparent"></span>Relative effort</a>
+      <a href="#risks"><span class="mk" style="background:transparent"></span>Risks</a>
+      <a href="#verify"><span class="mk" style="background:transparent"></span>Verification</a>
+      <a href="#decisions"><span class="mk" style="background:transparent"></span>Decisions</a>
+      <a href="#activity"><span class="mk" style="background:transparent"></span>Activity log</a>
+    </nav>
+
+    <div class="toc-label">View</div>
+    <div class="filterbar" id="filterbar">
+      <button data-filter="all" class="active">All</button>
+      <button data-filter="todo">To do</button>
+      <button data-filter="doing">Doing</button>
+      <button data-filter="done">Done</button>
+    </div>
+
+    <button class="theme-btn" id="theme-btn">◐ Toggle light / dark</button>
+    <button class="notify-btn" id="notify-btn">🔔 Notify me</button>
+    <!-- Origin-aware link to the live dashboard; hidden until JS confirms it's reachable. -->
+    <a class="theme-btn dash-link" id="dash-link" hidden>⊞ Open dashboard</a>
+  </aside>
+
+  <!-- ───────── Main ───────── -->
+  <main class="main">
+
+    <header class="hero">
+      <div class="eyebrow">Implementation Plan · from 27 grilled decisions</div>
+      <h1>Professor Clippy 📎</h1>
+      <p>A paperclip professor clipped to an always-on-top sticky note. Any agent on this PC can leave you notes, reminders and questions through MCP. Every message is mirrored to WhatsApp, and you can chat with Clippy (headless Claude Code) from the desk or your phone.</p>
+      <div class="chips">
+        <span class="chip"><b>Electron</b> + TypeScript</span>
+        <span class="chip"><b>MCP</b> for agents</span>
+        <span class="chip"><b>Claude Code</b> headless brain</span>
+        <span class="chip"><b>Meta Cloud API</b> WhatsApp</span>
+        <span class="chip"><b>Cloudflare</b> Worker relay</span>
+        <span class="chip"><b>SQLite</b> history</span>
+      </div>
+    </header>
+
+    <div class="roadmap" id="roadmap">
+      <a class="rm-node" href="#scaffold" data-track="scaffold"><div class="rm-num">1</div><div class="rm-label">Scaffold</div></a>
+      <a class="rm-node" href="#core" data-track="core"><div class="rm-num">2</div><div class="rm-label">Core service</div></a>
+      <a class="rm-node" href="#ui" data-track="ui"><div class="rm-num">3</div><div class="rm-label">Sticky note + Clippy</div></a>
+      <a class="rm-node" href="#mcp" data-track="mcp"><div class="rm-num">4</div><div class="rm-label">MCP + agent wiring</div></a>
+      <a class="rm-node" href="#brain" data-track="brain"><div class="rm-num">5</div><div class="rm-label">Clippy brain</div></a>
+      <a class="rm-node" href="#whatsapp" data-track="whatsapp"><div class="rm-num">6</div><div class="rm-label">WhatsApp + Worker</div></a>
+      <a class="rm-node" href="#install" data-track="install"><div class="rm-num">7</div><div class="rm-label">Install + polish</div></a>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--border)"></i> To do</span>
+      <span><i style="background:var(--amber)"></i> In progress</span>
+      <span><i style="background:var(--green)"></i> Done</span>
+      <span style="color:var(--faint)">— status reflects implementation progress; roadmap &amp; sidebar mirror it</span>
+    </div>
+
+    <!-- ───────── Architecture (reference) ───────── -->
+    <section id="arch" class="card plain">
+      <div class="sec-kicker">Big picture</div>
+      <h2>Architecture</h2>
+      <p>One Electron app owns all the state. Everything else either talks to it over localhost or is a thin cloud relay that the app reaches with outbound connections only. Nothing on the PC listens on a public interface.</p>
+      <div class="diagram">
+        <div class="dg-title">message in → desk + phone</div>
+        <div class="flow">
+          <div class="col">
+            <div class="node q"><b>Claude Code agent</b><small>"leave me a message"</small></div>
+            <div class="node q"><b>Claude Code hook</b><small>Stop / Notification</small></div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="col"><div class="node"><b>clippy-mcp</b><small>stdio MCP server</small></div><div class="node"><b>clippy-hook</b><small>tiny node script</small></div></div>
+          <div class="arrow">→</div>
+          <div class="col"><div class="node hl"><b>Electron main</b><small>127.0.0.1 API · SQLite · scheduler</small></div></div>
+          <div class="arrow">→</div>
+          <div class="col">
+            <div class="node ans"><b>Sticky note window</b><small>stack · chat · antics</small></div>
+            <div class="node ans"><b>Cloudflare Worker</b><small>→ Meta Cloud API → 📱</small></div>
+          </div>
+        </div>
+      </div>
+      <div class="diagram">
+        <div class="dg-title">reply in → the right place</div>
+        <div class="flow">
+          <div class="col"><div class="node q"><b>You on WhatsApp</b><small>quote-reply or plain</small></div></div>
+          <div class="arrow">→</div>
+          <div class="col"><div class="node"><b>Meta webhook</b><small>signed POST</small></div></div>
+          <div class="arrow">→</div>
+          <div class="col"><div class="node"><b>Worker + Durable Object</b><small>verify · queue</small></div></div>
+          <div class="arrow">→</div>
+          <div class="col"><div class="node hl"><b>Electron main</b><small>outbound WebSocket</small></div></div>
+          <div class="arrow">→</div>
+          <div class="col">
+            <div class="node ans"><b>Quote-reply</b><small>answers that ask_user</small></div>
+            <div class="node ans"><b>Plain text</b><small>goes to Clippy brain</small></div>
+          </div>
+        </div>
+      </div>
+      <div class="diagram">
+        <div class="dg-title">repo layout (pnpm workspace)</div>
+        <div class="tree"><span class="dir">professor-clippy/</span>
+├─ <span class="dir">packages/shared/</span>        <small>message types, zod schemas, API client</small>
+├─ <span class="dir">apps/desktop/</span>           <small>Electron (electron-vite)</small>
+│  ├─ <span class="dir">src/main/</span>
+│  │  ├─ <span class="nm">api.ts</span>            <small>127.0.0.1 HTTP + bearer token</small>
+│  │  ├─ <span class="nm">store.ts</span>          <small>better-sqlite3</small>
+│  │  ├─ <span class="nm">scheduler.ts</span>      <small>one-off + RRULE recurring</small>
+│  │  ├─ <span class="nm">brain.ts</span>          <small>headless claude -p --resume</small>
+│  │  ├─ <span class="nm">relay.ts</span>          <small>WebSocket to Worker</small>
+│  │  └─ <span class="nm">window.ts</span>         <small>always-on-top, mini/expanded</small>
+│  └─ <span class="dir">src/renderer/</span>
+│     ├─ <span class="dir">clippy/</span>           <small>SVG rig + CSS animations</small>
+│     ├─ <span class="nm">NoteStack.tsx</span>  <span class="nm">Chat.tsx</span>  <span class="nm">History.tsx</span>  <span class="nm">Settings.tsx</span>
+│     └─ <span class="dir">quips/</span>            <small>canned one-liners, sounds</small>
+├─ <span class="dir">apps/mcp/</span>               <small>stdio MCP server → local API</small>
+├─ <span class="dir">apps/hook/</span>              <small>Claude Code hook → local API</small>
+├─ <span class="dir">apps/worker/</span>            <small>Cloudflare Worker + Durable Object</small>
+└─ <span class="dir">scripts/</span>                <small>install-claude-wiring.ts</small></div>
+      </div>
+    </section>
+
+    <!-- ───────── Phase 1 ───────── -->
+    <section id="scaffold" class="card phase" data-accent="blue">
+      <div class="sec-head">
+        <div class="titles">
+          <div class="sec-kicker">Phase 1 · Foundation</div>
+          <h2>Scaffold <span class="muted-tail">— workspace, Electron shell, shared types</span></h2>
+        </div>
+        <button class="status" data-track="scaffold">To do</button>
+      </div>
+      <ol class="steps" data-steps="scaffold">
+        <li><b>pnpm workspace.</b> Set up <code>packages/shared</code>, <code>apps/desktop</code>, <code>apps/mcp</code>, <code>apps/hook</code> and <code>apps/worker</code>, with strict TS, ESLint, Vitest and a root <code>pnpm dev</code>.</li>
+        <li><b>Electron shell.</b> electron-vite with React in the renderer. A single-instance lock so a second launch focuses the existing Clippy.</li>
+        <li><b>Shared message model.</b> zod schemas for <code>Message</code>, <code>Reminder</code>, <code>Ask</code> and <code>Reply</code>, used by the app, MCP server, hook and Worker alike.</li>
+        <li><b>App data dir.</b> <code>%APPDATA%/professor-clippy/</code> holds <code>clippy.db</code>, <code>token</code> (random, created on first run), <code>port</code> and <code>settings.json</code>.</li>
+      </ol>
+    </section>
+
+    <!-- ───────── Phase 2 ───────── -->
+    <section id="core" class="card phase">
+      <div class="sec-head">
+        <div class="titles">
+          <div class="sec-kicker">Phase 2 · Engine</div>
+          <h2>Core service <span class="muted-tail">— store, local API, scheduler</span></h2>
+        </div>
+        <button class="status" data-track="core">To do</button>
+      </div>
+      <p>This all lives in Electron's main process. The note window, desk chat and WhatsApp all read the same store, so a message dismissed or answered on one side is done everywhere (decision 27).</p>
+      <div class="diagram">
+        <div class="dg-title">messages</div>
+        <div class="schema">
+          <div class="row"><span class="col-name">id</span><span class="col-type">text (ulid)</span><span class="col-note">primary key</span></div>
+          <div class="row"><span class="col-name">kind</span><span class="col-type">note|reminder|ask|chat</span><span class="col-note">chat = Clippy brain turns</span></div>
+          <div class="row"><span class="col-name">body</span><span class="col-type">text</span><span class="col-note">shown verbatim (decision 12)</span></div>
+          <div class="row"><span class="col-name">sender / project</span><span class="col-type">text</span><span class="col-note">"Claude Code · finestra-tools"</span></div>
+          <div class="row"><span class="col-name">urgent</span><span class="col-type">bool</span><span class="col-note">stronger attention animation</span></div>
+          <div class="row"><span class="col-name">state</span><span class="col-type">unread|done|snoozed</span><span class="col-note">done = moved to history</span></div>
+          <div class="row"><span class="col-name">wa_id</span><span class="col-type">text?</span><span class="col-note">WhatsApp message id, for quote-reply routing</span></div>
+          <div class="row"><span class="col-name">answer</span><span class="col-type">text?</span><span class="col-note">for asks; answered_via desk|whatsapp|clippy</span></div>
+          <div class="row"><span class="col-name">created_at / done_at</span><span class="col-type">int</span><span class="col-note">FTS5 index on body for history search</span></div>
+        </div>
+      </div>
+      <div class="diagram">
+        <div class="dg-title">reminders</div>
+        <div class="schema">
+          <div class="row"><span class="col-name">id</span><span class="col-type">text</span><span class="col-note">mirrored to the Worker (decision 20)</span></div>
+          <div class="row"><span class="col-name">body / sender</span><span class="col-type">text</span><span class="col-note"></span></div>
+          <div class="row"><span class="col-name">due_at</span><span class="col-type">int (UTC ms)</span><span class="col-note">next fire time</span></div>
+          <div class="row"><span class="col-name">rrule</span><span class="col-type">text?</span><span class="col-note">RFC 5545 for recurring ("every weekday 9:00")</span></div>
+          <div class="row"><span class="col-name">snoozed_until</span><span class="col-type">int?</span><span class="col-note"></span></div>
+        </div>
+      </div>
+      <ol class="steps" data-steps="core">
+        <li><b>Store.</b> better-sqlite3 with migrations. Tables are <code>messages</code>, <code>reminders</code> and <code>kv</code> (session id, last WhatsApp inbound time, window position).</li>
+        <li><b>Local API.</b> Bound to <code>127.0.0.1</code> on a random port, which is written to the <code>port</code> file. Every request needs <code>Authorization: Bearer &lt;token&gt;</code>. Routes: <code>POST /messages</code>, <code>POST /reminders</code>, <code>DELETE /reminders/:id</code>, <code>POST /asks</code>, <code>GET /asks/:id?wait=600</code> (long-poll), <code>GET /messages</code>.</li>
+        <li><b>Scheduler.</b> A single timer armed for the next <code>due_at</code>. The <code>rrule</code> package computes the next fire for recurring reminders. On boot and on resume (<code>powerMonitor</code>), reminders that fired while the PC was off are marked "missed while you were away".</li>
+        <li><b>Event bus.</b> Main-process events (<code>message:new</code>, <code>message:done</code>, <code>ask:answered</code>) fan out to the renderer over IPC and to the relay (Phase 6).</li>
+        <li><b>Tests.</b> Vitest covering the store, RRULE next-fire, long-poll timeout and token rejection.</li>
+      </ol>
+    </section>
+
+    <!-- ───────── Phase 3 ───────── -->
+    <section id="ui" class="card phase" data-accent="green">
+      <div class="sec-head">
+        <div class="titles">
+          <div class="sec-kicker">Phase 3 · The funny part</div>
+          <h2>Sticky note + Professor Clippy <span class="muted-tail">— window, character, antics</span></h2>
+        </div>
+        <button class="status" data-track="ui">To do</button>
+      </div>
+      <div class="compare">
+        <div class="pick"><div class="ct">Mini mode (idle)</div><ul><li>~120×140 transparent window in a corner</li><li>Just Clippy plus an unread badge</li><li>Drag anywhere; position is remembered per display</li><li>Idle life: blinks, adjusts glasses, reads a tiny book, falls asleep (zzz)</li></ul></div>
+        <div class="good"><div class="ct">Expanded (new message)</div><ul><li>Yellow sticky note slides out; Clippy clips onto its top edge</li><li>Note stack (newest on top), a quip speech bubble and a chat box</li><li>Done / Snooze / Answer buttons per note</li><li>History tab with search</li></ul></div>
+        <div class="bad"><div class="ct">Attention escalation</div><ul><li>New message: jump out of mini mode with an eyebrow waggle</li><li>Ignored for 2 min: taps on the "glass"</li><li>Ignored for 10 min: bigger antics (urgent messages start here)</li><li>Each stage plays a sound; mute toggle</li></ul></div>
+      </div>
+      <ol class="steps" data-steps="ui">
+        <li><b>Window.</b> <code>BrowserWindow</code> with frameless, transparent, <code>skipTaskbar</code> and <code>setAlwaysOnTop(true, 'screen-saver')</code> so it stays above everything. Mini and expanded are two sizes of the same window. The transparent area is click-through via <code>setIgnoreMouseEvents(true, {forward:true})</code>.</li>
+        <li><b>Clippy SVG rig.</b> An original design: a bent-wire paperclip body, googly eyes with pupils that track the cursor, eyebrows, a mortarboard with a swinging tassel, round glasses and a tiny tweed bow tie. Parts are separate SVG groups so CSS keyframes can animate each one.</li>
+        <li><b>Animation states.</b> <code>idle</code>, <code>blink</code>, <code>read</code>, <code>sleep</code>, <code>wake</code>, <code>jump</code>, <code>tap-glass</code>, <code>think</code> (while the brain is replying) and <code>celebrate</code> (all notes done). A small state machine in the renderer picks them.</li>
+        <li><b>Note stack + history.</b> Unread stack with Done and Snooze (10m / 1h / tomorrow). The History tab uses SQLite FTS search. Ask cards show the question with an answer box.</li>
+        <li><b>Quips &amp; unsolicited advice.</b> A JSON pack of canned one-liners, tagged by context (build, error, reminder, late-night). Unsolicited advice fires at random 30–90 min intervals ("It looks like you're writing a for-loop. Would you like me to judge it?"), with an off switch.</li>
+        <li><b>Sounds.</b> Original short dings and boings (not Microsoft assets), with a mute toggle in settings and on right-click.</li>
+      </ol>
+      <div class="callout warn">The character must be <b>original</b> and only inspired by Clippy, with no Office sprites or sounds. That keeps you safe if you ever share it.</div>
+    </section>
+
+    <!-- ───────── Phase 4 ───────── -->
+    <section id="mcp" class="card phase">
+      <div class="sec-head">
+        <div class="titles">
+          <div class="sec-kicker">Phase 4 · Agents in</div>
+          <h2>MCP server + Claude Code wiring</h2>
+        </div>
+        <button class="status" data-track="mcp">To do</button>
+      </div>
+      <table>
+        <tr><th>Tool</th><th>Args</th><th>Behaviour</th></tr>
+        <tr><td>leave_message</td><td>body, urgent?, title?</td><td>Posts a note. The sender and project are filled in automatically from the cwd and client name.</td></tr>
+        <tr><td>remind_me</td><td>body, when (ISO or natural), repeat? (RRULE)</td><td>Creates a reminder, synced to the Worker. Returns the id and a human-readable time.</td></tr>
+        <tr><td>ask_user</td><td>question, options?, timeout_s = 600</td><td>Long-polls until you answer on the desk, by WhatsApp quote-reply, or through Clippy. On timeout it returns <code>{status:"pending", id}</code>.</td></tr>
+        <tr><td>check_reply</td><td>id</td><td>Non-blocking check on an earlier ask.</td></tr>
+        <tr><td>list_reminders / cancel_reminder</td><td>—/id</td><td>Manage reminders.</td></tr>
+      </table>
+      <ol class="steps" data-steps="mcp">
+        <li><b>Server.</b> <code>@modelcontextprotocol/sdk</code> over stdio. It reads <code>port</code> and <code>token</code> from the app data dir. If the app isn't running, it launches it and retries.</li>
+        <li><b>Long-running ask.</b> Send MCP progress notifications every 30s while waiting, and set <code>MCP_TOOL_TIMEOUT</code> in the Claude Code env so a 10-minute wait isn't cut off.</li>
+        <li><b>Hook script.</b> <code>apps/hook</code> reads the hook JSON from stdin. On <code>Stop</code> it posts "✅ &lt;project&gt; agent finished" with the last assistant line; on <code>Notification</code> it posts "🔐 needs permission" as urgent. It skips the post if the app is down, and can be toggled in settings.</li>
+        <li><b>Wiring script.</b> Runs <code>claude mcp add --scope user clippy -- node …/mcp.js</code>, merges the Stop and Notification hooks into <code>~/.claude/settings.json</code>, and appends the hint line to <code>~/.claude/CLAUDE.md</code>. It's idempotent, with a matching uninstall.</li>
+      </ol>
+      <div class="callout">CLAUDE.md hint: <i>"When the user asks you to leave a message, remind them, notify them, or check with them, use the Professor Clippy MCP tools (leave_message / remind_me / ask_user)."</i></div>
+    </section>
+
+    <!-- ───────── Phase 5 ───────── -->
+    <section id="brain" class="card phase">
+      <div class="sec-head">
+        <div class="titles">
+          <div class="sec-kicker">Phase 5 · Chat</div>
+          <h2>Clippy brain <span class="muted-tail">— headless Claude Code, one shared session</span></h2>
+        </div>
+        <button class="status" data-track="brain">To do</button>
+      </div>
+      <div class="diagram">
+        <div class="dg-title">one chat turn</div>
+        <div class="flow">
+          <div class="col"><div class="node q"><b>You type</b><small>desk or WhatsApp plain msg</small></div></div>
+          <div class="arrow">→</div>
+          <div class="col"><div class="node"><b>brain.ts queue</b><small>one turn at a time</small></div></div>
+          <div class="arrow">→</div>
+          <div class="col"><div class="node hl"><b>claude -p</b><small>--resume &lt;session&gt; · stream-json</small></div></div>
+          <div class="arrow">→</div>
+          <div class="col"><div class="node ans"><b>Reply</b><small>note window + same channel back</small></div></div>
+        </div>
+      </div>
+      <ol class="steps" data-steps="brain">
+        <li><b>Spawn the CLI.</b> <code>claude -p &lt;msg&gt; --resume &lt;id&gt; --output-format stream-json --append-system-prompt &lt;persona&gt; --mcp-config clippy.json</code>, running under your Claude Code login with no API key. The session id is stored in <code>kv</code>, and "New chat" clears it.</li>
+        <li><b>Permissions (decision 11).</b> <code>--allowedTools</code>: Read, Glob, Grep, WebSearch, WebFetch and the <code>mcp__clippy__*</code> tools. <code>--disallowedTools</code>: Edit, Write, Bash, NotebookEdit. The working dir is set to your home folder.</li>
+        <li><b>Persona prompt.</b> A smug, helpful, slightly pompous paperclip professor. Short replies, especially over WhatsApp. It can answer pending agent questions for you with an <code>answer_pending</code> tool.</li>
+        <li><b>Streaming UI.</b> Clippy uses the <code>think</code> animation while tokens stream into a speech bubble or the chat pane. WhatsApp gets the final text in one message.</li>
+        <li><b>Turn queue.</b> Desk and WhatsApp share one session, so turns are serialised: a message arriving mid-turn waits its turn.</li>
+      </ol>
+    </section>
+
+    <!-- ───────── Phase 6 ───────── -->
+    <section id="whatsapp" class="card phase" data-accent="blue">
+      <div class="sec-head">
+        <div class="titles">
+          <div class="sec-kicker">Phase 6 · Phone</div>
+          <h2>WhatsApp via Meta Cloud API + Cloudflare Worker</h2>
+        </div>
+        <button class="status" data-track="whatsapp">To do</button>
+      </div>
+      <p>The Worker is the only thing with a public URL. It holds the Meta token, receives the webhook, decides between free-form and template sends, and fires reminders even when the PC is off. A single <b>Durable Object</b> (SQLite-backed) keeps the queue and reminders, and its <b>alarm</b> fires at each reminder's exact due time. That alarm is how decision 20's "Worker cron" gets implemented.</p>
+      <div class="compare">
+        <div class="good"><div class="ct">Inside 24h of your last WA message</div><ul><li>Free-form text, full length</li><li>Free</li></ul></div>
+        <div class="bad"><div class="ct">Outside the 24h window</div><ul><li>Utility template <code>clippy_note</code>: "Professor Clippy 📎: {{1}}"</li><li>Body cut at ~1000 chars + "…more on desktop"</li><li>Small Meta fee per message</li></ul></div>
+      </div>
+      <ol class="steps" data-steps="whatsapp">
+        <li><b>Meta setup (manual, guided).</b> Create a Meta app with the WhatsApp product, using the <b>test number</b> (decision 14). Add your phone as a verified recipient. Create a <b>system user</b> with a permanent token. Submit the <code>clippy_note</code> utility template for approval.</li>
+        <li><b>Worker routes.</b> <code>GET /webhook</code> (verify token handshake). <code>POST /webhook</code> (check <code>X-Hub-Signature-256</code> with the app secret, then queue). <code>POST /send</code>, <code>PUT/DELETE /reminders/:id</code> and <code>GET /ws</code>. Every PC-facing route needs a shared bearer secret.</li>
+        <li><b>Relay client.</b> <code>relay.ts</code> keeps an outbound WebSocket to the Durable Object, reconnecting with backoff. Inbound replies are pushed down it and acked, and anything queued while the PC was off drains on connect.</li>
+        <li><b>Mirror everything (decision 15).</b> Every new note, reminder and ask goes to <code>/send</code>. The Worker picks free-form or template from the last-inbound time and returns the <code>wamid</code>, which the app stores in <code>messages.wa_id</code>.</li>
+        <li><b>Routing (decision 17).</b> If an inbound message has <code>context.id</code> equal to an ask's <code>wa_id</code>, it answers that ask. Otherwise it goes to the brain as a plain chat turn. Inbound text marks matching notes done when you reply "done" in a quote.</li>
+        <li><b>Reminders off-PC.</b> When the alarm fires, the Worker sends the WhatsApp and records <code>sent_at</code>. The desktop only shows the reminder (or "missed while you were away") and doesn't re-send it.</li>
+      </ol>
+      <div class="callout warn"><b>Test number caveats.</b> It only sends to verified recipients (you, fine). The permanent token must come from a system user, not the 24h token on the dashboard. Meta may change test-number limits, and swapping to a real number later only changes the Worker config.</div>
+    </section>
+
+    <!-- ───────── Phase 7 ───────── -->
+    <section id="install" class="card phase" data-accent="green">
+      <div class="sec-head">
+        <div class="titles">
+          <div class="sec-kicker">Phase 7 · Ship it</div>
+          <h2>Install + polish</h2>
+        </div>
+        <button class="status" data-track="install">To do</button>
+      </div>
+      <ol class="steps" data-steps="install">
+        <li><b>Installer.</b> electron-builder NSIS, per-user, with no admin rights needed. The first-run wizard covers the Worker URL and secret (or "skip WhatsApp for now"), sound, and unsolicited advice on or off.</li>
+        <li><b>Auto-start.</b> <code>app.setLoginItemSettings({ openAtLogin: true })</code>, toggleable in settings.</li>
+        <li><b>Claude wiring.</b> The first run offers to run the Phase 4 wiring script for the MCP server, hooks and CLAUDE.md hint, showing exactly what it will change.</li>
+        <li><b>Worker deploy.</b> <code>pnpm --filter worker deploy</code> via wrangler, with secrets set through <code>wrangler secret put</code>: META_TOKEN, APP_SECRET, VERIFY_TOKEN, PC_SECRET, PHONE_NUMBER_ID, MY_NUMBER.</li>
+        <li><b>Settings panel.</b> Toggles for the hook, sounds and unsolicited advice; the ask timeout default; a "New chat" button; and a WhatsApp connection status light.</li>
+        <li><b>README.</b> Covers the Meta setup walkthrough, Worker deploy and a troubleshooting section.</li>
+      </ol>
+    </section>
+
+    <!-- ───────── Effort (reference) ───────── -->
+    <section id="effort" class="card plain">
+      <div class="sec-kicker">Rough size</div>
+      <h2>Relative effort</h2>
+      <div class="hbar">
+        <div class="row"><div class="lbl">Scaffold</div><div class="bars"><div class="barwrap"><div class="bar" style="width:20%"></div><span class="val">S</span></div></div></div>
+        <div class="row"><div class="lbl">Core service</div><div class="bars"><div class="barwrap"><div class="bar" style="width:60%"></div><span class="val">M</span></div></div></div>
+        <div class="row"><div class="lbl">Sticky + Clippy</div><div class="bars"><div class="barwrap"><div class="bar" style="width:100%"></div><span class="val">L (art + animation)</span></div></div></div>
+        <div class="row"><div class="lbl">MCP + wiring</div><div class="bars"><div class="barwrap"><div class="bar" style="width:40%"></div><span class="val">S–M</span></div></div></div>
+        <div class="row"><div class="lbl">Clippy brain</div><div class="bars"><div class="barwrap"><div class="bar" style="width:45%"></div><span class="val">M</span></div></div></div>
+        <div class="row"><div class="lbl">WhatsApp + Worker</div><div class="bars"><div class="barwrap"><div class="bar" style="width:85%"></div><span class="val">L (incl. Meta setup)</span></div></div></div>
+        <div class="row"><div class="lbl">Install + polish</div><div class="bars"><div class="barwrap"><div class="bar" style="width:35%"></div><span class="val">S–M</span></div></div></div>
+      </div>
+      <p>Phases 1→2→4 form the critical path to the first useful milestone: an agent can leave a note on the desk. Phase 3 can run in parallel once the IPC events exist, and Phase 6 only needs the Phase 2 store and events.</p>
+    </section>
+
+    <!-- ───────── Risks (reference) ───────── -->
+    <section id="risks" class="card plain">
+      <div class="sec-kicker">Watch out</div>
+      <h2>Risks &amp; open edges</h2>
+      <table>
+        <tr><th>Risk</th><th>Mitigation</th></tr>
+        <tr><td>MCP tool timeout on ask_user</td><td>Progress notifications, <code>MCP_TOOL_TIMEOUT</code>, and returning <code>pending</code> + id before any client cap.</td></tr>
+        <tr><td>Headless Claude Code auth/limits</td><td>The brain uses your subscription quota. Turns are serialised and replies kept short. If the CLI isn't logged in, the brain shows a clear error.</td></tr>
+        <tr><td>Meta template rejection</td><td>Keep the utility wording plain and resubmit. Until it's approved, outside-window messages queue and are sent when you next message Clippy.</td></tr>
+        <tr><td>Always-on-top vs full-screen apps / games</td><td>Hide while a full-screen app has focus, behind a settings toggle.</td></tr>
+        <tr><td>Agent-finished hook spam</td><td>Collapse multiple Stops from the same project within 60s into one note, plus the toggle.</td></tr>
+        <tr><td>Clippy IP</td><td>Original art and sounds only (decision 5).</td></tr>
+      </table>
+    </section>
+
+    <!-- ───────── Verification (reference) ───────── -->
+    <section id="verify" class="card plain">
+      <div class="sec-kicker">Proof</div>
+      <h2>Verification</h2>
+      <ol class="steps">
+        <li><b>Unit.</b> Vitest for the store, scheduler RRULEs, API auth, Worker signature check, 24h-window choice and quote-reply routing.</li>
+        <li><b>Agent → desk.</b> In a fresh Claude Code session: "leave me a message on Clippy saying hi". Clippy jumps out with the note and the sender shows the project.</li>
+        <li><b>Ask round-trip.</b> An agent calls <code>ask_user</code>; quote-reply on WhatsApp; the agent receives the answer. Repeat answering on the desk, then let it time out to get <code>pending</code>.</li>
+        <li><b>Reminder while off.</b> Set a reminder 3 min out and close the app or sleep the PC. WhatsApp still arrives, and on restart the desk shows "missed while you were away".</li>
+        <li><b>Chat.</b> Ask Clippy something on the desk, then follow up on WhatsApp. Same session, so context carries over. Ask it to edit a file and it refuses.</li>
+        <li><b>Install.</b> Reboot: Clippy auto-starts, <code>claude mcp list</code> shows <code>clippy</code>, and the hook fires on agent Stop.</li>
+      </ol>
+    </section>
+
+    <!-- ───────── Decisions (reference) ───────── -->
+    <section id="decisions" class="card plain">
+      <div class="sec-kicker">Source</div>
+      <h2>Decisions this plan implements</h2>
+      <p>All 27 decisions are recorded in <code>DECISIONS.md</code> (Professor Clippy — 2026-10-30). Key ones: always-on-top with collapse to mini (4), MCP for agents (2), a headless Claude Code brain with read-only tools (1, 11), Meta Cloud API on the test number via a Worker relay (9, 13, 14), mirror everything (15), quote-reply routing (17), Worker-fired reminders (20), and all antics on (22).</p>
+    </section>
+
+    <section id="activity" class="card plain">
+      <div class="sec-kicker">Timeline</div>
+      <h2>Activity log</h2>
+    </section>
+
+    <footer>Professor Clippy 📎 — "It looks like you're reading an implementation plan. Would you like help with that?"</footer>
+
+  </main>
+</div>
+
+<!-- ───────── Progress state — the SINGLE source of truth (Claude edits THIS block) ─────────
+     • Set each tracked id to "todo" | "doing" | "done". Keys MUST match the `ids` array.
+     • The page auto-refreshes every few seconds, so edits here show up on their own. -->
+<script id="plan-state" type="application/json">
+{
+ "status": {
+  "scaffold": "todo",
+  "core": "todo",
+  "ui": "todo",
+  "mcp": "todo",
+  "brain": "todo",
+  "whatsapp": "todo",
+  "install": "todo"
+ },
+ "deepLinks": {
+  "cwd": "C:/Users/gbath.SURREY/.t3/projects/professor-clippy",
+  "planPath": "Plans/professor-clippy-plan.html"
+ },
+ "actions": {
+  "scaffold": {
+   "start": "Open the plan at Plans/professor-clippy-plan.html and implement the Scaffold phase (section #scaffold). Update #plan-state as you go."
+  },
+  "core": {
+   "start": "Open the plan at Plans/professor-clippy-plan.html and implement the Core service phase (section #core). Update #plan-state as you go."
+  },
+  "ui": {
+   "start": "Open the plan at Plans/professor-clippy-plan.html and implement the Sticky note + Clippy phase (section #ui). Update #plan-state as you go."
+  },
+  "mcp": {
+   "start": "Open the plan at Plans/professor-clippy-plan.html and implement the MCP + agent wiring phase (section #mcp). Update #plan-state as you go."
+  },
+  "brain": {
+   "start": "Open the plan at Plans/professor-clippy-plan.html and implement the Clippy brain phase (section #brain). Update #plan-state as you go."
+  },
+  "whatsapp": {
+   "start": "Open the plan at Plans/professor-clippy-plan.html and implement the WhatsApp + Worker phase (section #whatsapp). Update #plan-state as you go."
+  },
+  "install": {
+   "start": "Open the plan at Plans/professor-clippy-plan.html and implement the Install + polish phase (section #install). Update #plan-state as you go."
+  }
+ }
+}
+</script>
+
+<script>
+(function () {
+  // ── Config ──
+  var TKEY = 'professor-clippy-theme';     // localStorage: theme preference
+  var SKEY = 'professor-clippy-scroll';    // sessionStorage: scroll Y across reload
+  var ids = ['scaffold', 'core', 'ui', 'mcp', 'brain', 'whatsapp', 'install']; // EXACTLY the tracked section ids
+  var labels = { todo: 'To do', doing: 'In progress', done: 'Done' };
+  var RELOAD_MS = 4000;
+
+  // ── Read embedded state — the SINGLE source of truth (Claude edits #plan-state) ──
+  var emb = null;
+  try { var rawEl = document.getElementById('plan-state'); if (rawEl) emb = JSON.parse(rawEl.textContent); }
+  catch (e) { emb = null; }
+  var status  = (emb && emb.status && typeof emb.status === 'object') ? emb.status : {};
+  function st(id) { return status[id] || 'todo'; }
+  function allDone() { return !!ids.length && ids.filter(function (id) { return st(id) === 'done'; }).length >= ids.length; }
+
+  // ── Deep-link actions — opt-in. Present only when #plan-state.deepLinks exists. ──
+  //   deepLinks: { cwd, planPath }   actions: { <trackedId>: { start } }
+  //   ccUrl() owns ALL encoding so markup never hand-encodes. Builds claude-cli:// (terminal).
+  var deepLinks = (emb && emb.deepLinks && typeof emb.deepLinks === 'object') ? emb.deepLinks : null;
+  var actions   = (emb && emb.actions && typeof emb.actions === 'object') ? emb.actions : {};
+  var CC_MAX_Q  = 5000;   // claude-cli:// `q` hard limit (chars, decoded)
+  function ccUrl(opts) {
+    opts = opts || {};
+    var parts = [];
+    function add(k, v) { if (v != null && v !== '') parts.push(k + '=' + encodeURIComponent(v)); }  // %0A for newlines, etc.
+    var q = opts.q;
+    if (typeof q === 'string' && q.length > CC_MAX_Q) {
+      try { console.warn('[plan] deep-link prompt is ' + q.length + ' chars (> ' + CC_MAX_Q + '); truncating. Point at the plan file instead.'); } catch (e) {}
+      q = q.slice(0, CC_MAX_Q);
+    }
+    add('q', q); add('cwd', opts.cwd); add('repo', opts.repo);   // cwd wins over repo per spec
+    return 'claude-cli://open' + (parts.length ? '?' + parts.join('&') : '');
+  }
+  function actUrl(q) { return ccUrl({ q: q, cwd: deepLinks && deepLinks.cwd }); }
+
+  // ── Render pills / roadmap / ring from embedded state ──
+  [].slice.call(document.querySelectorAll('[data-track]')).forEach(function (el) {
+    var s = st(el.dataset.track);
+    el.setAttribute('data-st', s);
+    if (el.classList.contains('status')) { el.dataset.state = s; el.textContent = labels[s]; }
+  });
+  (function () {
+    var done = ids.filter(function (id) { return st(id) === 'done'; }).length;
+    var pct = ids.length ? Math.round(done / ids.length * 100) : 0;
+    var ring = document.getElementById('ring'); if (ring) ring.style.setProperty('--pct', pct);
+    var rp = document.getElementById('ring-pct'); if (rp) rp.textContent = pct + '%';
+    var rc = document.getElementById('ring-count'); if (rc) rc.textContent = done + ' / ' + ids.length;
+  })();
+
+  // ── Deep-link trigger buttons (Phase 2): hero Open/Continue + per-phase Start ──
+  //    All injected from #plan-state — no markup needed in the plan body.
+  function _ccBtn(cls, icon, label, href) {
+    var a = document.createElement('a');
+    a.className = 'cc-action' + (cls ? ' ' + cls : '');
+    a.href = href; a.rel = 'noopener';
+    a.innerHTML = '<span class="ic">' + icon + '</span>' + label;
+    return a;
+  }
+  (function () {
+    if (!deepLinks) return;                              // feature off unless #plan-state.deepLinks is set
+    var cwd = deepLinks.cwd, planPath = deepLinks.planPath;
+    var openUrl = ccUrl({ cwd: cwd, repo: deepLinks.repo });   // "Open repo": terminal in cwd
+    var hero = document.querySelector('.hero');          // Hero: Open + Continue plan
+    if (hero && !hero.querySelector('.cc-actions')) {
+      var row = document.createElement('div'); row.className = 'cc-actions hero-actions';
+      row.appendChild(_ccBtn('', '⚡', 'Open in Claude Code', openUrl));
+      if (planPath) {
+        var cont = 'Open the implementation plan at ' + planPath + ' and continue executing the next not-done phase. Update #plan-state as you go.';
+        row.appendChild(_ccBtn('ghost', '⏩', 'Continue plan', actUrl(cont)));
+      }
+      hero.appendChild(row);
+    }
+    ids.forEach(function (id) {                          // Per-phase: Start after each .sec-head
+      var spec = actions[id]; if (!spec) return;
+      var section = document.getElementById(id); if (!section) return;
+      var head = section.querySelector('.sec-head'); if (!head || section.querySelector('.cc-actions')) return;
+      var row = document.createElement('div'); row.className = 'cc-actions';
+      if (spec.start)  row.appendChild(_ccBtn('start',  '▶', 'Start in Claude Code', actUrl(spec.start)));
+      if (row.children.length) head.parentNode.insertBefore(row, head.nextSibling);
+    });
+  })();
+
+  // ── "Waiting for your input" banner (Claude sets #plan-state `waiting` when it pauses to ask) ──
+  (function () {
+    var bar = document.getElementById('await-bar'); if (!bar) return;
+    var w = emb && emb.waiting;
+    var q = w ? (typeof w === 'string' ? w : w.question) : null;
+    if (!q) return;                                   // no `waiting` set → banner stays hidden
+    var txt = document.getElementById('await-text'); if (txt) txt.textContent = '— ' + q;
+    bar.classList.add('on');
+    document.title = '⏳ ' + document.title.replace(/^⏳\s*/, '');   // flag the browser tab too
+    var sec = (typeof w === 'object' && w) ? w.section : null;
+    if (sec && document.getElementById(sec)) {
+      bar.classList.add('clickable');
+      bar.onclick = function () { _focusSection(sec); };
+    }
+
+    // Phase 3 — Select & Answer: when deepLinks is configured, let the user reply FROM the doc.
+    //   Each waiting.options[] entry becomes a deep-link button pre-filled with that choice;
+    //   a free-form "Answer" button is always offered. Each opens a fresh claude-cli:// session
+    //   that first reloads context from planPath.
+    if (deepLinks && typeof w === 'object' && w) {
+      var planPath = deepLinks.planPath;
+      var ctx = planPath ? 'Open the plan at ' + planPath + ' and continue executing it. ' : '';
+      var stop = function (e) { e.stopPropagation(); };                     // don't trigger the bar's scroll
+      var row = document.createElement('div'); row.className = 'cc-actions';
+      (Array.isArray(w.options) ? w.options : []).forEach(function (o) {
+        var label = o && (o.label != null ? o.label : o.value); if (!label) return;
+        var ans = ctx + 'For its pending question (' + q + ') I choose: ' + label + '.'
+                + (o.value && o.value !== o.label ? ' [' + o.value + ']' : '');
+        var b = _ccBtn('start', '▶', label, actUrl(ans)); b.addEventListener('click', stop); row.appendChild(b);
+      });
+      var ff = _ccBtn('ghost', '✎', 'Answer in Claude Code', actUrl(ctx + 'Re: its pending question (' + q + ') — '));
+      ff.addEventListener('click', stop); row.appendChild(ff);
+      bar.appendChild(row);
+    }
+  })();
+
+  // ── Granular progress: sub-task checklists, per-phase timestamps, activity log ──
+  (function () {
+    var steps = (emb && emb.steps && typeof emb.steps === 'object') ? emb.steps : {};
+    var times = (emb && emb.times && typeof emb.times === 'object') ? emb.times : {};
+
+    // Sub-task checklists — any list marked data-steps="<trackedId>"
+    // Animate the sub-bar only when a step count CHANGES (else it replays on every 4s reload).
+    var STEPKEY = TKEY.replace('-theme', '-stepseen');
+    var stepSeen = {}; try { stepSeen = JSON.parse(sessionStorage.getItem(STEPKEY) || '{}') || {}; } catch (e) {}
+    var stepSeenNow = {};
+    [].slice.call(document.querySelectorAll('[data-steps]')).forEach(function (list) {
+      var id = list.getAttribute('data-steps');
+      var items = [].filter.call(list.children, function (n) { return n.tagName === 'LI'; });
+      var total = items.length; if (!total) return;
+      var spec = steps[id], done = {};
+      if (typeof spec === 'number') { for (var i = 0; i < spec && i < total; i++) done[i] = 1; }
+      else if (Array.isArray(spec)) { spec.forEach(function (i) { done[i] = 1; }); }
+      var doneN = 0;
+      items.forEach(function (li, i) {
+        if (!done[i]) return;
+        doneN++;
+        if (!li.querySelector('.step-check')) {
+          var c = document.createElement('span'); c.className = 'step-check'; c.textContent = '✓';
+          li.insertBefore(c, li.firstChild);
+        }
+        li.classList.add('step-done');
+      });
+      if (spec == null) return;
+      var section = list.closest('section'); if (!section) return;
+      var head = section.querySelector('.sec-head'); if (!head || section.querySelector('.subprog')) return;
+      var pct = Math.round(doneN / total * 100);
+      var wrap = document.createElement('div'); wrap.className = 'subprog';
+      wrap.innerHTML = '<span class="subbar"><i></i></span><span class="subcount">' + doneN + ' / ' + total + ' steps</span>';
+      head.parentNode.insertBefore(wrap, head.nextSibling);
+      var iEl = wrap.querySelector('i');
+      stepSeenNow[id] = doneN;
+      if (stepSeen[id] === doneN) { iEl.style.transition = 'none'; iEl.style.width = pct + '%'; }   // unchanged → no replay
+      else { (function (el, p) { requestAnimationFrame(function () { el.style.width = p + '%'; }); })(iEl, pct); }  // changed → animate once
+    });
+    try { sessionStorage.setItem(STEPKEY, JSON.stringify(stepSeenNow)); } catch (e) {}
+
+    // Per-phase timestamps — times[id] = { start, end }
+    Object.keys(times).forEach(function (id) {
+      var t = times[id]; if (!t) return;
+      var section = document.getElementById(id); if (!section) return;
+      var head = section.querySelector('.sec-head'); if (!head || section.querySelector('.ts-line')) return;
+      var parts = [];
+      if (t.start) parts.push('started <b>' + t.start + '</b>');
+      if (t.end) parts.push('done <b>' + t.end + '</b>');
+      if (!parts.length) return;
+      var line = document.createElement('div'); line.className = 'ts-line'; line.innerHTML = parts.join(' · ');
+      var anchor = section.querySelector('.subprog') || head;
+      anchor.parentNode.insertBefore(line, anchor.nextSibling);
+    });
+
+    // Activity log — timeline in the #activity section; self-hides when empty
+    var log = (emb && Array.isArray(emb.log)) ? emb.log : [];
+    var actSec = document.getElementById('activity');
+    var actLink = document.querySelector('nav.toc a[href="#activity"]');
+    if (actSec) {
+      if (log.length) {
+        var ul = actSec.querySelector('.timeline');
+        if (!ul) { ul = document.createElement('ul'); ul.className = 'timeline'; actSec.appendChild(ul); }
+        ul.innerHTML = '';
+        log.forEach(function (e) {
+          var li = document.createElement('li');
+          li.innerHTML = (e && e.t ? '<span class="tl-t">' + e.t + '</span>' : '') + (e && e.text ? '<span class="tl-x">' + e.text + '</span>' : '');
+          ul.appendChild(li);
+        });
+        actSec.style.display = ''; if (actLink) actLink.style.display = '';
+      } else {
+        actSec.style.display = 'none'; if (actLink) actLink.style.display = 'none';
+      }
+    }
+  })();
+
+  // ── Notify when needed: desktop notification + chime on `waiting` / completion (opt-in) ──
+  (function () {
+    var NKEY = TKEY.replace('-theme', '-notify');       // localStorage: user enabled notifications
+    var SIGKEY = TKEY.replace('-theme', '-notifsig');   // sessionStorage: last-notified signal
+    var btn = document.getElementById('notify-btn');
+    var supported = ('Notification' in window);
+
+    function enabled() { try { return localStorage.getItem(NKEY) === '1'; } catch (e) { return false; } }
+    function paint() {
+      if (!btn) return;
+      btn.classList.remove('on', 'blocked'); btn.disabled = false;
+      if (!supported) { btn.textContent = '🔔 Notifications n/a'; btn.disabled = true; return; }
+      if (enabled() && Notification.permission === 'granted') { btn.classList.add('on'); btn.textContent = '🔔 Notifications on'; }
+      else if (Notification.permission === 'denied') { btn.classList.add('blocked'); btn.textContent = '🔕 Blocked by browser'; }
+      else { btn.textContent = '🔔 Notify me'; }
+    }
+    function chime() {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+        var ctx = new AC();
+        [880, 1175].forEach(function (f, i) {
+          var o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = 'sine'; o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+          var t = ctx.currentTime + i * 0.16;
+          g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+          o.start(t); o.stop(t + 0.24);
+        });
+        setTimeout(function () { try { ctx.close(); } catch (e) {} }, 800);
+      } catch (e) {}
+    }
+    paint();
+    if (btn && supported) btn.addEventListener('click', function () {
+      if (Notification.permission === 'granted') {
+        try { localStorage.setItem(NKEY, enabled() ? '0' : '1'); } catch (e) {}
+        paint(); if (enabled()) chime();
+      } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then(function (p) {
+          try { localStorage.setItem(NKEY, p === 'granted' ? '1' : '0'); } catch (e) {}
+          paint(); if (p === 'granted') chime();
+        });
+      } else { paint(); }
+    });
+
+    if (!supported || !enabled() || Notification.permission !== 'granted') return;
+
+    // Transition detection — fire only when the signal is NEW vs the last one notified this session
+    var doneNow = allDone();
+    var wq = (function () { var w = emb && emb.waiting; return w ? (typeof w === 'string' ? w : w.question) : null; })();
+    var prevSig = {}; try { prevSig = JSON.parse(sessionStorage.getItem(SIGKEY) || '{}') || {}; } catch (e) {}
+    var title = (document.title || 'Plan').replace(/^⏳\s*/, '');
+    if (wq && wq !== prevSig.waiting) {
+      try { new Notification('⏳ ' + title + ' — waiting for your input', { body: wq }); } catch (e) {}
+      chime();
+    } else if (doneNow && !prevSig.done) {
+      try { new Notification('✅ ' + title + ' — plan complete', { body: 'All sections done.' }); } catch (e) {}
+      chime();
+    }
+    try { sessionStorage.setItem(SIGKEY, JSON.stringify({ waiting: wq || null, done: !!doneNow })); } catch (e) {}
+  })();
+
+  // ── Theatrical animations (entrance, ring count-up, change celebrations, confetti) ──
+  (function () {
+    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var SEENKEY = TKEY.replace('-theme', '-seen');     // sessionStorage: last-rendered status snapshot
+    var ENTERKEY = TKEY.replace('-theme', '-entered'); // sessionStorage: entrance-played flag
+
+    var prev = null;
+    try { var raw = sessionStorage.getItem(SEENKEY); if (raw) prev = JSON.parse(raw); } catch (e) {}
+    var cur = {}; ids.forEach(function (id) { cur[id] = st(id); });
+    try { sessionStorage.setItem(SEENKEY, JSON.stringify(cur)); } catch (e) {}
+    var firstEver = !prev;
+
+    // Entrance stagger — first load of the session only (so live reloads don't restage).
+    var entered = false; try { entered = sessionStorage.getItem(ENTERKEY) === '1'; } catch (e) {}
+    if (!entered) {
+      try { sessionStorage.setItem(ENTERKEY, '1'); } catch (e) {}
+      [].slice.call(document.querySelectorAll('.main > .hero, .main > .roadmap, .main > .card')).forEach(function (c, i) {
+        c.style.animation = 'plan-rise .5s cubic-bezier(.2,.7,.2,1) both';
+        c.style.animationDelay = (i * 55) + 'ms';
+      });
+    }
+
+    // Ring count-up from previous % to current %.
+    var ring = document.getElementById('ring'), rp = document.getElementById('ring-pct');
+    function pctOf(map) { var d = ids.filter(function (id) { return map[id] === 'done'; }).length; return ids.length ? Math.round(d / ids.length * 100) : 0; }
+    var pctNow = pctOf(cur), pctPrev = firstEver ? 0 : pctOf(prev);
+    if (ring && pctNow !== pctPrev) {
+      ring.classList.add('surge'); setTimeout(function () { ring.classList.remove('surge'); }, 1000);
+      var t0 = null;
+      requestAnimationFrame(function step(ts) {
+        if (t0 === null) t0 = ts;
+        var k = Math.min(1, (ts - t0) / 900), e = 1 - Math.pow(1 - k, 3);
+        var v = Math.round(pctPrev + (pctNow - pctPrev) * e);
+        ring.style.setProperty('--pct', v); if (rp) rp.textContent = v + '%';
+        if (k < 1) requestAnimationFrame(step);
+      });
+    }
+
+    // Confetti — self-contained canvas, single shared particle loop.
+    var CF = (function () {
+      var cv, ctx, P = [], raf = null;
+      var cols = ['#45c463', '#56b6ff', '#8b7bff', '#34d3c4', '#e0a93b', '#ff5d8f'];
+      function ensure() { if (!cv) { cv = document.createElement('canvas'); cv.className = 'confetti-cv'; document.body.appendChild(cv); ctx = cv.getContext('2d'); } cv.width = innerWidth; cv.height = innerHeight; }
+      function loop() {
+        ctx.clearRect(0, 0, cv.width, cv.height); var alive = false;
+        for (var i = 0; i < P.length; i++) { var p = P[i]; if (p.life <= 0) continue; alive = true;
+          p.vy += p.g; p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life -= 0.012;
+          ctx.save(); ctx.globalAlpha = Math.max(0, p.life); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+          ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * 0.6); ctx.restore(); }
+        if (alive) raf = requestAnimationFrame(loop); else { ctx.clearRect(0, 0, cv.width, cv.height); raf = null; P = []; }
+      }
+      return function (cx, cy, n) {
+        ensure();
+        for (var i = 0; i < n; i++) { var a = Math.random() * Math.PI * 2, sp = 4 + Math.random() * 7;
+          P.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 4, g: 0.18 + Math.random() * 0.12, s: 4 + Math.random() * 5, c: cols[(Math.random() * cols.length) | 0], rot: Math.random() * 6.28, vr: (Math.random() - 0.5) * 0.4, life: 1 }); }
+        if (!raf) raf = requestAnimationFrame(loop);
+      };
+    })();
+    function burstAt(el) { var r = el ? el.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 3, width: 0, height: 0 }; CF(r.left + r.width / 2, r.top + r.height / 2, 40); }
+
+    // Per-section change celebrations (skipped on the first-ever load to avoid a spam burst).
+    if (!firstEver) {
+      ids.forEach(function (id) {
+        if (cur[id] === prev[id]) return;
+        [].slice.call(document.querySelectorAll('[data-track="' + id + '"]')).forEach(function (el) {
+          el.classList.add(cur[id] === 'done' ? 'celebrate-done' : 'celebrate-doing');
+        });
+        if (cur[id] === 'done') burstAt(document.querySelector('.rm-node[data-track="' + id + '"]'));
+      });
+      if (pctNow === 100 && pctPrev < 100) CF(innerWidth / 2, innerHeight * 0.28, 150); // finale
+    }
+
+    // Ambient breathing for in-progress sections.
+    ids.forEach(function (id) {
+      if (cur[id] === 'doing') [].slice.call(document.querySelectorAll('[data-track="' + id + '"]')).forEach(function (el) { el.classList.add('is-breathing'); });
+    });
+
+  })();
+
+  // ── Navigation: collapsible phases, status filter, keyboard jump ──
+  // NOTE: the page hard-reloads every RELOAD_MS, so each control persists its state and
+  // re-applies it on load — otherwise it would reset every few seconds.
+  var KCOLLAPSE = TKEY.replace('-theme', '-collapsed');  // localStorage: collapsed section ids
+  var KFILTER = TKEY.replace('-theme', '-filter');       // sessionStorage: active status filter
+
+  // Collapsible phases — inject a chevron into each phase .sec-head
+  (function () {
+    var collapsed = {};
+    try { (JSON.parse(localStorage.getItem(KCOLLAPSE) || '[]') || []).forEach(function (id) { collapsed[id] = 1; }); } catch (e) {}
+    function save() { try { localStorage.setItem(KCOLLAPSE, JSON.stringify(Object.keys(collapsed))); } catch (e) {} }
+    [].slice.call(document.querySelectorAll('section.card.phase')).forEach(function (sec) {
+      var head = sec.querySelector('.sec-head'); if (!head) return;
+      var chev = document.createElement('button');
+      chev.className = 'chev'; chev.type = 'button'; chev.setAttribute('aria-label', 'Collapse or expand section'); chev.textContent = '▾';
+      head.insertBefore(chev, head.firstChild);
+      if (collapsed[sec.id]) sec.classList.add('collapsed');
+      chev.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        sec.classList.toggle('collapsed');
+        if (sec.classList.contains('collapsed')) collapsed[sec.id] = 1; else delete collapsed[sec.id];
+        save();
+      });
+    });
+  })();
+
+  // Status filter — show only matching tracked phase sections (reference sections always show)
+  (function () {
+    var bar = document.getElementById('filterbar'); if (!bar) return;
+    var cur = 'all'; try { cur = sessionStorage.getItem(KFILTER) || 'all'; } catch (e) {}
+    function apply(f) {
+      ids.forEach(function (id) {
+        var sec = document.getElementById(id); if (sec) sec.style.display = (f === 'all' || st(id) === f) ? '' : 'none';
+      });
+      [].slice.call(bar.querySelectorAll('button')).forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-filter') === f); });
+    }
+    [].slice.call(bar.querySelectorAll('button')).forEach(function (b) {
+      b.addEventListener('click', function () { cur = b.getAttribute('data-filter'); try { sessionStorage.setItem(KFILTER, cur); } catch (e) {} apply(cur); });
+    });
+    apply(cur);
+  })();
+
+  // Keyboard jump — j / k between visible sections, g to top (ignored while typing)
+  (function () {
+    document.addEventListener('keydown', function (e) {
+      var tag = (e.target && e.target.tagName) || '';
+      if (e.metaKey || e.ctrlKey || e.altKey || tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key === 'g') { window.scrollTo({ top: 0, behavior: _reduce ? 'auto' : 'smooth' }); return; }
+      if (e.key !== 'j' && e.key !== 'k') return;
+      var secs = [].filter.call(document.querySelectorAll('main.main section[id]'), function (s) { return s.offsetParent !== null; });
+      if (!secs.length) return;
+      var y = window.scrollY + 80, idx = -1;
+      for (var i = 0; i < secs.length; i++) { if (secs[i].offsetTop <= y) idx = i; }
+      var next = e.key === 'j' ? Math.min(secs.length - 1, idx + 1) : Math.max(0, idx - 1);
+      _focusSection(secs[next].id);
+    });
+  })();
+
+  // ── Sidebar sub-steps: build nested sub-lists under each phase link ──
+  (function () {
+    var steps = (emb && emb.steps && typeof emb.steps === 'object') ? emb.steps : {};
+    function doneSet(spec, total) {
+      var d = {};
+      if (typeof spec === 'number') { for (var i = 0; i < spec && i < total; i++) d[i] = 1; }
+      else if (Array.isArray(spec)) spec.forEach(function (i) { d[i] = 1; });
+      return d;
+    }
+    function labelFor(li) {
+      var b = li.querySelector('b');
+      var t = ((b ? b.textContent : li.textContent) || '').trim().replace(/[.:]\s*$/, '');
+      return t.length > 60 ? t.slice(0, 59) + '…' : t;
+    }
+    ids.forEach(function (id) {
+      var link = document.querySelector('nav.toc a[data-track="' + id + '"]');
+      var section = document.getElementById(id);
+      if (!link || !section) return;
+      var list = section.querySelector('ol.steps');
+      if (!list) return;
+      var items = [].filter.call(list.children, function (n) { return n.tagName === 'LI'; });
+      if (!items.length) return;
+      var total = items.length, done = doneSet(steps[id], total), phaseDoing = (st(id) === 'doing');
+      var firstUndone = -1; for (var i = 0; i < total; i++) { if (!done[i]) { firstUndone = i; break; } }
+      var sub = document.createElement('ul'); sub.className = 'toc-sub'; sub.setAttribute('data-sub', id);
+      items.forEach(function (li, i) {
+        var stepId = id + '-step-' + (i + 1);
+        li.id = stepId;
+        var a = document.createElement('a'); a.href = '#' + stepId;
+        a.setAttribute('data-sst', done[i] ? 'done' : (phaseDoing && i === firstUndone ? 'current' : 'todo'));
+        a.innerHTML = '<span class="sdot"></span><span class="slabel"></span>';
+        var lab = labelFor(li); a.querySelector('.slabel').textContent = lab; a.title = lab;
+        sub.appendChild(a);
+      });
+      if (!link.querySelector('.toc-chev')) {
+        var chev = document.createElement('span'); chev.className = 'toc-chev'; chev.textContent = '▸';
+        link.appendChild(chev);
+      }
+      link.parentNode.insertBefore(sub, link.nextSibling);
+    });
+  })();
+
+  // ── Sub-step accordion: one open at a time (doing on load, scroll override, manual pin) ──
+  (function () {
+    var subs = {};
+    [].slice.call(document.querySelectorAll('nav.toc .toc-sub')).forEach(function (ul) { subs[ul.getAttribute('data-sub')] = ul; });
+    if (!Object.keys(subs).length) return;
+    var PINKEY = TKEY.replace('-theme', '-subpin');
+    var pinned = null; try { pinned = sessionStorage.getItem(PINKEY) || null; } catch (e) {}
+    function linkFor(id) { return document.querySelector('nav.toc a[data-track="' + id + '"]'); }
+    function setOpen(id) {
+      Object.keys(subs).forEach(function (k) {
+        var on = (k === id);
+        subs[k].classList.toggle('open', on);
+        var l = linkFor(k); if (l) l.classList.toggle('sub-open', on);
+      });
+    }
+    var doingId = null; for (var i = 0; i < ids.length; i++) { if (st(ids[i]) === 'doing') { doingId = ids[i]; break; } }
+    var initial = (pinned && subs[pinned]) ? pinned : doingId;
+    if (initial) setOpen(initial);
+    Object.keys(subs).forEach(function (id) {
+      var l = linkFor(id); if (!l) return;
+      var chev = l.querySelector('.toc-chev'); if (!chev) return;
+      chev.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var willOpen = !subs[id].classList.contains('open');
+        setOpen(willOpen ? id : null);
+        pinned = willOpen ? id : null;
+        try { if (pinned) sessionStorage.setItem(PINKEY, pinned); else sessionStorage.removeItem(PINKEY); } catch (e2) {}
+      });
+    });
+    window.__subStepOnActive = function (id) {
+      if (!subs[id]) return;
+      if (pinned && pinned !== id) { pinned = null; try { sessionStorage.removeItem(PINKEY); } catch (e) {} }
+      if (!pinned) setOpen(id);
+    };
+  })();
+
+  // ── Click-to-step: scroll to the exact body step and flash it ──
+  (function () {
+    var reduceMo = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+    [].slice.call(document.querySelectorAll('nav.toc .toc-sub a')).forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        var id = a.getAttribute('href').slice(1);
+        var li = document.getElementById(id); if (!li) return;
+        e.preventDefault();
+        var card = li.closest('section.card'); if (card) card.classList.remove('collapsed');
+        li.scrollIntoView({ behavior: reduceMo ? 'auto' : 'smooth', block: 'center' });
+        li.classList.remove('flash'); void li.offsetWidth; li.classList.add('flash');
+        setTimeout(function () { li.classList.remove('flash'); }, 1500);
+        try { history.replaceState(null, '', '#' + id); } catch (e2) {}
+      });
+    });
+  })();
+
+  // ── Scroll-spy ──
+  // The page hard-reloads every RELOAD_MS. IntersectionObserver delivers its FIRST callback
+  // asynchronously (after the first paint), so without seeding, every reload would paint one
+  // frame with no .active highlight before the observer re-applies it → a visible flicker.
+  // Fix: persist the active id and re-apply it synchronously on load, BEFORE first paint.
+  var KACTIVE = TKEY.replace('-theme', '-active');   // sessionStorage: last active nav id
+  var links = {};
+  document.querySelectorAll('nav.toc a[href^="#"]').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+  (function () {                                       // seed highlight + accordion from the last frame
+    var seed = null; try { seed = sessionStorage.getItem(KACTIVE); } catch (e) {}
+    if (seed && links[seed]) {
+      links[seed].classList.add('active');
+      if (window.__subStepOnActive) window.__subStepOnActive(seed);
+    }
+  })();
+  var spy = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) {
+        Object.values(links).forEach(function (a) { a.classList.remove('active'); });
+        var a = links[en.target.id]; if (a) a.classList.add('active');
+        try { sessionStorage.setItem(KACTIVE, en.target.id); } catch (e) {}
+        if (window.__subStepOnActive) window.__subStepOnActive(en.target.id);
+      }
+    });
+  }, { rootMargin: '-15% 0px -70% 0px', threshold: 0 });
+  document.querySelectorAll('section[id]').forEach(function (s) { spy.observe(s); });
+
+  // ── Theme toggle (initial theme already applied by the <head> script) ──
+  var html = document.documentElement;
+  var themeBtn = document.getElementById('theme-btn');
+  if (themeBtn) themeBtn.addEventListener('click', function () {
+    html.dataset.theme = html.dataset.theme === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem(TKEY, html.dataset.theme); } catch (e) {}
+  });
+
+  // ── Futuristic background: drifting starfield ──
+  (function () {
+    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var cv = document.getElementById('stars'); if (!cv) return;
+    var ctx = cv.getContext('2d'), stars = [], W, H;
+    var cols = ['#cfe0ff', '#cfe0ff', '#cfe0ff', '#8b7bff', '#34d3c4'];
+    function resize() {
+      W = cv.width = innerWidth; H = cv.height = innerHeight;
+      var n = Math.min(170, Math.round(W * H / 13000)); stars = [];
+      for (var i = 0; i < n; i++) stars.push({ x: Math.random() * W, y: Math.random() * H, z: Math.random() * 0.8 + 0.2, r: Math.random() * 1.3 + 0.3, tw: Math.random() * 6.28 });
+    }
+    resize(); addEventListener('resize', resize);
+    (function draw() {
+      ctx.clearRect(0, 0, W, H);
+      for (var i = 0; i < stars.length; i++) { var s = stars[i];
+        s.y += s.z * 0.16; s.tw += 0.02; if (s.y > H + 2) { s.y = -2; s.x = Math.random() * W; }
+        ctx.globalAlpha = (0.35 + 0.45 * Math.sin(s.tw)) * s.z;
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.283); ctx.fillStyle = cols[i % cols.length]; ctx.fill();
+      }
+      ctx.globalAlpha = 1; requestAnimationFrame(draw);
+    })();
+  })();
+
+  // ── Cursor spotlight ──
+  (function () {
+    var sp = document.querySelector('.spotlight'); if (!sp) return;
+    if (window.matchMedia && matchMedia('(pointer: coarse)').matches) return;
+    addEventListener('mousemove', function (e) {
+      sp.style.setProperty('--mx', e.clientX + 'px');
+      sp.style.setProperty('--my', e.clientY + 'px');
+      sp.classList.add('on');
+    }, { passive: true });
+  })();
+
+  // ── Dashboard link (origin-aware) — opt-in fallback to the live plans dashboard ──
+  // Served over http(s) (e.g. phone via Tailscale): the dashboard IS this origin → link "/", always shown.
+  // Local file://: the dashboard is http://localhost:7878/ → no-cors probe; reveal only if it answers.
+  (function () {
+    var link = document.getElementById('dash-link');
+    if (!link) return;
+    var DASH_LOCAL = 'http://localhost:7878/';   // documented default port (matches setup-dashboard.ps1)
+    if (location.protocol === 'http:' || location.protocol === 'https:') {
+      link.href = '/'; link.removeAttribute('hidden'); return;     // dashboard served this page → home is "/"
+    }
+    if (location.protocol !== 'file:' || !window.fetch) return;     // unknown origin → stay hidden
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var to = setTimeout(function () { if (ctrl) ctrl.abort(); }, 1200);
+    fetch(DASH_LOCAL, { mode: 'no-cors', signal: ctrl ? ctrl.signal : undefined })
+      .then(function () { clearTimeout(to); link.href = DASH_LOCAL; link.removeAttribute('hidden'); })
+      .catch(function () { clearTimeout(to); link.setAttribute('hidden', ''); });
+  })();
+
+  // ── Auto-refresh + auto-focus on the in-progress section ──
+  // The page reloads every RELOAD_MS to pick up #plan-state edits. On a normal reload we restore
+  // the reader's exact scroll position — INSTANTLY, because the page uses scroll-behavior:smooth
+  // for nav clicks and that would otherwise animate the restore on every refresh and look bad.
+  // The FIRST time an in-progress section exists (this session) we smooth-scroll to it once;
+  // after that we leave the reader wherever they scrolled.
+  if ('scrollRestoration' in history) { try { history.scrollRestoration = 'manual'; } catch (e) {} }
+  var _reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  function _firstDoing() { for (var i = 0; i < ids.length; i++) if (st(ids[i]) === 'doing') return ids[i]; return null; }
+  function _instantTo(y) {
+    var r = document.documentElement, sb = r.style.scrollBehavior;
+    r.style.scrollBehavior = 'auto'; window.scrollTo(0, y || 0); r.style.scrollBehavior = sb;
+  }
+  function _focusSection(id) {
+    var el = id && document.getElementById(id); if (!el) return;
+    el.scrollIntoView({ behavior: _reduce ? 'auto' : 'smooth', block: 'start' });
+  }
+  (function () {
+    // Auto-scroll to the in-progress section — ONCE each time that section CHANGES (first open,
+    // or step N finishes and N+1 starts). Stays put on ordinary refreshes (same in-progress
+    // section) and preserves wherever the reader scrolled to.
+    var FKEY = TKEY.replace('-theme', '-focusid');   // sessionStorage: last in-progress id we scrolled to
+    var curFocus = _firstDoing();
+    var lastFocus = null; try { lastFocus = sessionStorage.getItem(FKEY); } catch (e) {}
+    var savedY = null; try { savedY = sessionStorage.getItem(SKEY); } catch (e) {}
+    try { sessionStorage.removeItem(SKEY); } catch (e) {}
+    var firstOpen = (savedY === null);
+
+    if (curFocus && curFocus !== lastFocus) {
+      try { sessionStorage.setItem(FKEY, curFocus); } catch (e) {}   // remember it; scroll once
+      setTimeout(function () { _focusSection(curFocus); }, firstOpen ? 600 : 0);
+    } else {
+      if (!curFocus) { try { sessionStorage.removeItem(FKEY); } catch (e) {} }  // reset when nothing in progress
+      if (!firstOpen) _instantTo(parseInt(savedY, 10) || 0);          // keep the reader where they were
+    }
+  })();
+  // Soft auto-refresh: poll #plan-state and only hard-reload when it actually CHANGED, so a
+  // reader (especially on a phone over HTTP) isn't yanked back to the top every few seconds.
+  // On a file:// origin fetch is blocked → fall back to the original reload-with-restore.
+  var _stateEl0 = document.getElementById('plan-state');
+  var _lastState = _stateEl0 ? _stateEl0.textContent.trim() : '';
+  function _reloadKeepingScroll() {
+    try { sessionStorage.setItem(SKEY, String(window.scrollY || window.pageYOffset || 0)); } catch (e) {}
+    location.reload();
+  }
+  // Never reload on its own (it yanked readers mid-page, and on file:// - where the poll cannot
+  // fetch - it reloaded every few seconds): over HTTP poll #plan-state and, when it changed,
+  // show a small "Plan updated - reload" pill the reader clicks when ready.
+  var _pill = null;
+  function _showUpdated() {
+    if (_pill) return;
+    _pill = document.createElement('button');
+    _pill.type = 'button';
+    _pill.textContent = 'Plan updated \u00b7 reload';
+    _pill.setAttribute('style', 'position:fixed;right:16px;bottom:16px;z-index:9999;padding:8px 14px;' +
+      'border-radius:999px;border:1px solid rgba(127,127,127,.4);background:#2563eb;color:#fff;' +
+      'font:600 13px system-ui,sans-serif;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25)');
+    _pill.addEventListener('click', _reloadKeepingScroll);
+    document.body.appendChild(_pill);
+  }
+  if (location.protocol === 'http:' || location.protocol === 'https:') {
+    setInterval(function () {
+      if (_pill || document.hidden) return;
+      fetch(location.href, { cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (html) {
+        var m = html.match(/<script id="plan-state"[^>]*>([\s\S]*?)<\/script>/i);
+        var cur = m ? m[1].trim() : null;
+        if (cur !== null && cur !== _lastState) _showUpdated();
+      }).catch(function () {});
+    }, RELOAD_MS);
+  }
+})();
+</script>
+
+<!-- Phone nav drawer: toggle the off-canvas sidebar (no-op on wider screens) -->
+<script>
+(function () {
+  var t = document.getElementById('nav-toggle');
+  var bd = document.getElementById('nav-backdrop');
+  if (!t) return;
+  function set(open) {
+    document.body.classList.toggle('nav-open', open);
+    t.setAttribute('aria-expanded', open ? 'true' : 'false');
+    t.textContent = open ? '✕' : '☰';
+  }
+  t.addEventListener('click', function () { set(!document.body.classList.contains('nav-open')); });
+  if (bd) bd.addEventListener('click', function () { set(false); });
+  [].slice.call(document.querySelectorAll('.sidebar nav.toc a')).forEach(function (a) {
+    a.addEventListener('click', function () { set(false); });   // close after jumping
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') set(false); });
+})();
+</script>
+</body>
+</html>
