@@ -2,10 +2,11 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { DragHandle } from '../hooks/useWindowDrag';
 import './StickyNote.css';
 
-export type Tab = 'notes' | 'chat' | 'history' | 'settings';
+export type Tab = 'notes' | 'pad' | 'chat' | 'history' | 'settings';
 
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: 'notes', label: 'Notes' },
+  { id: 'pad', label: 'Pad' },
   { id: 'chat', label: 'Clippy' },
   { id: 'history', label: 'History' },
   { id: 'settings', label: 'Settings' },
@@ -15,6 +16,8 @@ export interface StickyNoteProps {
   tab: Tab;
   onTab(tab: Tab): void;
   unread: number;
+  /** Some page on the Pad is new: the Pad tab shows a small green dot. */
+  padNew?: boolean;
   onCollapse(): void;
   /** The header is the drag handle in expanded mode. */
   drag: DragHandle;
@@ -26,7 +29,7 @@ export interface StickyNoteProps {
 }
 
 /** The yellow sticky note Clippy stands on: a header to drag by, tabs, and the tab's content. */
-export function StickyNote({ tab, onTab, unread, onCollapse, drag, wiggleKey, tabs = true, children }: StickyNoteProps) {
+export function StickyNote({ tab, onTab, unread, padNew = false, onCollapse, drag, wiggleKey, tabs = true, children }: StickyNoteProps) {
   const ref = useRef<HTMLElement>(null);
   // Restart the wiggle without remounting (which would lose typed text).
   useEffect(() => {
@@ -62,6 +65,7 @@ export function StickyNote({ tab, onTab, unread, onCollapse, drag, wiggleKey, ta
             >
               {t.label}
               {t.id === 'notes' && unread > 0 && <span className="note-tab-count">{unread}</span>}
+              {t.id === 'pad' && padNew && <span className="note-tab-dot" role="img" aria-label="new pages" title="New pages" />}
             </button>
           ))}
         </nav>

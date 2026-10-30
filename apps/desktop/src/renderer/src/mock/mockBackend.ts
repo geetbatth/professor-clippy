@@ -19,12 +19,14 @@ import {
 } from '@clippy/shared/schemas';
 import { applySettingsPatch, DEFAULT_SETTINGS, SettingsPatch, type Settings } from '@clippy/shared/settings';
 import type { ThemeId } from '@clippy/shared/theme';
-import { MOCK_REPLIES, sampleMessages } from './sampleData';
+import { MOCK_REPLIES, sampleMessages, samplePages } from './sampleData';
 
 export interface MockOptions {
   now?: () => number;
   /** Start with these messages instead of the samples. */
   messages?: Message[];
+  /** Start with these pages instead of the samples. */
+  pages?: Page[];
   /** Delay before the reply starts and between streamed chunks. */
   thinkMs?: number;
   chunkMs?: number;
@@ -90,7 +92,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
   };
   const orders = new Map<string, StandingOrder>();
   const watches = new Map<string, Watch>();
-  const pages = new Map<string, Page>();
+  const pages = new Map((opts.pages ?? samplePages(now())).map((p) => [p.id, { ...p }]));
   let previewed = false;
   let replyIndex = 0;
   const listeners = new Map<ClippyEvent, Set<(payload: never) => void>>();

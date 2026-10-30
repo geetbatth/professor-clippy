@@ -4,6 +4,8 @@
  * settings (hooks/useTheme.ts); before that, and in the plain-browser preview, it is classic.
  *
  * Every theme defines every token (theme.test.ts checks), so a new screen can use any of them.
+ * A Pad page with its own colour (`data-page-color` on the page's paper) gets that light theme's
+ * tokens for itself and everything in it, yellow being classic, also inside a dark theme.
  * Where a stylesheet needs a see-through shade of a token it writes
  * `color-mix(in srgb, var(--ink) 14%, transparent)`.
  *
@@ -13,7 +15,8 @@
  */
 /* Classic: the original yellow sticky note. */
 :root,
-:root[data-theme="classic"] {
+:root[data-theme="classic"],
+[data-page-color="yellow"] {
   /* Paper (the note, and pages) */
   --paper-1: #fff58a;
   --paper-2: #ffe766;
@@ -71,7 +74,8 @@
 }
 
 /* Mint */
-:root[data-theme="mint"] {
+:root[data-theme="mint"],
+[data-page-color="mint"] {
   /* Paper (the note, and pages) */
   --paper-1: #c9f5dc;
   --paper-2: #a9ebc6;
@@ -129,7 +133,8 @@
 }
 
 /* Blush */
-:root[data-theme="blush"] {
+:root[data-theme="blush"],
+[data-page-color="blush"] {
   /* Paper (the note, and pages) */
   --paper-1: #ffd9e6;
   --paper-2: #ffc6d9;
@@ -187,7 +192,8 @@
 }
 
 /* Sky */
-:root[data-theme="sky"] {
+:root[data-theme="sky"],
+[data-page-color="sky"] {
   /* Paper (the note, and pages) */
   --paper-1: #d6ecff;
   --paper-2: #bfe0ff;
@@ -245,7 +251,8 @@
 }
 
 /* Peach */
-:root[data-theme="peach"] {
+:root[data-theme="peach"],
+[data-page-color="peach"] {
   /* Paper (the note, and pages) */
   --paper-1: #ffe2c7;
   --paper-2: #ffd0a8;
@@ -416,6 +423,11 @@
   --warn: #ffc17a;
   --typing: #b5c9b0;
   --badge: #e53935;
+}
+
+/* A coloured page is light paper even in a dark theme (its caret, scrollbar and controls). */
+[data-page-color] {
+  color-scheme: light;
 }
 
 /* Dark themes: the browser draws its own controls (the dropdowns) dark... */

@@ -8,6 +8,7 @@ import { useAdvice } from './hooks/useAdvice';
 import { useAutoCollapse } from './hooks/useAutoCollapse';
 import { useChat } from './hooks/useChat';
 import { useClickThrough } from './hooks/useClickThrough';
+import { usePages } from './hooks/usePages';
 import { useSettings } from './hooks/useSettings';
 import { useTheme } from './hooks/useTheme';
 import { useUnread } from './hooks/useUnread';
@@ -17,6 +18,7 @@ import { ChatTab } from './note/ChatTab';
 import { FirstRunWizard } from './note/FirstRunWizard';
 import { HistoryTab } from './note/HistoryTab';
 import { NotesTab } from './note/NotesTab';
+import { PadTab } from './note/PadTab';
 import { SettingsTab } from './note/SettingsTab';
 import { StickyNote, type Tab } from './note/StickyNote';
 import { TellBox } from './note/TellBox';
@@ -30,7 +32,7 @@ import { SpeechBubble } from './views/SpeechBubble';
 
 /** The open note tucks itself away after this long with nothing to show and nobody about. */
 const AUTO_COLLAPSE_MS = 2 * 60_000;
-const TABS: readonly Tab[] = ['notes', 'chat', 'history', 'settings'];
+const TABS: readonly Tab[] = ['notes', 'pad', 'chat', 'history', 'settings'];
 
 export function App({ runtime }: { runtime: Runtime }) {
   const { api, shell } = runtime;
@@ -44,6 +46,8 @@ export function App({ runtime }: { runtime: Runtime }) {
   const [wantTellFocus, setWantTellFocus] = useState(false);
   /** The Tell Clippy box has focus or text: the note must not tuck itself away. */
   const tellActive = useRef(false);
+  /** A Pad page has focus (or an unsettled conflict): the same rule as the Tell box. */
+  const padActive = useRef(false);
 
   const settingsState = useSettings(api);
   const { settings } = settingsState;
@@ -59,6 +63,7 @@ export function App({ runtime }: { runtime: Runtime }) {
   popUpFor.current = settings?.popUpFor ?? 'important';
   const sounds = useMemo(() => createSoundBoard(() => soundOn.current), []);
   const chat = useChat(api);
+  const pad = usePages(api);
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -90,6 +95,9 @@ export function App({ runtime }: { runtime: Runtime }) {
   const tellFocused = useCallback(() => setWantTellFocus(false), []);
   const setTellActive = useCallback((active: boolean) => {
     tellActive.current = active;
+  }, []);
+  const setPadActive = useCallback((active: boolean) => {
+    padActive.current = active;
   }, []);
   useEffect(() => {
     if (firstRun) setMode('expanded');
@@ -156,8 +164,8 @@ export function App({ runtime }: { runtime: Runtime }) {
   });
   // Quiet notes (the badge only) do not keep the note open; loud ones do.
   useAutoCollapse(mode === 'expanded' && loud === 0 && !chat.thinking && !firstRun, lastActivity, AUTO_COLLAPSE_MS, () => {
-    // Mid-sentence in the Tell Clippy box: not now, and a fresh idle period once they're done.
-    if (tellActive.current) lastActivity.current = Date.now();
+    // Mid-sentence in the Tell Clippy box or a page: not now, and a fresh idle period once they're done.
+    if (tellActive.current || padActive.current) lastActivity.current = Date.now();
     else setMode('mini');
   });
 
@@ -187,6 +195,7 @@ export function App({ runtime }: { runtime: Runtime }) {
             tab={tab}
             onTab={setTab}
             unread={unread}
+            padNew={pad.unseen}
             onCollapse={() => setMode('mini')}
             drag={noteDrag}
             wiggleKey={wiggle}
@@ -211,6 +220,7 @@ export function App({ runtime }: { runtime: Runtime }) {
                     }
                   />
                 )}
+                {tab === 'pad' && <PadTab api={api} pad={pad} onActive={setPadActive} />}
                 {tab === 'chat' && <ChatTab chat={chat} />}
                 {tab === 'history' && <HistoryTab api={api} />}
                 {tab === 'settings' && <SettingsTab api={api} state={settingsState} />}

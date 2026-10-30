@@ -47,8 +47,12 @@ that have waited less than an hour are sent; older ones stay on the desk.
   page while you are typing in it, your save is refused rather than overwriting theirs (so nothing
   is silently lost). A page written by someone else counts as new until you open it. Pages nobody
   has changed for 30 days are archived (not pinned ones, or ones popped out on the desktop); you
-  can restore them. The Pad tab itself comes next; for now the pages live in the database and
-  through the tools.
+  can restore them. The **Pad** tab (between Notes and Clippy; a green dot means a new page) lists
+  them, pinned first, with search and "+ New"; open one and just type: it saves as you go, on
+  lined paper, in the note's colours or its own. If someone changed it meanwhile you get "Changed
+  while you were typing" with Keep mine / Use theirs (leave without choosing and your text is kept
+  as a "(your version)" copy). Archived pages sit under "Archived" at the bottom, to restore or
+  delete for good.
 - **Colour themes**: the note can be classic yellow, mint, blush, sky or peach, or one of two dark
   ones, night and chalkboard (Clippy gets a soft rim light on those). "Follow Windows dark mode"
   switches to your chosen dark theme while Windows is dark and back again, within a second and
@@ -293,8 +297,8 @@ npm run dev:renderer -w apps/desktop   # the UI alone in a browser, on a mock ba
 ```
 
 In the browser preview, add `?mock=1` for the mock backend, `&firstrun=1` for the wizard,
-`?mode=expanded&tab=chat` and so on for a given view, and `?gallery=1` for the character sheet
-(`&align=pairs` overlays each pose on idle, for tuning the pose table in
+`?mode=expanded&tab=chat` (or `tab=pad`) and so on for a given view, and `?gallery=1` for the
+character sheet (`&align=pairs` overlays each pose on idle, for tuning the pose table in
 `apps/desktop/src/renderer/src/clippy/poses.ts`). To retake the README screenshots, build, then run
 `node apps/desktop/scripts/launch-electron.mjs apps/desktop/scripts/capture-gallery.mjs docs/screenshots apps/desktop/scripts/docs-shots.json`.
 

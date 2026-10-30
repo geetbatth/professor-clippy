@@ -1,6 +1,6 @@
-/** Sample messages for the mock backend (notes, a reminder, an ask with options, a chat, some history). */
+/** Sample data for the mock backend: messages (notes, a reminder, an ask with options, a chat, some history) and Pad pages. */
 import { ulid } from 'ulid';
-import type { Message } from '@clippy/shared/schemas';
+import type { Message, Page } from '@clippy/shared/schemas';
 
 const MIN = 60_000;
 
@@ -87,6 +87,57 @@ export function sampleMessages(now: number): Message[] {
       options: ['16', '17'],
       answer: '17',
       answeredVia: 'whatsapp',
+    }),
+  ];
+}
+
+/** Pad pages: your pinned scratch page, one Clippy jotted down (not opened yet), an agent's checklist and an archived one. */
+export function samplePages(now: number): Page[] {
+  const at = (minutesAgo: number) => Math.round(now - minutesAgo * MIN);
+  const page = (p: Pick<Page, 'title' | 'body' | 'author' | 'createdAt' | 'updatedAt'> & Partial<Page>): Page => ({
+    id: ulid(p.createdAt),
+    color: null,
+    pinned: false,
+    popped: false,
+    popBounds: null,
+    project: null,
+    unseen: false,
+    archivedAt: null,
+    ...p,
+  });
+  return [
+    page({
+      title: 'Scratch',
+      body: 'Guest Wi-Fi password is on the fridge\nRing the garage about the MOT\nBuy a birthday card for Sam',
+      pinned: true,
+      author: 'you',
+      createdAt: at(9 * 24 * 60),
+      updatedAt: at(4),
+    }),
+    page({
+      title: 'Call Dave',
+      body: 'Call Dave about the invoice (the March one).\nHe said Thursday after 2 is best.',
+      author: 'clippy-brain',
+      unseen: true,
+      createdAt: at(10),
+      updatedAt: at(10),
+    }),
+    page({
+      title: 'Deploy steps',
+      body: '1. Tag the release\n2. npm run build && npm test\n3. Deploy to staging, smoke test checkout\n4. Promote to prod after 15:00',
+      author: 'claude-code',
+      project: 'payments-api',
+      createdAt: at(3 * 60),
+      updatedAt: at(3 * 60),
+    }),
+    page({
+      title: 'Christmas party ideas',
+      body: 'Bowling? The curry place on the high street?',
+      author: 'you',
+      color: 'blush',
+      createdAt: at(60 * 24 * 60),
+      updatedAt: at(40 * 24 * 60),
+      archivedAt: at(10 * 24 * 60),
     }),
   ];
 }

@@ -134,6 +134,17 @@
   text-align: center;
 }
 
+/* Some page on the Pad is new (written by Clippy or an agent, not opened yet). */
+.note-tab-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--ok);
+  vertical-align: 1px;
+}
+
 .note-body {
   flex: 1;
   min-height: 0;

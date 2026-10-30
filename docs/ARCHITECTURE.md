@@ -15,7 +15,7 @@ npm workspaces monorepo (Node 24, npm 11, TypeScript strict, ESM, Vitest).
 
 Root scripts: `npm test`, `npm run typecheck`, `npm run build` (each runs in every workspace), `npm run dev` (desktop app), `npm run package` (build, then the NSIS installer from `apps/desktop/electron-builder.yml` into `apps/desktop/release/`; the built MCP server and hook ship as `resources/mcp` and `resources/hook`).
 
-`@clippy/shared` is consumed as TypeScript source. Vite (desktop, mcp, hook), wrangler (worker) and Vitest bundle or transform it; it is never `require`d from `node_modules` at runtime. Its root entry is Node-only. Renderer, preload and Worker code import the Node-free subpaths (`@clippy/shared/schemas`, `/settings`, `/theme`, `/api`, `/ipc`, `/relay`).
+`@clippy/shared` is consumed as TypeScript source. Vite (desktop, mcp, hook), wrangler (worker) and Vitest bundle or transform it; it is never `require`d from `node_modules` at runtime. Its root entry is Node-only. Renderer, preload and Worker code import the Node-free subpaths (`@clippy/shared/schemas`, `/settings`, `/theme`, `/brain`, `/api`, `/ipc`, `/relay`).
 
 ## Phone channels: WhatsApp and Telegram
 
@@ -324,6 +324,26 @@ replaces a page the user wrote unless told to. The CLAUDE.md hint tells agents t
 keep (a checklist, a summary) instead of a note; installing over an older hint replaces it in place
 (`LEGACY_CLAUDE_MD_HINTS`), and uninstall removes either. The browser preview keeps pages in memory
 (`mockBackend.pushPage` simulates Clippy writing one).
+
+**The Pad tab** (renderer, `note/PadTab.tsx`). `usePages` (in `App`, for the tab's "new" dot) loads
+the Pad's and the archived pages and keeps them live from `page:changed` / `page:deleted`
+(`applyPage` / `removePage` in `note/padList.ts`, with `padSections`, search and the row text:
+"📎 Clippy" / "🤖 sender · project" badges, "made by ..." / "edited ..."). `note/PageEditor.tsx` is one
+page, self-contained (props: the page, the api, callbacks) so a page window can reuse it. Its text
+goes through `createSaveController` (`note/pageSave.ts`, pure, injectable timer): saves wait 400 ms
+after the last keystroke, `flush()` saves at once (blur, unmount on page / tab switch or collapse,
+`beforeunload`), and every save sends `baseUpdatedAt`. A refusal whose page has the same text as the
+editor last saved (only the title, colour or pin moved) is retried on the new base; otherwise the
+state is `conflict`: the typed text stays, nothing saves, and the banner's Keep mine saves it on top
+of theirs, Use theirs takes theirs. Unmounting in `conflict` keeps the typed text as a new page
+"<title> (your version)". Someone else's change while nothing is unsaved shows at once. Title,
+colour and pin are separate `writePage` calls without a base, after a `flush()`. Opening a page (or
+a change arriving while it is open) calls `markPageSeen`. While a page has focus or a conflict,
+auto-collapse waits (`onActive`, the Tell box's rule). A page's own colour is `data-page-color` on
+its paper: `theme.css` gives `[data-page-color="<id>"]` the tokens of that light theme (yellow is
+classic), so it keeps light paper and ink inside a dark theme. The mock starts with sample pages
+(`samplePages`: Scratch pinned, Call Dave by Clippy not opened yet, an agent's Deploy steps, one
+archived).
 
 ## Storage
 

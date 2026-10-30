@@ -141,8 +141,23 @@ describe('mock backend', () => {
     await expect(b.setSettings({ workerUrl: 'not a url' })).rejects.toThrow();
   });
 
-  it('keeps pages in memory like the app: seen when you write, stale saves come back as a conflict', async () => {
+  it('ships valid sample pages: your pinned scratch page, one by Clippy not opened yet, an agent checklist, one archived', async () => {
     const b = createMockBackend();
+    const pages = await b.listPages({});
+    for (const p of pages) expect(Page.parse(p)).toEqual(p);
+    expect(pages.map((p) => [p.title, p.author, p.pinned, p.unseen])).toEqual([
+      ['Scratch', 'you', true, false],
+      ['Call Dave', 'clippy-brain', false, true],
+      ['Deploy steps', 'claude-code', false, false],
+    ]);
+    expect(pages[2]?.project).toBe('payments-api');
+    const archived = await b.listPages({ archived: true });
+    expect(archived.map((p) => p.title)).toEqual(['Christmas party ideas']);
+    expect(Page.parse(archived[0])).toEqual(archived[0]);
+  });
+
+  it('keeps pages in memory like the app: seen when you write, stale saves come back as a conflict', async () => {
+    const b = createMockBackend({ pages: [] });
     const changed = vi.fn();
     b.on('page:changed', changed);
     const page = await b.createPage({ title: 'Scratch', body: 'a' });

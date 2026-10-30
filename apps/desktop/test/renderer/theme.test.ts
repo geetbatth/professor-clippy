@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { THEMES } from '@clippy/shared/theme';
+import { PAGE_COLORS, THEMES } from '@clippy/shared/theme';
 import { themeAttrs } from '../../src/renderer/src/theme';
 
 /** The tokens later screens rely on: every theme must define each of them. */
@@ -34,7 +34,8 @@ const css = readFileSync(new URL('../../src/renderer/src/styles/theme.css', impo
 
 /** The declarations of `:root[data-theme="<id>"] { ... }` as token -> value. */
 function block(id: string): Map<string, string> {
-  const match = new RegExp(`:root\\[data-theme="${id}"\\]\\s*\\{([^}]*)\\}`).exec(css);
+  // The selector list may go on with the page colour that shares the block.
+  const match = new RegExp(`:root\\[data-theme="${id}"\\][^{]*\\{([^}]*)\\}`).exec(css);
   expect(match, `theme.css has no block for ${id}`).not.toBeNull();
   const tokens = new Map<string, string>();
   for (const [, name, value] of match![1]!.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) tokens.set(name!, value!.trim());
@@ -70,6 +71,14 @@ describe('theme.css', () => {
     expect(classic.get('--paper-1')).toBe('#fff58a');
     expect(classic.get('--paper-2')).toBe('#ffe766');
     expect(classic.get('--ink')).toBe('#4a3d12');
+  });
+
+  it('paints a coloured page with the light theme of that paper (yellow is classic)', () => {
+    for (const c of PAGE_COLORS) {
+      const theme = c.id === 'yellow' ? 'classic' : c.id;
+      expect(css, c.id).toMatch(new RegExp(`:root\\[data-theme="${theme}"\\],\\s*\\[data-page-color="${c.id}"\\]\\s*\\{`));
+      expect(block(theme).get('--paper-1'), c.id).toBe(c.swatch);
+    }
   });
 
   it('uses classic when no theme is set yet', () => {
