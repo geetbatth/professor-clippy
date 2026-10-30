@@ -5,6 +5,7 @@ describe('IPC channels', () => {
   it('has one distinct invoke channel per backend method', () => {
     expect(Object.keys(IpcInvoke).sort()).toEqual([
       'answerAsk',
+      'connectClaude',
       'getSettings',
       'listMessages',
       'markDone',

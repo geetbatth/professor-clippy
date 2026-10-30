@@ -1,0 +1,30 @@
+/* Connect Claude Code (first-run wizard and Settings). */
+.connect-claude {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wiring-log {
+  margin: 0;
+  max-height: 104px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(40, 32, 8, 0.86);
+  color: #fff3b0;
+  font: 10.5px/1.45 Consolas, 'Cascadia Mono', monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+.wiring-warning {
+  margin: 0;
+  font-size: 11.5px;
+  color: #8a4b00;
+}
+.wiring-ok {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2e6b2e;
+}

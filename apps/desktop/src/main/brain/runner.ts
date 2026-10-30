@@ -58,7 +58,7 @@ export function resolveClaude(env: NodeJS.ProcessEnv = process.env, platform = p
 }
 
 /** Quote one argument for `cmd.exe /s /c "..."` (no newlines or `%` in our arguments). */
-function cmdQuote(arg: string): string {
+export function cmdQuote(arg: string): string {
   return `"${arg.replace(/"/g, '""')}"`;
 }
 

@@ -34,7 +34,8 @@ describe('createBackend', () => {
         newChats++;
       },
     };
-    backend = createBackend({ store, asks, brain, settings: await SettingsStore.load(join(dir, 'settings.json')) });
+    const claudeWiring = { connect: async (step: string) => ({ ok: true, log: [step], warnings: [] }) };
+    backend = createBackend({ store, asks, brain, settings: await SettingsStore.load(join(dir, 'settings.json')), claudeWiring });
   });
   afterEach(() => {
     store.close();
@@ -77,5 +78,9 @@ describe('createBackend', () => {
     expect((await backend.getSettings()).soundEnabled).toBe(true);
     expect((await backend.setSettings({ soundEnabled: false })).soundEnabled).toBe(false);
     expect((await backend.getSettings()).soundEnabled).toBe(false);
+  });
+
+  it('forwards Connect Claude Code to the wiring', async () => {
+    expect(await backend.connectClaude('preview')).toEqual({ ok: true, log: ['preview'], warnings: [] });
   });
 });

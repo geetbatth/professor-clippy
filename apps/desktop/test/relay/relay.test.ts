@@ -15,8 +15,8 @@ import { Asks } from '../../src/main/core/asks';
 import { Bus } from '../../src/main/core/bus';
 import { Scheduler } from '../../src/main/core/scheduler';
 import { Store } from '../../src/main/core/store';
-import { RelayManager, relayConfig } from '../../src/main/relay';
-import { formatForWhatsApp, Relay, SEEN_KV_KEY } from '../../src/main/relay/relay';
+import { RELAY_WORKER_KV_KEY, RelayManager, relayConfig } from '../../src/main/relay';
+import { formatForWhatsApp, normalizeWorkerUrl, Relay, SEEN_KV_KEY, SYNCED_KV_PREFIX } from '../../src/main/relay/relay';
 import { RelayHttpError, type FrameHandler, type RelayTransport } from '../../src/main/relay/relayClient';
 import { FakeWorker, waitFor } from './fakeWorker';
 
@@ -310,6 +310,131 @@ describe('RelayManager', () => {
     expect(transports[1]!.stopped).toBe(1);
     expect(manager.active).toBe(false);
     manager.reconnect(); // off: nothing to do
+    store.close();
+  });
+});
+
+describe('RelayManager: one-time reminder sync when WhatsApp is set up', () => {
+  const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const W1 = { ...DEFAULT_SETTINGS, workerUrl: 'https://relay-one.example.workers.dev', workerSecret: 's' };
+  const W2 = { ...DEFAULT_SETTINGS, workerUrl: 'https://relay-two.example.workers.dev', workerSecret: 's' };
+
+  function managerSetup() {
+    const bus = new Bus();
+    const store = new Store({ path: ':memory:', bus });
+    const scheduler = new Scheduler({ store, bus });
+    const transports: FakeTransport[] = [];
+    const make = () =>
+      new RelayManager({
+        store,
+        bus,
+        scheduler,
+        asks: new Asks({ store, bus }),
+        brain: { ask: async () => ({}) },
+        log: () => {},
+        makeTransport: () => {
+          const t = new FakeTransport();
+          transports.push(t);
+          return t;
+        },
+      });
+    const settle = async () => {
+      for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 5));
+    };
+    /** PUT/DELETE calls on every transport so far, flattened as `put <id>` / `delete <id>`. */
+    const reminderCalls = () =>
+      transports.flatMap((t) => t.calls.filter((c) => c[0] !== 'send').map((c) => `${c[0]} ${c[1] as string}`));
+    return { store, scheduler, transports, make, settle, reminderCalls };
+  }
+
+  it('PUTs the future reminders made while WhatsApp was off, once, with tz', async () => {
+    const { store, scheduler, transports, make, settle, reminderCalls } = managerSetup();
+    const soon = Date.now() + 3_600_000;
+    const daily = scheduler.create({ body: 'standup', when: new Date(soon).toISOString(), rrule: 'FREQ=DAILY', sender: 'a' });
+    const once = scheduler.create({ body: 'call mum', when: new Date(soon + 1000).toISOString(), sender: 'a' });
+    const cancelled = scheduler.create({ body: 'never mind', when: new Date(soon).toISOString(), sender: 'a' });
+    scheduler.cancel(cancelled.id);
+    // Active but already overdue (the PC scheduler fires it): not sent to the Worker.
+    const overdue = scheduler.create({ body: 'late', when: new Date(soon).toISOString(), sender: 'a' });
+    store.updateReminder(overdue.id, { dueAt: Date.now() - 60_000 });
+
+    let manager = make();
+    manager.apply(DEFAULT_SETTINGS); // off: nothing
+    expect(transports).toHaveLength(0);
+    manager.apply(W1); // first set-up: the catch-up
+    await settle();
+    expect(transports[0]!.calls).toEqual([
+      ['put', daily.id, { body: 'standup', dueAt: daily.dueAt, rrule: 'FREQ=DAILY', tz: TZ }],
+      ['put', once.id, { body: 'call mum', dueAt: once.dueAt, tz: TZ }],
+    ]);
+    expect(store.getKv(RELAY_WORKER_KV_KEY)).toBe(normalizeWorkerUrl(W1.workerUrl));
+    expect(JSON.parse(store.getKv(SYNCED_KV_PREFIX + normalizeWorkerUrl(W1.workerUrl))!)).toEqual([daily.id, once.id]);
+
+    // Same Worker again: a new secret, a reconnect, an app restart (new manager): no re-sync.
+    manager.apply({ ...W1, workerSecret: 's2' });
+    manager.reconnect();
+    manager.stop();
+    manager = make();
+    manager.apply(W1);
+    manager.apply({ ...W1, workerUrl: `${W1.workerUrl}/` }); // same Worker, other spelling
+    await settle();
+    expect(reminderCalls()).toEqual([`put ${daily.id}`, `put ${once.id}`]);
+    manager.stop();
+    store.close();
+  });
+
+  it('a new Worker gets every reminder it never had; reconnecting the old one only fills its gaps', async () => {
+    const { store, scheduler, make, settle, reminderCalls } = managerSetup();
+    const when = new Date(Date.now() + 3_600_000).toISOString();
+    const manager = make();
+    manager.apply(W1);
+    const a = scheduler.create({ body: 'a', when, sender: 'x' }); // synced live to W1
+    await settle();
+    expect(reminderCalls()).toEqual([`put ${a.id}`]);
+
+    manager.apply(DEFAULT_SETTINGS); // WhatsApp switched off
+    expect(store.getKv(RELAY_WORKER_KV_KEY)).toBeUndefined();
+    const b = scheduler.create({ body: 'b', when, sender: 'x' }); // made while off
+    scheduler.cancel(a.id); // cancelled while off: W1 never heard
+
+    manager.apply(W1); // back on, same Worker
+    await settle();
+    expect(reminderCalls().slice(1)).toEqual([`put ${b.id}`, `delete ${a.id}`]);
+
+    manager.apply(W2); // moved to another Worker: it gets everything active
+    await settle();
+    expect(reminderCalls().slice(3)).toEqual([`put ${b.id}`]);
+    expect(JSON.parse(store.getKv(SYNCED_KV_PREFIX + normalizeWorkerUrl(W1.workerUrl))!)).toEqual([b.id]);
+    manager.stop();
+    store.close();
+  });
+
+  it('a failed catch-up PUT is retried, then recorded only once it lands', async () => {
+    const { store, scheduler, transports, settle } = managerSetup();
+    const r = scheduler.create({ body: 'x', when: new Date(Date.now() + 3_600_000).toISOString(), sender: 'a' });
+    const manager = new RelayManager({
+      store,
+      bus: new Bus(),
+      scheduler,
+      asks: new Asks({ store, bus: new Bus() }),
+      brain: { ask: async () => ({}) },
+      log: () => {},
+      retryDelaysMs: [200],
+      makeTransport: () => {
+        const t = new FakeTransport();
+        t.failures.push(new Error('offline'));
+        transports.push(t);
+        return t;
+      },
+    });
+    manager.apply(W1);
+    await settle();
+    const key = SYNCED_KV_PREFIX + normalizeWorkerUrl(W1.workerUrl);
+    expect(store.getKv(key)).toBeUndefined();
+    await waitFor(() => store.getKv(key) !== undefined, 2000, 'retried PUT');
+    expect(transports[0]!.calls.map((c) => c[0])).toEqual(['put', 'put']);
+    expect(JSON.parse(store.getKv(key)!)).toEqual([r.id]);
+    manager.stop();
     store.close();
   });
 });

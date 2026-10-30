@@ -11,7 +11,16 @@ const bundleShared = { exclude: ['@clippy/shared'] };
 
 export default defineConfig({
   main: {
-    build: { externalizeDeps: bundleShared },
+    build: {
+      externalizeDeps: bundleShared,
+      rolldownOptions: {
+        input: {
+          index: 'src/main/index.ts',
+          // "Connect Claude Code" installs run in a utility process (see wiringProcess.ts).
+          wiringChild: 'src/main/wiringChild.ts',
+        },
+      },
+    },
   },
   preload: {
     build: {

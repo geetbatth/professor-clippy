@@ -7,11 +7,14 @@ import { app, powerMonitor } from 'electron';
 import { appDataDir, settingsPath, type ClippyEvent, type ClippyEventMap, type Settings } from '@clippy/shared';
 import { createBackend } from './backend';
 import { findNode, resolveMcpServerPath } from './brain/mcpConfig';
+import { resolveClaude } from './brain/runner';
+import { createClaudeWiring, resolveWiringPaths } from './claudeWiring';
 import { Bus } from './core/bus';
 import { startServices } from './startup';
 import { createTray, type ClippyTray } from './tray';
 import { createClippyWindow, type ClippyWindow } from './window/createClippyWindow';
 import { registerIpc, type ClippyIpc } from './window/registerIpc';
+import { runInstallInUtilityProcess } from './wiringProcess';
 
 let clippy: ClippyWindow | undefined;
 let quitting = false;
@@ -60,7 +63,19 @@ async function main(): Promise<void> {
     brain: { emit, cwd: homedir() },
   });
 
-  const backend = createBackend({ store: core.store, asks: core.asks, brain, settings });
+  const claudeWiring = createClaudeWiring({
+    paths: resolveWiringPaths({
+      resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+      mainDir: import.meta.dirname,
+      mcpOverride: process.env.CLIPPY_MCP_PATH,
+    }),
+    // A sandbox for trying the wizard: wire `<dir>/.claude` instead of the real ~/.claude.
+    home: process.env.CLIPPY_CLAUDE_HOME || undefined,
+    findNode: () => findNode(),
+    findClaude: () => resolveClaude(),
+    runInstall: (job) => runInstallInUtilityProcess(job),
+  });
+  const backend = createBackend({ store: core.store, asks: core.asks, brain, settings, claudeWiring });
   clippy = createClippyWindow({
     loadPos: () => settings.get().windowPos,
     savePos: (windowPos) => {

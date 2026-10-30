@@ -3,10 +3,13 @@
  * or no `workerSecret` the relay is off and nothing touches the network.
  */
 import type { Settings } from '@clippy/shared';
-import { Relay, type RelayDeps } from './relay';
+import { normalizeWorkerUrl, Relay, type RelayDeps } from './relay';
 import { RelayClient, type RelayTransport } from './relayClient';
 
 export { Relay, formatForWhatsApp } from './relay';
+
+/** kv key: the Worker URL the relay was last configured with (absent while it is off). */
+export const RELAY_WORKER_KV_KEY = 'relayWorkerUrl';
 export { RelayClient, RelayHttpError } from './relayClient';
 
 export interface RelayConfig {
@@ -38,20 +41,36 @@ export class RelayManager {
     return this.#relay !== undefined;
   }
 
-  /** (Re)start for these settings; does nothing if the Worker settings didn't change. */
+  /**
+   * (Re)start for these settings; does nothing if the Worker settings didn't change.
+   *
+   * When the relay goes from off to on with a Worker URL it wasn't last configured with
+   * (WhatsApp set up for the first time, or moved to another Worker), the reminders that
+   * Worker has never seen are synced once. A restart of the app with the same Worker, a new
+   * secret, or a reconnect never re-syncs.
+   */
   apply(settings: Settings): void {
     const config = relayConfig(settings);
     const key = config && JSON.stringify(config);
     if (key === this.#key) return;
     this.stop();
     this.#key = key;
-    if (!config) return;
+    const { store } = this.#o;
+    if (!config) {
+      store.deleteKv(RELAY_WORKER_KV_KEY);
+      return;
+    }
     const makeTransport =
       this.#o.makeTransport ??
       ((c: RelayConfig) => new RelayClient({ ...c, ...(this.#o.log && { log: this.#o.log }) }));
     const { makeTransport: _unused, ...deps } = this.#o;
-    this.#relay = new Relay({ ...deps, transport: makeTransport(config) });
+    this.#relay = new Relay({ ...deps, workerUrl: config.workerUrl, transport: makeTransport(config) });
     this.#relay.start();
+    const worker = normalizeWorkerUrl(config.workerUrl);
+    if (store.getKv(RELAY_WORKER_KV_KEY) !== worker) {
+      this.#relay.syncExistingReminders();
+      store.setKv(RELAY_WORKER_KV_KEY, worker);
+    }
   }
 
   /** Reconnect the running relay's socket now (no-op when the relay is off). */

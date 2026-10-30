@@ -13,7 +13,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "harness": "node scripts/run-harness.mjs",
-    "e2e": "vitest run --config e2e/vitest.config.ts"
+    "e2e": "vitest run --config e2e/vitest.config.ts",
+    "package": "electron-builder --config electron-builder.yml --win --publish never"
   },
   "dependencies": {
     "@clippy/shared": "0.1.0",

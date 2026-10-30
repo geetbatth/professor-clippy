@@ -33,6 +33,8 @@ const fields = {
   /** Bearer secret for the relay Worker. */
   workerSecret: z.string().min(1),
   windowPos: WindowPos,
+  /** The first-run wizard has been finished or skipped. */
+  firstRunDone: z.boolean(),
 };
 
 /** Full settings object with defaults applied. */
@@ -46,6 +48,7 @@ export const Settings = z.object({
   workerUrl: fields.workerUrl.optional(),
   workerSecret: fields.workerSecret.optional(),
   windowPos: fields.windowPos.optional(),
+  firstRunDone: fields.firstRunDone.default(false),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -67,6 +70,7 @@ export const SettingsPatch = z.object({
   workerUrl: fields.workerUrl.nullable().optional(),
   workerSecret: fields.workerSecret.nullable().optional(),
   windowPos: fields.windowPos.nullable().optional(),
+  firstRunDone: fields.firstRunDone.optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;
 

@@ -99,7 +99,8 @@ describe('mock backend', () => {
 
   it('settings: defaults, patching and clearing', async () => {
     const b = createMockBackend();
-    expect(await b.getSettings()).toEqual(DEFAULT_SETTINGS);
+    expect(await b.getSettings()).toEqual({ ...DEFAULT_SETTINGS, firstRunDone: true });
+    expect((await createMockBackend({ firstRun: true }).getSettings()).firstRunDone).toBe(false);
     expect(await b.setSettings({ soundEnabled: false, workerUrl: 'https://relay.example.com' })).toMatchObject({
       soundEnabled: false,
       workerUrl: 'https://relay.example.com',

@@ -93,6 +93,8 @@ it('the real app takes a note, a reminder and an ask from an agent', { timeout: 
   mkdirSync(out, { recursive: true });
 
   // ---- launch the app (as Electron, never as Node) ----
+  // An existing user: skip the first-run wizard, so Clippy starts as mini Clippy.
+  writeFileSync(join(home, 'settings.json'), JSON.stringify({ firstRunDone: true }));
   const electron = createRequire(import.meta.url)('electron') as unknown as string;
   const env: NodeJS.ProcessEnv = { ...process.env, CLIPPY_HOME: home };
   delete env.ELECTRON_RUN_AS_NODE;

@@ -1,0 +1,60 @@
+# Windows installer: `npm run package` from the repo root (builds first), output in release/.
+# Per-user NSIS (no admin prompt), installed to %LOCALAPPDATA%\Programs\professor-clippy\,
+# which is where the MCP server looks for "Professor Clippy.exe" when it needs to start the app.
+appId: com.professorclippy.app
+productName: Professor Clippy
+copyright: Copyright © 2026 Professor Clippy contributors
+# The workspace package is "@clippy/desktop"; the installed app is "professor-clippy"
+# (install folder) / "Professor Clippy" (exe, shortcuts, Electron's own userData folder).
+extraMetadata:
+  name: professor-clippy
+  productName: Professor Clippy
+directories:
+  output: release
+  buildResources: build
+# Use the Electron that npm already installed instead of downloading it again.
+electronDist: ../../node_modules/electron/dist
+files:
+  - out/main/**
+  - out/preload/**
+  - out/renderer/**
+  - package.json
+  # Bundled into out/ by electron-vite (renderer, shared contracts): not needed at runtime.
+  - "!node_modules/@clippy/**"
+  - "!node_modules/react/**"
+  - "!node_modules/react-dom/**"
+  - "!node_modules/scheduler/**"
+# No native modules (SQLite is Electron's built-in node:sqlite).
+npmRebuild: false
+nodeGypRebuild: false
+# The built MCP server and Claude Code hook, run by `node` from Claude Code. The wiring
+# ("Connect Claude Code") registers these installed paths.
+extraResources:
+  - from: ../mcp/dist/index.js
+    to: mcp/index.js
+  - from: build/esm-package.json
+    to: mcp/package.json
+  - from: ../hook/dist/index.js
+    to: hook/index.js
+  - from: build/esm-package.json
+    to: hook/package.json
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  # No code-signing certificate: the installer is unsigned (SmartScreen will warn once).
+  signAndEditExecutable: true
+nsis:
+  oneClick: true
+  perMachine: false
+  runAfterFinish: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Professor Clippy
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  # Notes, settings and history live in %APPDATA%\professor-clippy, which the uninstaller
+  # never touches; this only concerns Electron's own cache folder.
+  deleteAppDataOnUninstall: false
+  artifactName: Professor-Clippy-Setup-${version}.${ext}

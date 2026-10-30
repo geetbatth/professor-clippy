@@ -30,6 +30,20 @@ export interface ChatDone {
   error?: string;
 }
 
+/** `connectClaude` step: show what would change (a dry run), or do it. */
+export type ClaudeWiringStep = 'preview' | 'install';
+
+/** Result of wiring Professor Clippy into Claude Code (MCP server, hooks, CLAUDE.md hint). */
+export interface ClaudeWiringReport {
+  /** False if the step failed; `error` says why. A failed install changes nothing. */
+  ok: boolean;
+  /** What the wiring printed: for `preview`, the plan ("would run / add / append ..."). */
+  log: string[];
+  error?: string;
+  /** Things that won't stop the wiring but will stop it working (e.g. `node` not on PATH). */
+  warnings: string[];
+}
+
 /** Request/response API the renderer calls (all async, via `ipcRenderer.invoke`). */
 export interface ClippyBackend {
   /** Messages matching a filter (e.g. `{ state: 'unread' }` for the sticky-note stack). */
@@ -49,6 +63,11 @@ export interface ClippyBackend {
   getSettings(): Promise<Settings>;
   /** Apply a partial update and return the resulting settings. */
   setSettings(patch: SettingsPatch): Promise<Settings>;
+  /**
+   * Wire Professor Clippy into Claude Code (user scope). Call `'preview'` first and show its
+   * log; call `'install'` only after the user confirms.
+   */
+  connectClaude(step: ClaudeWiringStep): Promise<ClaudeWiringReport>;
 }
 
 /** `ipcMain.handle` / `ipcRenderer.invoke` channel for each backend method. */
@@ -62,6 +81,7 @@ export const IpcInvoke = {
   searchHistory: 'clippy:searchHistory',
   getSettings: 'clippy:getSettings',
   setSettings: 'clippy:setSettings',
+  connectClaude: 'clippy:connectClaude',
 } as const satisfies { [K in keyof ClippyBackend]: `clippy:${K}` };
 
 /** Push-event channels (main → renderer via `webContents.send`). */

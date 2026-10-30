@@ -1,0 +1,73 @@
+// Rasterise build/icon.svg into build/icon.png (512 px) and build/icon.ico (16–256 px),
+// with Electron's own Chromium (no extra dependencies). Run as Electron, not Node:
+//   node apps/desktop/scripts/launch-electron.mjs apps/desktop/scripts/make-icons.mjs
+// The outputs are committed; rerun this only after editing icon.svg.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { app, BrowserWindow } from 'electron';
+
+const buildDir = join(import.meta.dirname, '..', 'build');
+const ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256];
+const PNG_SIZE = 512;
+
+/** An .ico whose entries are PNGs (Windows Vista and later), smallest first. */
+function encodeIco(images) {
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0); // reserved
+  header.writeUInt16LE(1, 2); // type: icon
+  header.writeUInt16LE(images.length, 4);
+  const entries = [];
+  let offset = 6 + 16 * images.length;
+  for (const { size, png } of images) {
+    const entry = Buffer.alloc(16);
+    entry.writeUInt8(size >= 256 ? 0 : size, 0); // width (0 means 256)
+    entry.writeUInt8(size >= 256 ? 0 : size, 1); // height
+    entry.writeUInt8(0, 2); // palette colours
+    entry.writeUInt8(0, 3); // reserved
+    entry.writeUInt16LE(1, 4); // colour planes
+    entry.writeUInt16LE(32, 6); // bits per pixel
+    entry.writeUInt32LE(png.length, 8);
+    entry.writeUInt32LE(offset, 12);
+    offset += png.length;
+    entries.push(entry);
+  }
+  return Buffer.concat([header, ...entries, ...images.map((i) => i.png)]);
+}
+
+async function main() {
+  const svg = readFileSync(join(buildDir, 'icon.svg'));
+  const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+  await win.loadURL('data:text/html;charset=utf-8,<!doctype html><title>icons</title>');
+  const sizes = [...ICO_SIZES, PNG_SIZE];
+  // Each size is drawn from the vector, so small icons stay crisp.
+  const dataUrls = await win.webContents.executeJavaScript(`(async () => {
+    const img = new Image();
+    img.src = 'data:image/svg+xml;base64,${svg.toString('base64')}';
+    await img.decode();
+    const out = {};
+    for (const s of ${JSON.stringify(sizes)}) {
+      const c = document.createElement('canvas');
+      c.width = c.height = s;
+      const g = c.getContext('2d');
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(img, 0, 0, s, s);
+      out[s] = c.toDataURL('image/png');
+    }
+    return out;
+  })()`);
+  const png = (size) => Buffer.from(dataUrls[size].split(',')[1], 'base64');
+  writeFileSync(join(buildDir, 'icon.png'), png(PNG_SIZE));
+  writeFileSync(join(buildDir, 'icon.ico'), encodeIco(ICO_SIZES.map((size) => ({ size, png: png(size) }))));
+  console.log(`wrote ${join(buildDir, 'icon.png')} (${PNG_SIZE} px) and icon.ico (${ICO_SIZES.join(', ')} px)`);
+  win.destroy();
+}
+
+// No top-level await before `ready`: Electron can't finish starting until the entry module has.
+app.disableHardwareAcceleration();
+app.whenReady().then(main).then(
+  () => app.exit(0),
+  (err) => {
+    console.error(err);
+    app.exit(1);
+  },
+);

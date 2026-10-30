@@ -25,6 +25,7 @@ const argSchemas: { [K in keyof ClippyBackend]: z.ZodType<Parameters<ClippyBacke
   searchHistory: z.tuple([z.string()]),
   getSettings: z.tuple([]),
   setSettings: z.tuple([SettingsPatch]),
+  connectClaude: z.tuple([z.enum(['preview', 'install'])]),
 };
 
 export interface ClippyIpc {

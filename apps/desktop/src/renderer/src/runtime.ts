@@ -42,7 +42,7 @@ export function resolveRuntime(search: string = location.search): Runtime | unde
   if (choice === 'missing') return undefined;
   let api: ClippyWindowApi;
   if (choice === 'mock') {
-    const backend = createMockBackend();
+    const backend = createMockBackend({ firstRun: new URLSearchParams(search).has('firstrun') });
     window.clippyMock = backend;
     api = backend;
   } else {

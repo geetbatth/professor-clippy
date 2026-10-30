@@ -18,6 +18,7 @@
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "dev": "npm run dev -w apps/desktop",
+    "package": "npm run build && npm run package -w apps/desktop",
     "smoke:sqlite": "node scripts/sqlite-smoke.mjs",
     "smoke:sqlite:electron": "node scripts/run-in-electron.mjs scripts/sqlite-smoke.mjs"
   },

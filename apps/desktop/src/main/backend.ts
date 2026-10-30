@@ -7,6 +7,7 @@ import type { Asks } from './core/asks';
 import { NotFoundError } from './core/errors';
 import type { Store } from './core/store';
 import type { BrainReply, Channel } from './brain/brain';
+import type { ClaudeWiring } from './claudeWiring';
 import type { SettingsStore } from './settings';
 
 export interface BackendDeps {
@@ -14,9 +15,11 @@ export interface BackendDeps {
   asks: Asks;
   brain: { ask(text: string, opts?: { channel?: Channel }): Promise<BrainReply>; newChat(): void };
   settings: SettingsStore;
+  /** "Connect Claude Code" (preview, then install). */
+  claudeWiring: ClaudeWiring;
 }
 
-export function createBackend({ store, asks, brain, settings }: BackendDeps): ClippyBackend {
+export function createBackend({ store, asks, brain, settings, claudeWiring }: BackendDeps): ClippyBackend {
   const found = <T>(value: T | undefined, id: string): T => {
     if (value === undefined) throw new NotFoundError(`No message ${id}`);
     return value;
@@ -53,6 +56,9 @@ export function createBackend({ store, asks, brain, settings }: BackendDeps): Cl
     },
     async setSettings(patch) {
       return settings.update(patch);
+    },
+    async connectClaude(step) {
+      return claudeWiring.connect(step);
     },
   };
 }

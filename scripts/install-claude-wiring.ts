@@ -277,7 +277,9 @@ export function parseArgs(argv: string[]): Pick<WiringOptions, 'action' | 'dryRu
   return { action, dryRun, home };
 }
 
-if (import.meta.main) {
+// Only when this file is the program itself: the desktop app bundles this module (where
+// `import.meta.main` describes the app's entry, not this file) and must never run the CLI.
+if (import.meta.main && /install-claude-wiring\.[cm]?[jt]s$/i.test(process.argv[1] ?? '')) {
   try {
     runWiring(parseArgs(process.argv.slice(2)));
   } catch (error) {

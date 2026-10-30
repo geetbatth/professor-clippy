@@ -1,8 +1,6 @@
 import { useMemo, useRef, type PointerEvent, type RefObject } from 'react';
 import type { ClippyWindowShell } from '../../../main/window/windowApi';
-
-/** Moves smaller than this (px) count as a click, not a drag. */
-const CLICK_SLOP = 4;
+import { createDragController } from './dragController';
 
 export interface DragHandle {
   onPointerDown(e: PointerEvent<Element>): void;
@@ -16,41 +14,21 @@ export interface DragHandle {
  * Drag the frameless window by a handle: main follows the cursor between dragStart and dragEnd.
  * A press that barely moves calls `onClick` instead. Sets the shared `draggingRef` mid-drag
  * (several handles can share one, so click-through stays put whichever is dragged).
- * A cancelled pointer or lost capture ends the drag (never a click), so it can't get stuck.
+ * A cancelled pointer, lost capture, or the handle being remounted mid-drag ends the drag
+ * (never a click), so it can't get stuck; see `dragController.ts`.
  */
 export function useWindowDrag(shell: ClippyWindowShell, draggingRef: RefObject<boolean>, onClick?: () => void): DragHandle {
-  const start = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const onClickRef = useRef(onClick);
   onClickRef.current = onClick;
 
   return useMemo<DragHandle>(() => {
-    const finish = (e: PointerEvent<Element>, released: boolean) => {
-      const s = start.current;
-      if (!s) return;
-      start.current = null;
-      draggingRef.current = false;
-      if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-      shell.dragEnd();
-      if (released && !s.moved) onClickRef.current?.();
-    };
+    const drag = createDragController({ shell, dragging: draggingRef, onClick: () => onClickRef.current, doc: document });
     return {
-      onPointerDown(e) {
-        if (e.button !== 0) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        start.current = { x: e.screenX, y: e.screenY, moved: false };
-        draggingRef.current = true;
-        shell.dragStart();
-      },
-      onPointerMove(e) {
-        const s = start.current;
-        if (!s) return;
-        if (!s.moved && Math.hypot(e.screenX - s.x, e.screenY - s.y) < CLICK_SLOP) return;
-        s.moved = true;
-        shell.dragMove();
-      },
-      onPointerUp: (e) => finish(e, true),
-      onPointerCancel: (e) => finish(e, false),
-      onLostPointerCapture: (e) => finish(e, false),
+      onPointerDown: (e) => drag.down(e),
+      onPointerMove: (e) => drag.move(e),
+      onPointerUp: (e) => drag.up(e),
+      onPointerCancel: (e) => drag.cancel(e),
+      onLostPointerCapture: (e) => drag.cancel(e),
     };
   }, [shell, draggingRef]);
 }

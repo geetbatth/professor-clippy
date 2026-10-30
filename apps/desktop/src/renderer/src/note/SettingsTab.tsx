@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import type { ClippyWindowApi } from '@clippy/shared/ipc';
 import type { Settings } from '@clippy/shared/settings';
 import type { SettingsState } from '../hooks/useSettings';
 import { ASK_WAIT_MAX_MINUTES, ASK_WAIT_MIN_MINUTES, askWaitMinutes, parseAskWait } from './askWait';
+import { ConnectClaude } from './ConnectClaude';
 import './SettingsTab.css';
 
 type Toggle = { [K in keyof Settings]-?: Settings[K] extends boolean ? K : never }[keyof Settings];
@@ -14,8 +16,8 @@ const TOGGLES: readonly { key: Toggle; label: string; hint: string }[] = [
   { key: 'autoStart', label: 'Start with Windows', hint: 'Clippy turns up for work when you do.' },
 ];
 
-/** Every `Settings` option: toggles, the default ask wait, and the WhatsApp relay. */
-export function SettingsTab({ state }: { state: SettingsState }) {
+/** Every `Settings` option: toggles, the default ask wait, the WhatsApp relay, and Claude Code wiring. */
+export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: SettingsState }) {
   const { settings, update, error } = state;
   const [workerUrl, setWorkerUrl] = useState('');
   const [workerSecret, setWorkerSecret] = useState('');
@@ -134,6 +136,12 @@ export function SettingsTab({ state }: { state: SettingsState }) {
         </div>
       </fieldset>
       {error && <p className="card-error">Couldn't save that: {error}</p>}
+
+      <fieldset className="setting-group">
+        <legend>Claude Code</legend>
+        <span className="setting-hint">Register my MCP server, hook and CLAUDE.md hint (shows the changes first).</span>
+        <ConnectClaude api={api} />
+      </fieldset>
     </div>
   );
 }

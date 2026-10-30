@@ -7,8 +7,11 @@
  *   is stored on the Message (that is how quote-replies find their ask).
  * - Reminder Messages are never sent by the desktop: the Worker fires synced reminders
  *   itself and owns their WhatsApp delivery.
- * - A reminder is synced only when it is created (`PUT /reminders/:id`, always with the
- *   PC's IANA `tz`) and deleted when it is cancelled. Nothing is re-synced on reconnect.
+ * - A reminder is synced when it is created (`PUT /reminders/:id`, always with the PC's
+ *   IANA `tz`) and deleted when it is cancelled. Nothing is re-synced on reconnect.
+ * - One exception, {@link Relay.syncExistingReminders}: when WhatsApp is first configured (or
+ *   pointed at a different Worker), every active future reminder that Worker has never been
+ *   sent is PUT once. Synced ids are tracked per Worker URL in kv.
  * - Chat replies to WhatsApp messages are sent with kind `chat`. Desk chat isn't mirrored.
  * - Failed calls are retried with backoff (5 s → 10 min, 5 attempts) unless the Worker
  *   answered with a permanent 4xx, and only while still relevant.
@@ -33,6 +36,18 @@ export const RETRY_DELAYS_MS = [5_000, 30_000, 2 * 60_000, 10 * 60_000] as const
 /** kv key: recently handled inbound frame ids (dedupe across redeliveries and restarts). */
 export const SEEN_KV_KEY = 'relaySeenInbound';
 const SEEN_KEEP = 500;
+/** kv key prefix: ids of the reminders a Worker holds (`relaySyncedReminders:<worker URL>`). */
+export const SYNCED_KV_PREFIX = 'relaySyncedReminders:';
+
+/** One spelling per Worker: no trailing slash, lower-case scheme and host. */
+export function normalizeWorkerUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return url.trim().replace(/\/+$/, '');
+  }
+}
 
 export interface RelayDeps {
   store: Store;
@@ -41,6 +56,9 @@ export interface RelayDeps {
   asks: Asks;
   brain: { ask(text: string, opts?: { channel?: Channel }): Promise<BrainReply> };
   transport: RelayTransport;
+  /** The Worker this relay talks to; the key for which reminders it already holds. */
+  workerUrl?: string;
+  now?: () => number;
   /** IANA zone sent with every reminder PUT. */
   timeZone?: () => string;
   retryDelaysMs?: readonly number[];
@@ -128,11 +146,58 @@ export class Relay {
         ...(r.rrule !== undefined && { rrule: r.rrule }),
         tz: (this.#d.timeZone ?? defaultTimeZone)(),
       });
+      this.#markSynced(r.id, true);
     });
   }
 
-  #deleteReminder(r: Reminder): void {
-    this.#enqueue(`delete reminder ${r.id}`, () => this.#d.transport.deleteReminder(r.id));
+  #deleteReminder(r: Pick<Reminder, 'id'>): void {
+    this.#enqueue(`delete reminder ${r.id}`, async () => {
+      await this.#d.transport.deleteReminder(r.id);
+      this.#markSynced(r.id, false);
+    });
+  }
+
+  /**
+   * One-time catch-up when WhatsApp is first configured, or pointed at another Worker
+   * (the caller decides when; never on an ordinary reconnect). PUTs every active reminder
+   * still due in the future that this Worker was never sent, and DELETEs the ones it holds
+   * that were cancelled or finished meanwhile (the relay was off, so it never heard).
+   */
+  syncExistingReminders(): void {
+    if (!this.#running) return;
+    const now = (this.#d.now ?? Date.now)();
+    const synced = new Set(this.#synced());
+    for (const r of this.#d.store.listActiveReminders()) {
+      if (r.dueAt > now && !synced.has(r.id)) this.#putReminder(r.id);
+    }
+    for (const id of synced) {
+      if (!this.#d.store.getReminder(id)?.active) this.#deleteReminder({ id });
+    }
+  }
+
+  get #syncedKey(): string | undefined {
+    return this.#d.workerUrl === undefined ? undefined : SYNCED_KV_PREFIX + normalizeWorkerUrl(this.#d.workerUrl);
+  }
+
+  /** Ids of the reminders the current Worker holds (as far as we know). */
+  #synced(): string[] {
+    const key = this.#syncedKey;
+    if (!key) return [];
+    try {
+      const raw = JSON.parse(this.#d.store.getKv(key) ?? '[]');
+      return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  #markSynced(id: string, held: boolean): void {
+    const key = this.#syncedKey;
+    if (!key) return;
+    const ids = new Set(this.#synced());
+    if (held) ids.add(id);
+    else ids.delete(id);
+    this.#d.store.setKv(key, JSON.stringify([...ids]));
   }
 
   #sendChat(text: string, replyTo?: Message): void {

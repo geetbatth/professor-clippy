@@ -10,6 +10,7 @@ describe('Settings', () => {
       askTimeoutDefaultS: 600,
       hideOnFullscreen: true,
       autoStart: true,
+      firstRunDone: false,
     });
     expect(DEFAULT_SETTINGS).toEqual(Settings.parse({}));
   });

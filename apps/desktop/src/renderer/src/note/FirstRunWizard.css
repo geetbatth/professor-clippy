@@ -1,0 +1,62 @@
+.wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.wizard section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.wizard-steps {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wizard-steps li {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(74, 61, 18, 0.14);
+  color: rgba(74, 61, 18, 0.7);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+.wizard-steps li.on {
+  background: #4a3d12;
+  color: #fff8d1;
+}
+.wizard-steps li.done {
+  background: #c9e6bf;
+  color: #2e6b2e;
+}
+.wizard-title {
+  margin: 0;
+  font: 700 15px 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;
+  color: #3a300c;
+}
+.wizard-text {
+  margin: 0;
+  line-height: 1.4;
+  color: #3a300c;
+}
+.wizard-small {
+  font-size: 11.5px;
+  color: rgba(74, 61, 18, 0.78);
+}
+.wizard code {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+.wizard-finish {
+  justify-content: flex-end;
+  margin-top: 4px;
+}

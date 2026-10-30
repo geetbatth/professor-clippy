@@ -11,6 +11,7 @@ import { useSettings } from './hooks/useSettings';
 import { useUnread } from './hooks/useUnread';
 import { useWindowDrag } from './hooks/useWindowDrag';
 import { ChatTab } from './note/ChatTab';
+import { FirstRunWizard } from './note/FirstRunWizard';
 import { HistoryTab } from './note/HistoryTab';
 import { NotesTab } from './note/NotesTab';
 import { SettingsTab } from './note/SettingsTab';
@@ -52,6 +53,10 @@ export function App({ runtime }: { runtime: Runtime }) {
   modeRef.current = mode;
   const moodRef = useRef<ClippyMood>(null);
   const lastActivity = useRef(Date.now());
+  /** True while Clippy or the note is being dragged. */
+  const draggingRef = useRef(false);
+  /** Fresh install: the note opens on the setup wizard until it is finished or skipped. */
+  const firstRun = settings !== undefined && !settings.firstRunDone;
 
   const setMode = useCallback(
     (m: WindowMode) => {
@@ -63,9 +68,16 @@ export function App({ runtime }: { runtime: Runtime }) {
   );
   useEffect(() => shell.setMode(modeRef.current), [shell]);
   useEffect(() => shell.onModeChanged(setModeState), [shell]);
+  useEffect(() => {
+    if (firstRun) setMode('expanded');
+  }, [firstRun, setMode]);
 
-  /** Pop the note open (if tucked away) on the Notes tab. */
+  /**
+   * Pop the note open (if tucked away) on the Notes tab. Not mid-drag: switching views would
+   * pull the dragged Clippy out from under the cursor (the unread badge still shows).
+   */
   const open = useCallback(() => {
+    if (draggingRef.current) return;
     if (modeRef.current === 'mini') {
       setTab('notes');
       setMode('expanded');
@@ -105,7 +117,6 @@ export function App({ runtime }: { runtime: Runtime }) {
     return () => events.forEach((e) => window.removeEventListener(e, activity));
   }, [activity]);
 
-  const draggingRef = useRef(false);
   useClickThrough(shell, draggingRef, activity);
   const toggleMode = useCallback(() => setMode(modeRef.current === 'mini' ? 'expanded' : 'mini'), [setMode]);
   const clippyDrag = useWindowDrag(shell, draggingRef, toggleMode);
@@ -116,7 +127,7 @@ export function App({ runtime }: { runtime: Runtime }) {
     moodRef.current?.message(false);
     open();
   });
-  useAutoCollapse(mode === 'expanded' && unread === 0 && !chat.thinking, lastActivity, AUTO_COLLAPSE_MS, () => setMode('mini'));
+  useAutoCollapse(mode === 'expanded' && unread === 0 && !chat.thinking && !firstRun, lastActivity, AUTO_COLLAPSE_MS, () => setMode('mini'));
 
   const dismissQuip = useCallback(() => setQuip(undefined), []);
 
@@ -140,11 +151,25 @@ export function App({ runtime }: { runtime: Runtime }) {
         clippy={clippy}
         bubble={quip && <SpeechBubble text={quip} onDismiss={dismissQuip} />}
         note={
-          <StickyNote tab={tab} onTab={setTab} unread={unread} onCollapse={() => setMode('mini')} drag={noteDrag} wiggleKey={wiggle}>
-            {tab === 'notes' && <NotesTab stack={stack} />}
-            {tab === 'chat' && <ChatTab chat={chat} />}
-            {tab === 'history' && <HistoryTab api={api} />}
-            {tab === 'settings' && <SettingsTab state={settingsState} />}
+          <StickyNote
+            tab={tab}
+            onTab={setTab}
+            unread={unread}
+            onCollapse={() => setMode('mini')}
+            drag={noteDrag}
+            wiggleKey={wiggle}
+            tabs={!firstRun}
+          >
+            {firstRun ? (
+              <FirstRunWizard api={api} state={settingsState} />
+            ) : (
+              <>
+                {tab === 'notes' && <NotesTab stack={stack} />}
+                {tab === 'chat' && <ChatTab chat={chat} />}
+                {tab === 'history' && <HistoryTab api={api} />}
+                {tab === 'settings' && <SettingsTab api={api} state={settingsState} />}
+              </>
+            )}
           </StickyNote>
         }
       />

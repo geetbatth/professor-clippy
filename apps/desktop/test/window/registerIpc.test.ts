@@ -39,6 +39,7 @@ function fakeBackend(): ClippyBackend {
     searchHistory: vi.fn(async () => []),
     getSettings: vi.fn(async () => ({}) as never),
     setSettings: vi.fn(async () => ({}) as never),
+    connectClaude: vi.fn(async () => ({ ok: true, log: [], warnings: [] })),
   };
 }
 
@@ -61,6 +62,8 @@ describe('registerIpc', () => {
     expect(backend.setSettings).toHaveBeenCalledWith({ soundEnabled: false, workerUrl: null });
     await handlers.get(IpcInvoke.newChat)!(e);
     expect(backend.newChat).toHaveBeenCalledOnce();
+    await handlers.get(IpcInvoke.connectClaude)!(e, 'preview');
+    expect(backend.connectClaude).toHaveBeenCalledWith('preview');
   });
 
   it('rejects bad arguments before they reach the backend', () => {
@@ -73,6 +76,7 @@ describe('registerIpc', () => {
     expect(() => handlers.get(IpcInvoke.listMessages)!(e, { state: 'bogus' })).toThrow();
     expect(() => handlers.get(IpcInvoke.setSettings)!(e, { askTimeoutDefaultS: -1 })).toThrow();
     expect(() => handlers.get(IpcInvoke.sendChat)!(e, '')).toThrow();
+    expect(() => handlers.get(IpcInvoke.connectClaude)!(e, 'uninstall')).toThrow();
     expect(backend.snooze).not.toHaveBeenCalled();
     expect(backend.markDone).not.toHaveBeenCalled();
   });

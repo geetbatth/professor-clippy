@@ -16,6 +16,8 @@ export interface MockOptions {
   /** Delay before the reply starts and between streamed chunks. */
   thinkMs?: number;
   chunkMs?: number;
+  /** Start as a fresh install (the first-run wizard shows). */
+  firstRun?: boolean;
 }
 
 export interface MockBackend extends ClippyWindowApi {
@@ -44,7 +46,8 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
   const thinkMs = opts.thinkMs ?? 900;
   const chunkMs = opts.chunkMs ?? 60;
   const messages = new Map((opts.messages ?? sampleMessages(now())).map((m) => [m.id, { ...m }]));
-  let settings: Settings = { ...DEFAULT_SETTINGS };
+  let settings: Settings = { ...DEFAULT_SETTINGS, firstRunDone: !opts.firstRun };
+  let previewed = false;
   let replyIndex = 0;
   const listeners = new Map<ClippyEvent, Set<(payload: never) => void>>();
 
@@ -133,6 +136,29 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     async setSettings(patch) {
       settings = applySettingsPatch(settings, SettingsPatch.parse(patch));
       return { ...settings };
+    },
+    async connectClaude(step) {
+      await new Promise((r) => setTimeout(r, step === 'install' ? thinkMs : thinkMs / 3));
+      const config = 'C:/Users/you/.claude';
+      const mcp = 'C:/Users/you/AppData/Local/Programs/professor-clippy/resources/mcp/index.js';
+      const hook = 'C:/Users/you/AppData/Local/Programs/professor-clippy/resources/hook/index.js';
+      if (step === 'preview') {
+        previewed = true;
+        return {
+          ok: true,
+          warnings: [],
+          log: [
+            `Installing Professor Clippy wiring (Claude config dir: ${config})`,
+            '[dry-run] would run: claude mcp remove --scope user clippy',
+            `[dry-run] would run: claude mcp add --scope user clippy -- node ${mcp}`,
+            `[dry-run] would add Stop + Notification hooks (node "${hook}" --professor-clippy) in ${config}/settings.json`,
+            `[dry-run] would append the Professor Clippy hint in ${config}/CLAUDE.md`,
+            'Dry run: nothing changed.',
+          ],
+        };
+      }
+      if (!previewed) return { ok: false, log: [], error: 'Show the changes first (preview), then install.', warnings: [] };
+      return { ok: true, warnings: [], log: [`Installing Professor Clippy wiring (Claude config dir: ${config})`, 'Done.'] };
     },
     on(event, cb) {
       const set = listeners.get(event) ?? new Set();
