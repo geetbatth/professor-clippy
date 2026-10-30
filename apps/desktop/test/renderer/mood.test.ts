@@ -188,4 +188,29 @@ describe('moodReducer', () => {
     s = moodReducer(s, { type: 'tick', now: T0 + 7 * MIN });
     expect(view(s).mood).toBe('tapGlass');
   });
+  it('blinks do not change the replay key, so resting loops are never remounted', () => {
+    const idle = initialMoodState(T0);
+    const blinking = moodReducer(idle, { type: 'blink', now: T0 });
+    expect(view(blinking)).toMatchObject({ mood: 'blink', seq: view(idle).seq });
+    const back = moodReducer(blinking, { type: 'tick', now: T0 + TRANSIENT_MS.blink });
+    expect(view(back)).toMatchObject({ mood: 'idle', seq: view(idle).seq });
+    // Many blinks later, still the same key.
+    let s = back;
+    for (let i = 1; i <= 20; i++) {
+      s = moodReducer(s, { type: 'blink', now: T0 + i * 5000 });
+      s = moodReducer(s, { type: 'tick', now: T0 + i * 5000 + TRANSIENT_MS.blink });
+    }
+    expect(view(s).seq).toBe(view(idle).seq);
+  });
+
+  it('every non-blink transient gets a new replay key, including one that cuts a blink short', () => {
+    const blinking = run([{ type: 'blink', now: T0 }]);
+    const jumping = moodReducer(blinking, { type: 'message', now: T0 + 50, urgent: false });
+    expect(view(jumping).seq).toBe(view(blinking).seq + 1);
+    const tapping = run([
+      { type: 'unread', now: T0, count: 1 },
+      { type: 'tick', now: T0 + 2 * MIN },
+    ]);
+    expect(view(tapping)).toMatchObject({ mood: 'tapGlass', seq: 1 });
+  });
 });

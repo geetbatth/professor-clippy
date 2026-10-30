@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message } from '@clippy/shared/schemas';
 import type { WindowMode } from '../../main/window/windowApi';
-import { Clippy } from './clippy/Clippy';
+import { TrackingClippy } from './clippy/TrackingClippy';
 import { useClippyMood, type ClippyMood } from './clippy/useClippyMood';
 import { useAdvice } from './hooks/useAdvice';
 import { useAutoCollapse } from './hooks/useAutoCollapse';
 import { useChat } from './hooks/useChat';
 import { useClickThrough } from './hooks/useClickThrough';
-import { useCursor } from './hooks/useCursor';
 import { useSettings } from './hooks/useSettings';
 import { useUnread } from './hooks/useUnread';
 import { useWindowDrag } from './hooks/useWindowDrag';
@@ -106,7 +105,6 @@ export function App({ runtime }: { runtime: Runtime }) {
   const toggleMode = useCallback(() => setMode(modeRef.current === 'mini' ? 'expanded' : 'mini'), [setMode]);
   const clippyDrag = useWindowDrag(shell, draggingRef, toggleMode);
   const noteDrag = useWindowDrag(shell, draggingRef);
-  const cursor = useCursor(shell);
 
   useAdvice(settings?.unsolicitedAdvice ?? false, () => {
     setQuip((last) => pickQuip('advice', Math.random, last));
@@ -118,7 +116,15 @@ export function App({ runtime }: { runtime: Runtime }) {
   const dismissQuip = useCallback(() => setQuip(undefined), []);
 
   const clippy = (
-    <Clippy mood={mood.mood} big={mood.big} seq={mood.seq} look={cursor} shadow={mode === 'mini'} title="Professor Clippy: drag me, or click me" {...clippyDrag} />
+    <TrackingClippy
+      shell={shell}
+      mood={mood.mood}
+      big={mood.big}
+      seq={mood.seq}
+      shadow={mode === 'mini'}
+      title="Professor Clippy: drag me, or click me"
+      {...clippyDrag}
+    />
   );
 
   const view =

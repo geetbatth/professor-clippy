@@ -55,7 +55,11 @@ export interface MoodState {
   lastBigAt?: number;
   current?: Playing & { until: number };
   queue: Playing[];
-  /** Increments every time a transient starts (lets sound/effects react to repeats). */
+  /**
+   * Replay key: increments when a transient other than `blink` starts. The rig remounts on
+   * it to replay one-shot animations; blinks must not remount it, or every resting loop
+   * (sway, tassel, brow waggle) would restart from frame 0 every few seconds.
+   */
   seq: number;
 }
 
@@ -95,7 +99,7 @@ function duration(p: Playing): number {
 }
 
 function start(s: MoodState, p: Playing, now: number): MoodState {
-  return { ...s, current: { ...p, until: now + duration(p) }, seq: s.seq + 1 };
+  return { ...s, current: { ...p, until: now + duration(p) }, seq: p.mood === 'blink' ? s.seq : s.seq + 1 };
 }
 
 /** Play a transient now, or queue it behind the current one. A blink never interrupts or queues. */

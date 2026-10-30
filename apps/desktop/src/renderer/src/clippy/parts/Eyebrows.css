@@ -29,10 +29,13 @@
 }
 
 /* idle: every so often, a quick double eyebrow waggle */
-.clippy[data-mood='idle'] .brow {
+/* (blink shares idle's loops, so a blink doesn't restart them) */
+.clippy[data-mood='idle'] .brow,
+.clippy[data-mood='blink'] .brow {
   animation: brow-waggle 9s ease-in-out infinite;
 }
-.clippy[data-mood='idle'] .brow-r {
+.clippy[data-mood='idle'] .brow-r,
+.clippy[data-mood='blink'] .brow-r {
   animation-delay: 60ms;
 }
 @keyframes brow-waggle {

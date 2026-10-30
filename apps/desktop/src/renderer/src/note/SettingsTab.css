@@ -106,3 +106,8 @@
   display: flex;
   gap: 6px;
 }
+
+.field-input--bad {
+  border-color: #c62828;
+  background: #fff1ef;
+}

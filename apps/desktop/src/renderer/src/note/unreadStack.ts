@@ -16,3 +16,12 @@ export function applyToStack(stack: readonly Message[], m: Message): Message[] {
   const rest = stack.filter((x) => x.id !== m.id);
   return belongsOnStack(m) ? [...rest, m].sort(newestFirst) : rest;
 }
+
+/**
+ * Does this event put a message onto the stack that wasn't there? True for a brand-new note,
+ * and for one coming back (a snooze waking up arrives as `message:updated` with `state: 'unread'`),
+ * so both get the ding, the jump and a quip.
+ */
+export function isArrival(stack: readonly Message[], m: Message): boolean {
+  return belongsOnStack(m) && !stack.some((x) => x.id === m.id);
+}

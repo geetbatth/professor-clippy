@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Settings } from '@clippy/shared/settings';
 import type { SettingsState } from '../hooks/useSettings';
+import { ASK_WAIT_MAX_MINUTES, ASK_WAIT_MIN_MINUTES, askWaitMinutes, parseAskWait } from './askWait';
 import './SettingsTab.css';
 
 type Toggle = { [K in keyof Settings]-?: Settings[K] extends boolean ? K : never }[keyof Settings];
@@ -19,11 +20,29 @@ export function SettingsTab({ state }: { state: SettingsState }) {
   const [workerUrl, setWorkerUrl] = useState('');
   const [workerSecret, setWorkerSecret] = useState('');
 
+  const [askWait, setAskWait] = useState('');
+  const [askWaitError, setAskWaitError] = useState(false);
+
   useEffect(() => {
     setWorkerUrl(settings?.workerUrl ?? '');
   }, [settings?.workerUrl]);
+  useEffect(() => {
+    if (settings) setAskWait(askWaitMinutes(settings.askTimeoutDefaultS));
+  }, [settings?.askTimeoutDefaultS]);
 
   if (!settings) return <p className="settings-loading">Fetching my notes…</p>;
+
+  /** Save the ask wait on blur / Enter, only if it's valid and changed. */
+  const commitAskWait = () => {
+    const seconds = parseAskWait(askWait);
+    if (seconds === undefined) {
+      setAskWaitError(true);
+      return;
+    }
+    setAskWaitError(false);
+    setAskWait(askWaitMinutes(seconds));
+    if (seconds !== settings.askTimeoutDefaultS) void update({ askTimeoutDefaultS: seconds });
+  };
 
   const relayConnected = Boolean(settings.workerUrl && settings.workerSecret);
 
@@ -51,19 +70,29 @@ export function SettingsTab({ state }: { state: SettingsState }) {
         </span>
         <span className="setting-number">
           <input
-            type="number"
-            className="field-input"
-            min={1}
-            max={1440}
-            value={Math.round(settings.askTimeoutDefaultS / 60)}
+            type="text"
+            inputMode="numeric"
+            className={`field-input${askWaitError ? ' field-input--bad' : ''}`}
+            value={askWait}
+            aria-invalid={askWaitError}
             onChange={(e) => {
-              const minutes = Math.round(Number(e.target.value));
-              if (minutes >= 1) void update({ askTimeoutDefaultS: minutes * 60 });
+              setAskWait(e.target.value);
+              setAskWaitError(false);
+            }}
+            onBlur={commitAskWait}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitAskWait();
+              if (e.key === 'Escape') setAskWait(askWaitMinutes(settings.askTimeoutDefaultS));
             }}
           />
           min
         </span>
       </label>
+      {askWaitError && (
+        <p className="card-error">
+          Whole minutes between {ASK_WAIT_MIN_MINUTES} and {ASK_WAIT_MAX_MINUTES}, please.
+        </p>
+      )}
 
       <fieldset className="setting-group">
         <legend>WhatsApp relay {relayConnected ? <span className="relay-on">connected</span> : <span className="relay-off">off</span>}</legend>

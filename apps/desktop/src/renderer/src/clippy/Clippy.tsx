@@ -17,7 +17,7 @@ export interface ClippyProps {
   mood: Mood;
   /** Bigger antics (urgent / long-ignored). */
   big?: boolean;
-  /** Bumps on every new transient; remounting replays its CSS animations. */
+  /** Replay key (bumps on each non-blink transient); remounting replays one-shot CSS animations. */
   seq?: number;
   /** Cursor in client (window) coordinates, for the googly eyes. */
   look?: Vec | null;
@@ -27,6 +27,8 @@ export interface ClippyProps {
   onPointerDown?: PointerEventHandler<SVGRectElement>;
   onPointerMove?: PointerEventHandler<SVGRectElement>;
   onPointerUp?: PointerEventHandler<SVGRectElement>;
+  onPointerCancel?: PointerEventHandler<SVGRectElement>;
+  onLostPointerCapture?: PointerEventHandler<SVGRectElement>;
   title?: string;
 }
 

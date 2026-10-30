@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '@clippy/shared/schemas';
-import { applyToStack, buildStack } from '../../src/renderer/src/note/unreadStack';
+import { applyToStack, buildStack, isArrival } from '../../src/renderer/src/note/unreadStack';
 
 let n = 0;
 function msg(p: Partial<Message>): Message {
@@ -38,5 +38,16 @@ describe('unread stack', () => {
     stack = applyToStack(stack, { ...m, state: 'unread' });
     expect(stack.map((x) => x.id)).toEqual([m.id]);
     expect(applyToStack(stack, { ...m, state: 'done' })).toEqual([]);
+  });
+  it('counts a snoozed note waking up as an arrival, but not edits or departures', () => {
+    const m = msg({});
+    expect(isArrival([], m)).toBe(true); // brand new
+    const stack = applyToStack([], m);
+    expect(isArrival(stack, { ...m, body: 'edited' })).toBe(false); // already there
+    const snoozed = applyToStack(stack, { ...m, state: 'snoozed', snoozedUntil: 5 });
+    expect(isArrival(snoozed, { ...m, state: 'snoozed', snoozedUntil: 5 })).toBe(false);
+    expect(isArrival(snoozed, { ...m, state: 'unread', snoozedUntil: 5 })).toBe(true); // snooze over
+    expect(isArrival(stack, { ...m, state: 'done' })).toBe(false);
+    expect(isArrival([], msg({ kind: 'chat' }))).toBe(false);
   });
 });
