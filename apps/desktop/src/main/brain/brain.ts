@@ -18,9 +18,26 @@ import { createSpawnRunner, type ClaudeRunner, type ClaudeRunResult } from './ru
 import { StreamJsonParser } from './streamParser';
 
 export const SESSION_KV_KEY = 'brainSessionId';
-/** Allowed tools, exactly as the brief specifies (the CLI accepts space-separated lists). */
-export const ALLOWED_TOOLS = 'Read Glob Grep WebSearch WebFetch mcp__clippy__*';
-export const DISALLOWED_TOOLS = 'Edit Write Bash NotebookEdit';
+/**
+ * The clippy MCP tools the brain may use. Not `ask_user` or `check_reply`: `ask_user` blocks
+ * until the user answers, and a brain turn waiting for an answer would stall every turn
+ * queued behind it (the user's answer would itself be a queued turn). The brain asks in its
+ * reply text instead (see the persona).
+ */
+export const BRAIN_CLIPPY_TOOLS = [
+  'leave_message',
+  'remind_me',
+  'list_reminders',
+  'cancel_reminder',
+  'list_pending_asks',
+  'answer_pending',
+] as const;
+/** clippy MCP tools the brain must never see (removed from its context, not just denied). */
+export const BRAIN_BLOCKED_CLIPPY_TOOLS = ['ask_user', 'check_reply'] as const;
+const mcp = (tools: readonly string[]) => tools.map((t) => `mcp__clippy__${t}`);
+/** Allowed tools (the CLI accepts space-separated lists). */
+export const ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', ...mcp(BRAIN_CLIPPY_TOOLS)].join(' ');
+export const DISALLOWED_TOOLS = ['Edit', 'Write', 'Bash', 'NotebookEdit', ...mcp(BRAIN_BLOCKED_CLIPPY_TOOLS)].join(' ');
 /** Built-in tools that exist at all for the brain (so PowerShell, Agent etc. aren't even offered). */
 export const BUILTIN_TOOLS = 'Read,Glob,Grep,WebSearch,WebFetch';
 /** A turn that runs longer than this is killed. */

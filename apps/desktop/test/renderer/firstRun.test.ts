@@ -1,6 +1,6 @@
 import { SettingsPatch } from '@clippy/shared/settings';
 import { describe, expect, it } from 'vitest';
-import { nextStep, relayPatch, WIZARD_STEPS } from '../../src/renderer/src/note/firstRun';
+import { nextStep, relayBadge, relayPatch, WIZARD_STEPS } from '../../src/renderer/src/note/firstRun';
 
 describe('first-run wizard', () => {
   it('goes WhatsApp → preferences → Claude Code, then finishes', () => {
@@ -22,5 +22,26 @@ describe('first-run wizard', () => {
     expect(relayPatch('relay.workers.dev', 's')).toEqual({ error: expect.stringMatching(/https:\/\//) });
     expect(relayPatch('http://relay.example.workers.dev', 's')).toEqual({ error: expect.stringMatching(/must start with https/) });
     expect(relayPatch('https://relay.example.workers.dev', '  ')).toEqual({ error: expect.stringMatching(/PC_SECRET/) });
+  });
+
+  it('Settings: the same checks; an empty secret keeps the saved one and changes only the URL', () => {
+    const saved = { secretSaved: true };
+    expect(relayPatch(' https://relay-two.me.workers.dev/ ', '', saved)).toEqual({
+      patch: { workerUrl: 'https://relay-two.me.workers.dev' },
+    });
+    expect(relayPatch('https://relay.me.workers.dev', ' new-secret ', saved)).toEqual({
+      patch: { workerUrl: 'https://relay.me.workers.dev', workerSecret: 'new-secret' },
+    });
+    expect(relayPatch('http://relay.example.workers.dev', '', saved)).toEqual({ error: expect.stringMatching(/must start with https/) });
+    expect(relayPatch('ftp://relay.example.workers.dev', 'x', saved)).toEqual({ error: expect.stringMatching(/must start with https/) });
+    expect(relayPatch('https://relay.example.workers.dev', '   ', { secretSaved: false })).toEqual({
+      error: expect.stringMatching(/PC_SECRET/),
+    });
+  });
+
+  it('labels a configured relay "saved", not "connected" (there is no live state to show)', () => {
+    expect(relayBadge({ workerUrl: 'https://r.workers.dev', workerSecret: 's' })).toBe('saved');
+    expect(relayBadge({ workerUrl: 'https://r.workers.dev' })).toBe('off');
+    expect(relayBadge({})).toBe('off');
   });
 });

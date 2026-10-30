@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { Message, type ClippyEvent } from '@clippy/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ALLOWED_TOOLS,
   Brain,
+  BRAIN_BLOCKED_CLIPPY_TOOLS,
+  BRAIN_CLIPPY_TOOLS,
   BRAIN_ERRORS,
   DISALLOWED_TOOLS,
   SESSION_KV_KEY,
@@ -42,6 +45,24 @@ describe('Brain', () => {
   }
   const of = (name: ClippyEvent) => events.filter(([e]) => e === name).map(([, p]) => p);
 
+  it('never offers the brain the blocking ask_user / check_reply tools, and covers every other clippy tool', () => {
+    const allowed = ALLOWED_TOOLS.split(' ');
+    const disallowed = DISALLOWED_TOOLS.split(' ');
+    expect(allowed).not.toContain('mcp__clippy__*');
+    for (const t of ['ask_user', 'check_reply']) {
+      expect(allowed).not.toContain(`mcp__clippy__${t}`);
+      expect(disallowed).toContain(`mcp__clippy__${t}`);
+    }
+    // Every tool the MCP server registers is either offered or blocked, so a new one is a decision.
+    const server = readFileSync(new URL('../../../mcp/src/server.ts', import.meta.url), 'utf8');
+    const registered = [...server.matchAll(/registerTool\(\s*'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(registered.length).toBeGreaterThanOrEqual(8);
+    expect([...BRAIN_CLIPPY_TOOLS, ...BRAIN_BLOCKED_CLIPPY_TOOLS].sort()).toEqual([...registered].sort());
+    // The persona asks in the reply, never through a tool that waits.
+    expect(PERSONA).toMatch(/ask in your reply/);
+    expect(PERSONA).not.toMatch(/"|%/); // survives the cmd.exe fallback
+  });
+
   it('runs claude with the brief flags, the prompt on stdin, cwd = home, and streams the reply', async () => {
     const { b, fake } = brain([{ stdout: fixture('tool-turn') }]);
     const reply = await b.ask('What reminders do I have?');
@@ -60,9 +81,12 @@ describe('Brain', () => {
     expect(args).not.toContain('--resume'); // no session yet
     expect(flag('--append-system-prompt')).toBe(PERSONA);
     expect(flag('--mcp-config')).toBe('C:/data/brain/brain-mcp.json');
-    expect(flag('--allowedTools')).toBe('Read Glob Grep WebSearch WebFetch mcp__clippy__*');
+    expect(flag('--allowedTools')).toBe(
+      'Read Glob Grep WebSearch WebFetch mcp__clippy__leave_message mcp__clippy__remind_me mcp__clippy__list_reminders ' +
+        'mcp__clippy__cancel_reminder mcp__clippy__list_pending_asks mcp__clippy__answer_pending',
+    );
     expect(flag('--allowedTools')).toBe(ALLOWED_TOOLS);
-    expect(flag('--disallowedTools')).toBe('Edit Write Bash NotebookEdit');
+    expect(flag('--disallowedTools')).toBe('Edit Write Bash NotebookEdit mcp__clippy__ask_user mcp__clippy__check_reply');
     expect(flag('--disallowedTools')).toBe(DISALLOWED_TOOLS);
     expect(flag('--tools')).toBe('Read,Glob,Grep,WebSearch,WebFetch');
     expect(flag('--permission-mode')).toBe('dontAsk');

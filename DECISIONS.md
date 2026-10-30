@@ -31,3 +31,17 @@ Grilled in chat (T3 Code question forms).
 25. Claude decided: `ask_user` waits 10 minutes by default; agents can change this per call.
 26. Claude decided: mini Clippy is draggable and remembers its position; settings has toggles for the hook, sounds and unsolicited advice.
 27. Claude decided: desk and WhatsApp share one message store, so anything dismissed or answered on one side is done on the other.
+
+## Notes
+
+- 2026-10-30, on decision 18 (template text). The approved template can't be "Professor Clippy 📎: {{1}}": Meta rejects a template whose body starts or ends with a variable, and that one ends with `{{1}}`. The `clippy_note` template (utility, language `en`) therefore has fixed text after the variable. Its exact body is:
+
+  ```text
+  Professor Clippy has a note for you:
+
+  {{1}}
+
+  Reply here to talk to Clippy.
+  ```
+
+  `{{1}}` carries the full message on one line (newlines become " · ", because Meta rejects newlines and tabs in parameters), cut at 1000 characters ending "…more on desktop". The JSON to submit is in apps/worker/README.md; docs/USER-TODO.md points at it.

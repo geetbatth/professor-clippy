@@ -4,6 +4,7 @@ import type { Settings } from '@clippy/shared/settings';
 import type { SettingsState } from '../hooks/useSettings';
 import { ASK_WAIT_MAX_MINUTES, ASK_WAIT_MIN_MINUTES, askWaitMinutes, parseAskWait } from './askWait';
 import { ConnectClaude } from './ConnectClaude';
+import { relayBadge, relayPatch } from './firstRun';
 import './SettingsTab.css';
 
 type Toggle = { [K in keyof Settings]-?: Settings[K] extends boolean ? K : never }[keyof Settings];
@@ -21,6 +22,7 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
   const { settings, update, error } = state;
   const [workerUrl, setWorkerUrl] = useState('');
   const [workerSecret, setWorkerSecret] = useState('');
+  const [relayError, setRelayError] = useState<string>();
 
   const [askWait, setAskWait] = useState('');
   const [askWaitError, setAskWaitError] = useState(false);
@@ -46,7 +48,22 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
     if (seconds !== settings.askTimeoutDefaultS) void update({ askTimeoutDefaultS: seconds });
   };
 
-  const relayConnected = Boolean(settings.workerUrl && settings.workerSecret);
+  const relaySaved = relayBadge(settings) === 'saved';
+
+  /** Save the relay fields with the wizard's checks (https only, trimmed, secret required). */
+  const saveRelay = async () => {
+    const result = relayPatch(workerUrl, workerSecret, { secretSaved: Boolean(settings.workerSecret) });
+    if ('error' in result) {
+      setRelayError(result.error);
+      return;
+    }
+    setRelayError(undefined);
+    const ok = await update(result.patch);
+    if (ok) {
+      setWorkerSecret('');
+      if (result.patch.workerUrl) setWorkerUrl(result.patch.workerUrl);
+    }
+  };
 
   return (
     <div className="settings">
@@ -97,14 +114,27 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
       )}
 
       <fieldset className="setting-group">
-        <legend>WhatsApp relay {relayConnected ? <span className="relay-on">connected</span> : <span className="relay-off">off</span>}</legend>
+        <legend>
+          WhatsApp relay{' '}
+          {relaySaved ? (
+            <span className="relay-on" title="Worker URL and secret saved. Messages go out while the Worker is reachable.">
+              saved
+            </span>
+          ) : (
+            <span className="relay-off">off</span>
+          )}
+        </legend>
         <input
-          className="field-input"
+          className={`field-input${relayError ? ' field-input--bad' : ''}`}
           type="url"
           placeholder="https://professor-clippy-relay.example.workers.dev"
           value={workerUrl}
           aria-label="Relay URL"
-          onChange={(e) => setWorkerUrl(e.target.value)}
+          aria-invalid={Boolean(relayError)}
+          onChange={(e) => {
+            setWorkerUrl(e.target.value);
+            setRelayError(undefined);
+          }}
         />
         <input
           className="field-input"
@@ -112,29 +142,30 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
           placeholder={settings.workerSecret ? '•••••••• (saved)' : 'Relay secret'}
           value={workerSecret}
           aria-label="Relay secret"
-          onChange={(e) => setWorkerSecret(e.target.value)}
+          onChange={(e) => {
+            setWorkerSecret(e.target.value);
+            setRelayError(undefined);
+          }}
         />
         <div className="setting-actions">
-          <button
-            className="btn btn-done"
-            disabled={!workerUrl.trim()}
-            onClick={async () => {
-              const ok = await update({
-                workerUrl: workerUrl.trim(),
-                ...(workerSecret ? { workerSecret } : {}),
-              });
-              if (ok) setWorkerSecret('');
-            }}
-          >
+          <button className="btn btn-done" disabled={!workerUrl.trim()} onClick={() => void saveRelay()}>
             Save
           </button>
-          {relayConnected && (
-            <button className="btn btn-ghost" onClick={() => void update({ workerUrl: null, workerSecret: null })}>
+          {(settings.workerUrl || settings.workerSecret) && (
+            <button
+              className="btn btn-ghost"
+              title="Also deletes your reminders from the Worker, so it stops sending them."
+              onClick={() => {
+                setRelayError(undefined);
+                void update({ workerUrl: null, workerSecret: null });
+              }}
+            >
               Disconnect
             </button>
           )}
         </div>
       </fieldset>
+      {relayError && <p className="card-error">{relayError}</p>}
       {error && <p className="card-error">Couldn't save that: {error}</p>}
 
       <fieldset className="setting-group">

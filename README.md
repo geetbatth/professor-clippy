@@ -15,7 +15,9 @@ you can answer, or just chat with him, from your phone.
 - **A Claude Code hook** leaves a note when an agent finishes or needs your permission.
 - **Clippy's own chat brain** is Claude Code running headless with your Claude Code login (no
   API key). It can read files and search the web, manage your messages and reminders, and
-  answer agents' questions for you; it cannot edit files or run commands.
+  answer agents' questions for you; it cannot edit files or run commands. Of the `clippy` tools
+  it gets all but `ask_user` and `check_reply` (a brain turn waiting for your answer would hold
+  up every chat turn behind it), so when it needs something from you it simply asks in its reply.
 - **WhatsApp** goes through Meta's WhatsApp Cloud API and a small Cloudflare Worker you deploy
   yourself. Nothing on your PC listens on the network: the app's local API binds to 127.0.0.1
   with a bearer token, and the PC connects out to the Worker.
@@ -118,9 +120,9 @@ How it behaves once connected:
   desktop shows them later as "missed while you were away". Reminders that already exist when you
   connect WhatsApp (or fix a wrong secret, or switch to another Worker) are synced then; any the
   Worker hasn't confirmed are filled in the next time the app starts.
-- **Switching to a new Worker leaves your reminders on the old one**, which keeps sending them.
-  Delete the old Worker when you switch (`npx wrangler delete --name <old worker name>`, or in
-  the Cloudflare dashboard).
+- **Disconnect** (Settings) or a new Worker URL takes your reminders off the old Worker: the app
+  deletes each one there (for up to 10 seconds) before letting go of it. See the limitations
+  below for when that can't work.
 
 ## Development
 
@@ -182,7 +184,7 @@ local API), `brain\` (the brain's MCP config) and `hook-state.json`.
 | An agent says Clippy isn't running | The MCP server starts the app from `%LOCALAPPDATA%\Programs\professor-clippy\`; if you installed elsewhere, set `CLIPPY_APP_PATH` for the MCP server, or start Clippy yourself. |
 | No notes when an agent finishes | Settings → Claude Code hook must be on, and the hook installed (Connect Claude Code). New sessions only. |
 | Chat says Clippy can't answer / not logged in | Run `claude` in a terminal and sign in; the brain uses that login. |
-| WhatsApp shows "off" in Settings | Both the Worker URL and the secret must be saved. Check `https://<worker>/health` answers `{"ok":true}`. |
+| WhatsApp shows "off" in Settings | Both the Worker URL (https) and the secret must be saved. "saved" only means they are; it doesn't prove the Worker answers, so check `https://<worker>/health` answers `{"ok":true}`. |
 | Nothing arrives on WhatsApp | The secret must equal the Worker's `PC_SECRET`; your number must be a verified recipient of the test number; outside the 24 h window the `clippy_note` template must be **Approved**. `npx wrangler tail` in `apps/worker` shows the Worker's logs. |
 | WhatsApp replies don't reach the PC | Meta's webhook must point at `<worker>/webhook` with your `VERIFY_TOKEN` and be subscribed to `messages`; `APP_SECRET` must be right (bad signatures are dropped). |
 | Clippy vanished | He hides while a fullscreen app is focused (Settings → Hide during fullscreen apps), and closing the window only hides him: use the tray icon → Show Clippy. |
@@ -207,6 +209,14 @@ local API), `brain\` (the brain's MCP config) and `hook-state.json`.
   `Add-Type` to call `SHQueryUserNotificationState`. Some
   antivirus or endpoint tools flag that pattern; switch off "Hide during fullscreen apps" and it
   never runs.
+- **Reminders can stay on a Worker you disconnected from or switched away from.** On Disconnect,
+  or when you change the Worker URL, the app deletes your reminders from that Worker, giving it
+  10 seconds in all. If the Worker is unreachable then (you are offline, it is down, or its secret
+  no longer matches), the ones it couldn't delete stay there and **the Worker keeps sending
+  them**, recurring ones forever. The app remembers them: reconnecting to that same Worker URL
+  later deletes any you have cancelled meanwhile and keeps the rest. To be sure nothing is left,
+  delete the old Worker (`npx wrangler delete --name <old worker name>` in `apps\worker`, or in
+  the Cloudflare dashboard); that removes the Worker with every reminder it holds.
 - **Failed WhatsApp sends are retried only while the app runs** (5 tries over about 12 minutes).
   A send still failing when you quit is not retried after a restart; the note is still on the
   desk.

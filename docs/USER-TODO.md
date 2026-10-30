@@ -27,7 +27,10 @@ Details: [apps/worker/README.md → Meta setup, step by step](../apps/worker/REA
       WhatsApp account, and generate a token that **never expires** with
       `whatsapp_business_messaging` and `whatsapp_business_management`.
 - [ ] Submit the **`clippy_note`** utility template (exact JSON in the worker README, language
-      `en`) and wait until it says **Approved**.
+      `en`) and wait until it says **Approved**. Its body is exactly
+      `Professor Clippy has a note for you:` / blank line / `{{1}}` / blank line /
+      `Reply here to talk to Clippy.` (Meta won't approve a body that starts or ends with
+      `{{1}}`, so it isn't the shorter "Professor Clippy 📎: {{1}}" of decision 18.)
 
 ## 3. Cloudflare (the relay Worker)
 
