@@ -45,3 +45,21 @@ Grilled in chat (T3 Code question forms).
   ```
 
   `{{1}}` carries the full message on one line (newlines become " · ", because Meta rejects newlines and tabs in parameters), cut at 1000 characters ending "…more on desktop". The JSON to submit is in apps/worker/README.md; docs/USER-TODO.md points at it.
+
+## Tell Clippy — 2026-10-30
+
+Agreed in chat: Clippy should show things only when they need you, and "chat" is really telling Clippy to do things.
+
+1. Two levels of loud: questions, permission requests, due reminders, urgent notes and Clippy's own notes (nudges, the morning brief) pop up with a wiggle and sound; "agent finished" and plain notes only raise the unread badge, and never nag. Settings → "Pop up for" can switch back to everything.
+2. Phone only when away: notes and questions stay on the desktop while you're at the PC and go to the phone once you've been idle past the away threshold (default 3 minutes). A question still unanswered after 10 minutes goes to the phone anyway. Settings → "Send to my phone" can switch back to always. WhatsApp reminders are still sent on time by the Worker.
+3. Advice quips are off by default, and switched off once for existing installs.
+4. A "Tell Clippy…" box sits under the notes, and a global hotkey (default Ctrl+Alt+Space, changeable or off in Settings) opens it from anywhere. The Chat tab is now the "Clippy" tab.
+5. Standing orders: tell Clippy "if an agent asks about X, say Y" and he answers matching questions for you. Managed by telling Clippy or in Settings.
+6. Watch-and-nudge: "when the build agent finishes, remind me to deploy" leaves a loud nudge once that agent finishes (or, for "when I hear from X", on any note or question from it).
+7. Morning brief: a note at 09:00 on weekdays with today's reminders, what's waiting on you and what the agents did overnight. Time, weekdays-only and on/off are in Settings.
+8. Clippy can snooze, dismiss and summarise notes when told ("bring that back after lunch", "what happened while I was at lunch?").
+9. Claude decided: the hotkey is Ctrl+Alt+Space, because Windows reserves most Win-key shortcuts.
+10. Claude decided: standing orders are matched by a one-shot `claude -p --model haiku` with no tools, capped at 20 seconds; with no orders nothing runs, and on any failure or timeout the question is posted normally. An auto-answer must be one of the question's options when it has them.
+11. Claude decided: watches match the project name case-insensitively and by substring ("clippy" matches "professor-clippy"), fire once, and ignore Clippy's own notes.
+12. Claude decided: a missed morning brief is sent on a late start or wake if it's before 12:00 local or within 2 hours of the brief time, at most once a day.
+13. Claude decided: every brain turn starts with the local time and UTC offset, so relative times ("after lunch", "at 3") resolve correctly.

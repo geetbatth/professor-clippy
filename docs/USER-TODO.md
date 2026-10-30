@@ -14,7 +14,7 @@ Cloudflare steps needed.
       MCP server and hook with `node`).
 - [ ] Claude Code is installed and signed in: run `claude` once and log in.
 - [ ] Build the installer from the repo root: `npm ci`, then `npm run package`.
-      It ends with `apps\desktop\release\Professor-Clippy-Setup-0.2.0.exe`.
+      It ends with `apps\desktop\release\Professor-Clippy-Setup-0.3.0.exe`.
 
 ## 2. Meta (WhatsApp Cloud API)
 
@@ -62,7 +62,7 @@ From `apps\worker` in the repo:
 
 ## 5. Install the app
 
-- [ ] Run `Professor-Clippy-Setup-0.2.0.exe`. It is unsigned, so SmartScreen says "Windows
+- [ ] Run `Professor-Clippy-Setup-0.3.0.exe`. It is unsigned, so SmartScreen says "Windows
       protected your PC": click **More info → Run anyway**. No admin prompt; it starts by itself.
 - [ ] In the first-run wizard:
   - [ ] Paste the Worker URL and your `PC_SECRET`, then **Connect WhatsApp** (or skip).
