@@ -7,7 +7,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import type { AnsweredVia, AskResult, Message, Reminder, StandingOrder } from '@clippy/shared';
+import type { AnsweredVia, AskResult, Message, Reminder, StandingOrder, Watch } from '@clippy/shared';
 
 export const TOKEN = 'f'.repeat(64);
 
@@ -27,6 +27,7 @@ export async function startFakeApi(appDataDir?: string) {
   const messages: Message[] = [];
   const reminders: Reminder[] = [];
   const orders: StandingOrder[] = [];
+  const watches: Watch[] = [];
   const waiters = new Map<string, Array<() => void>>();
 
   const askResult = (m: Message): AskResult =>
@@ -131,6 +132,19 @@ export async function startFakeApi(appDataDir?: string) {
         o.active = false;
         return send(204);
       }
+      case 'GET /watches':
+        return send(200, watches.filter((w) => w.active));
+      case 'POST /watches': {
+        const w: Watch = { id: nextId(), project: body.project, event: body.event ?? 'finished', nudge: body.nudge, active: true, createdAt: Date.now() };
+        watches.push(w);
+        return send(201, w);
+      }
+      case 'DELETE /watches/:id': {
+        const w = watches.find((x) => x.id === id);
+        if (!w) return send(404, { error: 'no such watch' });
+        w.active = false;
+        return send(204);
+      }
       case 'POST /asks': {
         const m: Message = {
           id: nextId(),
@@ -197,6 +211,7 @@ export async function startFakeApi(appDataDir?: string) {
     messages,
     reminders,
     orders,
+    watches,
     answer,
     close: () =>
       new Promise<void>((resolve) => {

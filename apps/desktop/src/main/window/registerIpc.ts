@@ -8,7 +8,7 @@
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import { IpcInvoke, type ClippyBackend, type ClippyEvent, type ClippyEventMap } from '@clippy/shared/ipc';
-import { MessageFilter, NewStandingOrderInput, Timestamp } from '@clippy/shared/schemas';
+import { MessageFilter, NewStandingOrderInput, NewWatchInput, Timestamp } from '@clippy/shared/schemas';
 import { SettingsPatch } from '@clippy/shared/settings';
 
 const id = z.string().min(1);
@@ -34,6 +34,9 @@ const argSchemas: { [K in keyof ClippyBackend]: z.ZodType<Parameters<ClippyBacke
   listOrders: z.tuple([]),
   addOrder: z.tuple([NewStandingOrderInput.shape.text]),
   cancelOrder: z.tuple([id]),
+  listWatches: z.tuple([]),
+  addWatch: z.tuple([NewWatchInput]),
+  cancelWatch: z.tuple([id]),
 };
 
 export interface ClippyIpc {

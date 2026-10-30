@@ -32,8 +32,8 @@ at once), and you can answer, or just chat with him, from your phone.
   answer agents' questions for you; it cannot edit files or run commands. Of the `clippy` tools
   it gets all but `ask_user` and `check_reply` (a brain turn waiting for your answer would hold
   up every chat turn behind it), so when it needs something from you it simply asks in its reply.
-  It also has seven tools no agent sees: `list_notes`, `recent_activity`, `snooze_note`,
-  `dismiss_note` and the standing-order tools below. Tell him "not now, bring it back after
+  It also has ten tools no agent sees: `list_notes`, `recent_activity`, `snooze_note`,
+  `dismiss_note` and the standing-order and watch tools below. Tell him "not now, bring it back after
   lunch" and he snoozes the newest unread note; ask "what happened while I was at lunch?" or
   "what's waiting on me?" and he summarises.
 - **Standing orders** answer agents' questions for you. Tell him "whenever an agent asks which
@@ -43,6 +43,12 @@ at once), and you can answer, or just chat with him, from your phone.
   Code run (Haiku, no tools) judges whether an order covers the question; if none does, or it
   takes longer than 20 seconds, the question reaches you as usual. For a question with options,
   the answer must be one of them.
+- **Watches** nudge you when an agent finishes. Tell him "when the payments agent finishes,
+  remind me to deploy" and the next time an agent working in a project whose folder name contains
+  "payments" finishes (even when you were at the PC and the note went quietly into History),
+  he leaves a note "⏰ Nudge: deploy" with what set it off. It fires once. They are listed under
+  Settings → "Waiting for" (× cancels one). The nudge is a loud note from Clippy, so it reaches
+  your phone when you are away like any other.
 - **WhatsApp** goes through Meta's WhatsApp Cloud API and a small Cloudflare Worker you deploy
   yourself. Nothing on your PC listens on the network: the app's local API binds to 127.0.0.1
   with a bearer token, and the PC connects out to the Worker.

@@ -11,11 +11,13 @@ import {
   Message,
   Reminder,
   StandingOrder,
+  Watch,
   type AnsweredVia,
   type MessageFilter,
   type NewAskInput,
   type NewMessageInput,
   type NewReminderInput,
+  type NewWatchInput,
 } from './schemas';
 
 /** Thrown when the desktop app isn't running: port/token files missing, or the API is unreachable. */
@@ -185,6 +187,21 @@ export class ClippyClient {
   /** `DELETE /orders/:id`: cancel a standing order. */
   async cancelOrder(id: string): Promise<void> {
     await this.#request(Routes.cancelOrder, { id });
+  }
+
+  /** `GET /watches`: active watches, oldest first. */
+  listWatches(): Promise<Watch[]> {
+    return this.#request(Routes.listWatches, { schema: z.array(Watch) });
+  }
+
+  /** `POST /watches`: nudge the user when a matching agent note arrives. */
+  addWatch(input: NewWatchInput): Promise<Watch> {
+    return this.#request(Routes.addWatch, { body: input, schema: Watch });
+  }
+
+  /** `DELETE /watches/:id`: cancel a watch. */
+  async cancelWatch(id: string): Promise<void> {
+    await this.#request(Routes.cancelWatch, { id });
   }
 
   async #request<T = undefined>(

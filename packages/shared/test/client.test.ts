@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClippyApiError, ClippyClient, ClippyNotRunningError } from '../src/client';
-import type { AskResult, Message, Reminder, StandingOrder } from '../src/schemas';
+import type { AskResult, Message, Reminder, StandingOrder, Watch } from '../src/schemas';
 
 const TOKEN = 'a'.repeat(64);
 const ASK_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2W';
@@ -32,6 +32,8 @@ const message = (over: Partial<Message> = {}): Message => ({
 
 const ORDER_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2Y';
 const order: StandingOrder = { id: ORDER_ID, text: 'say staging', active: true, createdAt: 1000 };
+const WATCH_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2C';
+const watch: Watch = { id: WATCH_ID, project: 'payments', event: 'finished', nudge: 'Deploy', active: true, createdAt: 1000 };
 const reminder: Reminder = { id: REM_ID, body: 'stretch', sender: 'test', dueAt: 5000, active: true, createdAt: 1000 };
 
 /** Tiny fake of the desktop app's local API. `answerAfterPolls` makes the ask answered on the Nth getAsk. */
@@ -81,6 +83,12 @@ function fakeApi() {
       case 'POST /orders':
         return send(201, { ...order, text: body.text });
       case `DELETE /orders/${ORDER_ID}`:
+        return send(204);
+      case 'GET /watches':
+        return send(200, [watch]);
+      case 'POST /watches':
+        return send(201, { ...watch, ...body });
+      case `DELETE /watches/${WATCH_ID}`:
         return send(204);
       case 'POST /asks':
         if (body.question === 'slow') await new Promise((r) => setTimeout(r, 200));
@@ -185,6 +193,15 @@ describe('ClippyClient requests', () => {
     expect(last()).toMatchObject({ method: 'POST', path: '/orders', body: { text: 'always say yes' } });
     await expect(client.cancelOrder(ORDER_ID)).resolves.toBeUndefined();
     expect(last()).toMatchObject({ method: 'DELETE', path: `/orders/${ORDER_ID}` });
+  });
+
+  it('lists, adds and cancels watches', async () => {
+    await expect(client.listWatches()).resolves.toEqual([watch]);
+    expect(last()).toMatchObject({ method: 'GET', path: '/watches' });
+    await expect(client.addWatch({ project: 'api', nudge: 'Review' })).resolves.toMatchObject({ id: WATCH_ID, project: 'api', nudge: 'Review' });
+    expect(last()).toMatchObject({ method: 'POST', path: '/watches', body: { project: 'api', nudge: 'Review' } });
+    await expect(client.cancelWatch(WATCH_ID)).resolves.toBeUndefined();
+    expect(last()).toMatchObject({ method: 'DELETE', path: `/watches/${WATCH_ID}` });
   });
 
   it('createAsk waits out the standing-order check, past the ordinary timeout', async () => {

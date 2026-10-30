@@ -5,7 +5,7 @@
  */
 import { ulid } from 'ulid';
 import type { ClippyEvent, ClippyEventMap, ClippyWindowApi, TelegramStatus } from '@clippy/shared/ipc';
-import type { AskResult, Message, MessageFilter, StandingOrder } from '@clippy/shared/schemas';
+import type { AskResult, Message, MessageFilter, StandingOrder, Watch } from '@clippy/shared/schemas';
 import { applySettingsPatch, DEFAULT_SETTINGS, SettingsPatch, type Settings } from '@clippy/shared/settings';
 import { MOCK_REPLIES, sampleMessages } from './sampleData';
 
@@ -69,6 +69,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     };
   };
   const orders = new Map<string, StandingOrder>();
+  const watches = new Map<string, Watch>();
   let previewed = false;
   let replyIndex = 0;
   const listeners = new Map<ClippyEvent, Set<(payload: never) => void>>();
@@ -217,6 +218,20 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
       const order = orders.get(id);
       if (!order) throw new Error(`No standing order ${id}`);
       orders.set(id, { ...order, active: false });
+    },
+    async listWatches() {
+      return [...watches.values()].filter((w) => w.active).map((w) => ({ ...w }));
+    },
+    async addWatch({ project, event, nudge }) {
+      const t = now();
+      const watch: Watch = { id: ulid(t), ...(project !== undefined && { project }), event: event ?? 'finished', nudge, active: true, createdAt: t };
+      watches.set(watch.id, watch);
+      return { ...watch };
+    },
+    async cancelWatch(id) {
+      const watch = watches.get(id);
+      if (!watch) throw new Error(`No watch ${id}`);
+      watches.set(id, { ...watch, active: false });
     },
     telegramStart(code, chat = { id: 123456789, firstName: 'You' }) {
       if (!telegramToken || settings.telegramChatId !== undefined || code.toUpperCase() !== pairingCode) return false;

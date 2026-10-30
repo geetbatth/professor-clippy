@@ -8,7 +8,7 @@ npm workspaces monorepo (Node 24, npm 11, TypeScript strict, ESM, Vitest).
 | --- | --- | --- |
 | `packages/shared` | `@clippy/shared` | Every shared contract: zod schemas and types, settings, local API routes, data-dir paths, `ClippyClient`, Electron IPC contract, Worker relay protocol. TypeScript source only (no build step). |
 | `apps/desktop` | `@clippy/desktop` | Electron + electron-vite + React. Hosts the local API (127.0.0.1), SQLite store, scheduler and Clippy's brain. The character (`src/renderer/src/clippy/`) is a set of painted robot sprites driven by a pure mood state machine (`mood.ts`): `poses.ts` maps moods to sprites and aligns them on one stage, CSS does the motion, and clicks pass through his transparent pixels (alpha masks built when the sprites are preloaded). |
-| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Seven extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. |
+| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Ten extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`, `watch_for`, `list_watches`, `cancel_watch`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. |
 | `apps/hook` | `@clippy/hook` | Claude Code hook; posts a note when an agent finishes or needs permission. Built like `apps/mcp`. |
 | `apps/worker` | `@clippy/worker` | Cloudflare Worker plus one SQLite-backed Durable Object (`ClippyDO`, binding `CLIPPY`) relaying WhatsApp Cloud API traffic. |
 | `scripts/` | | Repo scripts: the Claude Code wiring (`install-claude-wiring.ts`, also bundled into the app for "Connect Claude Code"), SQLite smoke test, run-in-Electron helper. |
@@ -126,6 +126,25 @@ the core once it exists (no orders: nothing is run). The matcher is one `claude 
 order id, and with options only an answer that is one of them (the option's own casing). The empty
 `--tools ''` argument survives both spawn paths (an args array, and `cmdQuote` -> `""` for
 `claude.cmd`).
+
+## Watches
+
+A watch (`Watch`, table `watches`, schema version 6; routes `GET/POST /watches`, `DELETE
+/watches/:id`; IPC `listWatches` / `addWatch` / `cancelWatch`) is "when this agent finishes, remind
+me to Y": an optional project (matched as a case-insensitive substring of a message's `project`),
+an event (`finished` or `any`) and a nudge. The brain sets one with `watch_for`; Settings
+(`RulesSection`, "Waiting for") lists and cancels them. The hook now tags its notes with
+`Message.event` (`agent-finished` for Stop, `agent-needs-permission` for Notification; column
+`messages.event`), which is what `finished` waits for; `any` takes any note or question from the
+project, never a reminder or chat line. `Watcher` (`main/watches.ts`, started in `startServices`
+beside the phone gate, stopped on quit) listens to `message:new`, so a finished note stored `done`
+by the away-only rule still counts. `matchWatches` picks the watches a message triggers (never one
+from `sender: 'clippy'`, so a nudge cannot set off another watch); each is claimed with
+`Store.fireWatch` (active -> inactive, `firedAt`; it can only fire once) and answered with a note
+`{ sender: 'clippy', title: '⏰ Nudge', body: '<nudge>
+(<project> agent finished)' }`. That note
+is loud on the desk (alert level) and is mirrored to the phone by the phone gate like any other
+note.
 
 ## Storage
 

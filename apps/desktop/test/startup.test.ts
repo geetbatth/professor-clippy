@@ -20,6 +20,7 @@ describe('startServices', () => {
   });
   afterEach(async () => {
     services?.phoneGate.stop();
+    services?.watcher.stop();
     services?.relay.stop();
     await services?.telegram.stop();
     services?.brain.dispose();
@@ -299,6 +300,22 @@ describe('startServices', () => {
       body: JSON.stringify({ body: 'done', sender: 'claude-code', quietIfActive: true }),
     });
     expect(((await res.json()) as Message).state).toBe('unread');
+  });
+
+  it('nudges when a watched agent finishes, through the API a hook posts to', async () => {
+    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brain: { emit: () => {} } });
+    const { core } = services;
+    const post = (path: string, body: unknown) =>
+      fetch(`http://127.0.0.1:${core.port}${path}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${core.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    await post('/watches', { project: 'payments', nudge: 'Deploy to staging' });
+    await post('/messages', { body: '✅ payments agent finished', sender: 'claude-code', project: 'payments', quietIfActive: true, event: 'agent-finished' });
+    const nudge = core.store.listMessages({}).find((m) => m.sender === 'clippy');
+    expect(nudge).toMatchObject({ title: '⏰ Nudge', body: 'Deploy to staging\n(payments agent finished)', state: 'unread' });
+    expect(core.store.listActiveWatches()).toEqual([]);
   });
 
   it('wires settings changes to the relay and writes the brain files first', async () => {

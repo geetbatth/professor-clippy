@@ -248,11 +248,14 @@ describe('brain-only note tools', () => {
   const BRAIN_TOOLS = [
     'add_standing_order',
     'cancel_standing_order',
+    'cancel_watch',
     'dismiss_note',
     'list_notes',
     'list_standing_orders',
+    'list_watches',
     'recent_activity',
     'snooze_note',
+    'watch_for',
   ];
   const seed = (api: FakeApi, extra: Partial<Message>): Message => {
     const m: Message = {
@@ -389,6 +392,43 @@ describe('brain-only standing-order tools', () => {
     expect((await call('add_standing_order', { text: '' })).isError).toBe(true);
     expect((await call('add_standing_order', { text: 'x'.repeat(501) })).isError).toBe(true);
     const r = await call('cancel_standing_order', { id: 'missing' });
+    expect(r.isError).toBe(true);
+    expect(texts(r)[0]).toMatch(/404/);
+  });
+});
+
+describe('brain-only watch tools', () => {
+  const BRAIN = { CLIPPY_SENDER: 'clippy-brain' };
+
+  it('watch_for saves the watch, list_watches shows it, cancel_watch drops it', async () => {
+    const { api } = await setup({ env: BRAIN });
+    expect(texts(await call('list_watches'))[0]).toBe('No active watches.');
+
+    const added = await call('watch_for', { project: 'payments', nudge: 'Deploy to staging' });
+    expect(added.isError).toBeFalsy();
+    expect(api.requests.find((q) => q.method === 'POST' && q.path === '/watches')?.body).toEqual({ project: 'payments', nudge: 'Deploy to staging' });
+    expect(api.watches[0]).toMatchObject({ project: 'payments', event: 'finished', nudge: 'Deploy to staging' });
+    expect(texts(added)[0]).toContain(api.watches[0]!.id);
+
+    const listed = JSON.parse(texts(await call('list_watches'))[0]!);
+    expect(listed).toEqual([
+      { id: api.watches[0]!.id, project: 'payments', event: 'finished', nudge: 'Deploy to staging', created: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
+    ]);
+
+    expect((await call('cancel_watch', { id: api.watches[0]!.id })).isError).toBeFalsy();
+    expect(api.watches[0]!.active).toBe(false);
+    expect(texts(await call('list_watches'))[0]).toBe('No active watches.');
+  });
+
+  it('takes a watch with no project, refuses a bad one, and an unknown id is a tool error', async () => {
+    const { api } = await setup({ env: BRAIN });
+    expect((await call('watch_for', { event: 'any', nudge: 'Look at it' })).isError).toBeFalsy();
+    expect(api.requests.find((q) => q.path === '/watches' && q.method === 'POST')?.body).toEqual({ event: 'any', nudge: 'Look at it' });
+    expect((await call('watch_for', { nudge: '' })).isError).toBe(true);
+    expect((await call('watch_for', { nudge: 'x'.repeat(501) })).isError).toBe(true);
+    expect((await call('watch_for', { project: 'p'.repeat(201), nudge: 'x' })).isError).toBe(true);
+    expect((await call('watch_for', { event: 'sometimes', nudge: 'x' })).isError).toBe(true);
+    const r = await call('cancel_watch', { id: 'missing' });
     expect(r.isError).toBe(true);
     expect(texts(r)[0]).toMatch(/404/);
   });

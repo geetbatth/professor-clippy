@@ -20,6 +20,9 @@ describe('Routes', () => {
       'GET /orders',
       'POST /orders',
       'DELETE /orders/:id',
+      'GET /watches',
+      'POST /watches',
+      'DELETE /watches/:id',
     ]);
   });
 });

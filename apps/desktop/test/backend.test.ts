@@ -119,6 +119,16 @@ describe('createBackend', () => {
     await expect(backend.cancelOrder('01ARZ3NDEKTSV4RRFFQ69G5FAV')).rejects.toBeInstanceOf(NotFoundError);
   });
 
+  it('adds, lists and cancels watches', async () => {
+    const first = await backend.addWatch({ project: 'payments', nudge: 'Deploy' });
+    await backend.addWatch({ event: 'any', nudge: 'Look' });
+    expect(first).toMatchObject({ project: 'payments', event: 'finished', active: true });
+    expect((await backend.listWatches()).map((w) => w.nudge)).toEqual(['Deploy', 'Look']);
+    await backend.cancelWatch(first.id);
+    expect((await backend.listWatches()).map((w) => w.nudge)).toEqual(['Look']);
+    await expect(backend.cancelWatch('01ARZ3NDEKTSV4RRFFQ69G5FAV')).rejects.toBeInstanceOf(NotFoundError);
+  });
+
   it('reports the Tell Clippy hotkey status', async () => {
     expect(await backend.hotkeyStatus()).toEqual({ accelerator: 'Alt+T', ok: false, error: 'taken' });
   });

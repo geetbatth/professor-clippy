@@ -156,8 +156,9 @@ async function stopNote(input: Record<string, any>, project: string): Promise<Ne
         : undefined;
   const line = text ? lastLine(text) : undefined;
   // Away-only: you are usually at the PC reading the reply already, so the app files it quietly
-  // unless you have been away (its `awayThresholdS` setting). Older apps ignore the flag.
-  return { body: `✅ ${project} agent finished${line ? `\n${line}` : ''}`, sender: HOOK_SENDER, project, quietIfActive: true };
+  // unless you have been away (its `awayThresholdS` setting). Older apps ignore the flag (and `event`,
+  // which is what a watch listens for).
+  return { body: `✅ ${project} agent finished${line ? `\n${line}` : ''}`, sender: HOOK_SENDER, project, quietIfActive: true, event: 'agent-finished' };
 }
 
 /**
@@ -195,7 +196,7 @@ export async function runHook(raw: string, deps: HookDeps = {}): Promise<HookOut
     if (IGNORED_NOTIFICATION_TYPES.has(input.notification_type)) return 'ignored';
     const message = typeof input.message === 'string' ? input.message.trim() : '';
     if (!message) return 'ignored';
-    note = { body: `🔐 ${project}: ${message}`, sender: HOOK_SENDER, project, urgent: true };
+    note = { body: `🔐 ${project}: ${message}`, sender: HOOK_SENDER, project, urgent: true, event: 'agent-needs-permission' };
   }
 
   try {

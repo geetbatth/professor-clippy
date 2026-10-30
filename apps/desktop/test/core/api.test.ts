@@ -230,6 +230,34 @@ describe('standing orders', () => {
     expect((await call('POST', '/orders', {})).status).toBe(400);
   });
 
+  it('adds, lists oldest first and cancels watches, defaulting the event to finished', async () => {
+    const call = await start();
+    const first = await call('POST', '/watches', { project: 'payments', nudge: 'Deploy' });
+    expect(first).toMatchObject({ status: 201, json: { project: 'payments', event: 'finished', nudge: 'Deploy', active: true } });
+    await call('POST', '/watches', { event: 'any', nudge: 'Look' });
+    expect((await call('GET', '/watches')).json.map((w: { nudge: string }) => w.nudge)).toEqual(['Deploy', 'Look']);
+
+    expect(await call('DELETE', `/watches/${first.json.id}`)).toEqual({ status: 204, json: undefined });
+    expect((await call('GET', '/watches')).json.map((w: { nudge: string }) => w.nudge)).toEqual(['Look']);
+    expect((await call('DELETE', '/watches/01JB2Z3K4M5N6P7Q8R9S0T1V2Z')).status).toBe(404);
+  });
+
+  it('validates a watch', async () => {
+    const call = await start();
+    expect((await call('POST', '/watches', { nudge: '' })).status).toBe(400);
+    expect((await call('POST', '/watches', { nudge: 'x'.repeat(501) })).status).toBe(400);
+    expect((await call('POST', '/watches', { project: '', nudge: 'x' })).status).toBe(400);
+    expect((await call('POST', '/watches', { event: 'soon', nudge: 'x' })).status).toBe(400);
+    expect((await call('POST', '/watches', {})).status).toBe(400);
+  });
+
+  it('keeps the event a note was posted with', async () => {
+    const call = await start();
+    const note = await call('POST', '/messages', { body: 'done', sender: 'claude-code', event: 'agent-finished' });
+    expect(note).toMatchObject({ status: 201, json: { event: 'agent-finished' } });
+    expect((await call('POST', '/messages', { body: 'x', sender: 's', event: 'bogus' })).status).toBe(400);
+  });
+
   it('answers an ask at once when matchOrder finds an order for it', async () => {
     const matchOrder = vi.fn(async () => ({ orderId: '01JB2Z3K4M5N6P7Q8R9S0T1V2A', answer: 'staging' }));
     const call = await start({ matchOrder });

@@ -9,7 +9,7 @@
  * This module is type-only apart from the channel-name constants, so it is safe
  * to import from sandboxed preload and renderer code.
  */
-import type { AskResult, Message, MessageFilter, StandingOrder } from './schemas';
+import type { AskResult, Message, MessageFilter, NewWatchInput, StandingOrder, Watch } from './schemas';
 import type { Settings, SettingsPatch } from './settings';
 
 /** Brain activity, for Clippy's thinking animation. */
@@ -123,6 +123,12 @@ export interface ClippyBackend {
   addOrder(text: string): Promise<StandingOrder>;
   /** Cancel a standing order. */
   cancelOrder(id: string): Promise<void>;
+  /** Active watches ("nudge me when an agent finishes"), oldest first. */
+  listWatches(): Promise<Watch[]>;
+  /** Add a watch. */
+  addWatch(input: NewWatchInput): Promise<Watch>;
+  /** Cancel a watch. */
+  cancelWatch(id: string): Promise<void>;
 }
 
 /** `ipcMain.handle` / `ipcRenderer.invoke` channel for each backend method. */
@@ -145,6 +151,9 @@ export const IpcInvoke = {
   listOrders: 'clippy:listOrders',
   addOrder: 'clippy:addOrder',
   cancelOrder: 'clippy:cancelOrder',
+  listWatches: 'clippy:listWatches',
+  addWatch: 'clippy:addWatch',
+  cancelWatch: 'clippy:cancelWatch',
 } as const satisfies { [K in keyof ClippyBackend]: `clippy:${K}` };
 
 /** Push-event channels (main → renderer via `webContents.send`). */

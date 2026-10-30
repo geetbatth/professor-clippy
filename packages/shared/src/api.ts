@@ -36,6 +36,9 @@ export interface RouteDef {
  * - `listOrders` → StandingOrder[] (active ones, oldest first)
  * - `addOrder` (body NewStandingOrderInput) → StandingOrder (201)
  * - `cancelOrder` → 204, no body
+ * - `listWatches` → Watch[] (active ones, oldest first)
+ * - `addWatch` (body NewWatchInput) → Watch (201)
+ * - `cancelWatch` → 204, no body
  */
 export const Routes = {
   health: { method: 'GET', path: '/health' },
@@ -53,6 +56,9 @@ export const Routes = {
   listOrders: { method: 'GET', path: '/orders' },
   addOrder: { method: 'POST', path: '/orders' },
   cancelOrder: { method: 'DELETE', path: '/orders/:id' },
+  listWatches: { method: 'GET', path: '/watches' },
+  addWatch: { method: 'POST', path: '/watches' },
+  cancelWatch: { method: 'DELETE', path: '/watches/:id' },
 } as const satisfies Record<string, RouteDef>;
 
 /** Fill a route's `:id` placeholder (URL-encoded). */

@@ -43,6 +43,15 @@ describe('mock backend', () => {
     await expect(b.cancelOrder(order.id + 'x')).rejects.toThrow(/No standing order/);
   });
 
+  it('keeps watches: add, list, cancel', async () => {
+    const b = createMockBackend();
+    const watch = await b.addWatch({ project: 'payments', nudge: 'Deploy' });
+    expect(await b.listWatches()).toEqual([expect.objectContaining({ id: watch.id, project: 'payments', event: 'finished', active: true })]);
+    await b.cancelWatch(watch.id);
+    expect(await b.listWatches()).toEqual([]);
+    await expect(b.cancelWatch(watch.id + 'x')).rejects.toThrow(/No watch/);
+  });
+
   it('lists newest first', async () => {
     const unread = await createMockBackend().listMessages({ state: 'unread' });
     const times = unread.map((m) => m.createdAt);

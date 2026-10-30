@@ -24,6 +24,10 @@ export type MessageState = z.infer<typeof MessageState>;
 export const AnsweredVia = z.enum(['desk', 'whatsapp', 'telegram', 'clippy']);
 export type AnsweredVia = z.infer<typeof AnsweredVia>;
 
+/** What an agent's note is about, for notes the hook files: the agent finished, or it needs a permission. */
+export const AgentEvent = z.enum(['agent-finished', 'agent-needs-permission']);
+export type AgentEvent = z.infer<typeof AgentEvent>;
+
 /** Who wrote a chat line (only meaningful for `kind: 'chat'`). */
 export const ChatRole = z.enum(['user', 'clippy']);
 export type ChatRole = z.infer<typeof ChatRole>;
@@ -72,6 +76,8 @@ export const Message = z.object({
   quietIfActive: z.boolean().optional(),
   /** For an `ask` answered automatically: the standing order that answered it. */
   orderId: z.string().optional(),
+  /** For a note from the hook: what happened (what a watch listens for). */
+  event: AgentEvent.optional(),
 });
 export type Message = z.infer<typeof Message>;
 
@@ -106,6 +112,8 @@ export const NewMessageInput = z.object({
    * Optional; older apps ignore it.
    */
   quietIfActive: z.boolean().optional(),
+  /** What the note is about (the hook sets it); lets watches tell "agent finished" from the rest. Optional; older apps ignore it. */
+  event: AgentEvent.optional(),
 });
 export type NewMessageInput = z.infer<typeof NewMessageInput>;
 
@@ -169,6 +177,38 @@ export type StandingOrder = z.infer<typeof StandingOrder>;
 /** Body of `POST /orders` (MCP `add_standing_order`, Settings). */
 export const NewStandingOrderInput = z.object({ text: z.string().min(1).max(500) });
 export type NewStandingOrderInput = z.infer<typeof NewStandingOrderInput>;
+
+/** What a watch waits for: an agent finishing, or anything at all from the project. */
+export const WatchEvent = z.enum(['finished', 'any']);
+export type WatchEvent = z.infer<typeof WatchEvent>;
+
+/**
+ * A watch: "when this agent finishes, remind me to ...". It fires once, as a note from Clippy
+ * carrying `nudge`, the next time a matching note or question arrives, then goes inactive.
+ */
+export const Watch = z.object({
+  /** ULID. */
+  id: z.ulid(),
+  /** Matches an agent's project name as a case-insensitive substring; absent: any project. */
+  project: z.string().optional(),
+  event: WatchEvent,
+  /** What to remind the user of when it fires. */
+  nudge: z.string(),
+  /** False once it has fired or been cancelled. */
+  active: z.boolean(),
+  createdAt: Timestamp,
+  /** When it fired (absent if cancelled without firing). */
+  firedAt: Timestamp.optional(),
+});
+export type Watch = z.infer<typeof Watch>;
+
+/** Body of `POST /watches` (MCP `watch_for`, Settings). `event` defaults to `finished`. */
+export const NewWatchInput = z.object({
+  project: z.string().min(1).max(200).optional(),
+  event: WatchEvent.optional(),
+  nudge: z.string().min(1).max(500),
+});
+export type NewWatchInput = z.infer<typeof NewWatchInput>;
 
 /** Filter for listing messages (`GET /messages` query, IPC `listMessages`). `q` is a full-text (FTS) search. */
 export const MessageFilter = z.object({

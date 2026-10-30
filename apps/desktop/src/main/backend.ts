@@ -102,5 +102,14 @@ export function createBackend({ store, asks, brain, settings, claudeWiring, tele
     async cancelOrder(id) {
       if (store.cancelOrder(id) === undefined) throw new NotFoundError(`No standing order ${id}`);
     },
+    async listWatches() {
+      return store.listActiveWatches();
+    },
+    async addWatch({ project, event, nudge }) {
+      return store.insertWatch({ project, event: event ?? 'finished', nudge });
+    },
+    async cancelWatch(id) {
+      if (store.cancelWatch(id) === undefined) throw new NotFoundError(`No watch ${id}`);
+    },
   };
 }

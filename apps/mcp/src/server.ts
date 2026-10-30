@@ -14,6 +14,7 @@ import {
   DEFAULT_SETTINGS,
   IsoDateTime,
   Settings,
+  NewWatchInput,
   settingsPath,
   type AskResult,
   type ClippyClient,
@@ -402,6 +403,54 @@ export function createClippyServer(options: ClippyServerOptions = {}): McpServer
       async ({ id }) => {
         await withClient((c) => c.cancelOrder(id));
         return ok(`Cancelled standing order ${id}.`);
+      },
+    );
+
+    server.registerTool(
+      'watch_for',
+      {
+        title: 'Nudge the user when an agent finishes',
+        description:
+          'Set a watch: when an AI agent working in a project finishes (or, with event any, sends the user anything), Professor Clippy ' +
+          'posts the nudge to the user as a note. It fires once. Use this when the user says something like when the payments agent finishes, ' +
+          'remind me to deploy. The project is matched as a case-insensitive part of the agents project folder names; ' +
+          'look the name up with recent_activity if unsure, and leave it out to watch every project.',
+        inputSchema: {
+          project: NewWatchInput.shape.project.describe('Project folder name, or part of it. Omit to watch any project.'),
+          event: NewWatchInput.shape.event.describe('finished (default): the agent finished its turn. any: any note or question from it.'),
+          nudge: NewWatchInput.shape.nudge.describe('What to remind the user, e.g. "Deploy to staging".'),
+        },
+      },
+      async (input) => {
+        const watch = await withClient((c) => c.addWatch(input));
+        return ok(`Watching for ${watch.event === 'any' ? 'anything from' : 'the finish of'} ${watch.project ?? 'any project'} (watch ${watch.id}).`);
+      },
+    );
+
+    server.registerTool(
+      'list_watches',
+      {
+        title: 'List watches',
+        description: "List the user's active watches (the nudges Professor Clippy will post when an agent finishes).",
+        inputSchema: {},
+      },
+      async () => {
+        const watches = await withClient((c) => c.listWatches());
+        if (watches.length === 0) return ok('No active watches.');
+        return ok(JSON.stringify(watches.map((w) => ({ id: w.id, project: w.project, event: w.event, nudge: w.nudge, created: iso(w.createdAt) })), null, 2));
+      },
+    );
+
+    server.registerTool(
+      'cancel_watch',
+      {
+        title: 'Cancel a watch',
+        description: "Cancel one of the user's watches when they ask you to. Get the id from list_watches.",
+        inputSchema: { id: z.string().min(1).describe('Watch id from list_watches.') },
+      },
+      async ({ id }) => {
+        await withClient((c) => c.cancelWatch(id));
+        return ok(`Cancelled watch ${id}.`);
       },
     );
   });

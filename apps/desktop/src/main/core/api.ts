@@ -22,6 +22,7 @@ import {
   NewMessageInput,
   NewReminderInput,
   NewStandingOrderInput,
+  NewWatchInput,
   Routes,
   SnoozeBody,
   type Health,
@@ -137,6 +138,15 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     [Routes.listOrders, () => ok(store.listActiveOrders())],
     [Routes.addOrder, async ({ req }) => created(store.insertOrder((await body(req, NewStandingOrderInput)).text))],
     [Routes.cancelOrder, ({ id }) => (found(store.cancelOrder(id), 'order', id), { status: 204 })],
+    [Routes.listWatches, () => ok(store.listActiveWatches())],
+    [
+      Routes.addWatch,
+      async ({ req }) => {
+        const { project, event, nudge } = await body(req, NewWatchInput);
+        return created(store.insertWatch({ project, event: event ?? 'finished', nudge }));
+      },
+    ],
+    [Routes.cancelWatch, ({ id }) => (found(store.cancelWatch(id), 'watch', id), { status: 204 })],
   ]);
 
   return (req, res) => {

@@ -7,7 +7,7 @@
  *    scheduler catch-up (reminders missed while the app was off) fires inside it, so the
  *    messages it creates are collected from the bus meanwhile. Its standing-order matcher is
  *    handed over here, reading the orders from the core once that exists;
- * 3. then **synchronously**, with no `await` in between: the brain, the phone gate, the relay and
+ * 3. then **synchronously**, with no `await` in between: the brain, the phone gate, the watcher, the relay and
  *    Telegram, which subscribe to the bus (the gate first: the two channels mirror on the gate's
  *    `message:mirror`, not on `message:new`); Telegram is then handed the catch-up messages. An agent
  *    (often the MCP server that just launched the app) can post as soon as `/health`
@@ -26,6 +26,7 @@ import { PhoneGate, type PhoneGateOptions } from './phoneGate';
 import { RelayManager, type RelayManagerOptions } from './relay';
 import { SettingsStore, type SecretBox } from './settings';
 import { TelegramManager, type TelegramManagerOptions } from './telegram';
+import { Watcher } from './watches';
 
 export interface StartServicesOptions {
   dataDir: string;
@@ -62,6 +63,7 @@ export interface Services {
   settings: SettingsStore;
   brain: Brain;
   phoneGate: PhoneGate;
+  watcher: Watcher;
   relay: RelayManager;
   telegram: TelegramManager;
 }
@@ -122,6 +124,9 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
     mode: () => settings.get().phoneWhen,
   });
   phoneGate.start();
+  // Nudges from watches are ordinary notes from Clippy, so they reach the gate like any other.
+  const watcher = new Watcher({ bus, store: core.store });
+  watcher.start();
   const relay = new RelayManager({
     store: core.store,
     bus,
@@ -146,5 +151,5 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
     relay.apply(next);
     telegram.apply();
   });
-  return { core, settings, brain, phoneGate, relay, telegram };
+  return { core, settings, brain, phoneGate, watcher, relay, telegram };
 }
