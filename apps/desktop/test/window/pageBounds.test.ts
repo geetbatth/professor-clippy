@@ -17,9 +17,23 @@ describe('clampBounds', () => {
     expect(out).toMatchObject({ width: 260, height: 220, displayId: 1 });
     // Same with the id of a display that never existed, and with the primary not at 0,0.
     const offset: DisplayArea = { id: 7, workArea: { x: -1280, y: 200, width: 1280, height: 984 } };
-    const out2 = clampBounds({ x: 50, y: 50, width: 300, height: 400, displayId: 99 }, [offset, primary]);
+    const out2 = clampBounds({ x: 5000, y: 50, width: 300, height: 400, displayId: 99 }, [offset, primary]);
     expect(inside(out2, offset.workArea)).toBe(true);
     expect(out2).toMatchObject({ width: 300, height: 400, displayId: 7 });
+  });
+
+  it('its display id is gone but it is still fully on an attached display (ids change): left where it is, on that display', () => {
+    // Saved on display 5, which now has another id; the window sits fully on the right-hand monitor.
+    const onRight = { x: 2400, y: 500, width: 260, height: 220, displayId: 5 };
+    expect(clampBounds(onRight, [primary, right])).toEqual({ ...onRight, displayId: 2 });
+    // Across both monitors: on the one it overlaps most.
+    const across = { x: 1920 - 60, y: 300, width: 260, height: 220, displayId: 5 };
+    expect(clampBounds(across, [primary, right])).toEqual({ ...across, displayId: 2 });
+    // Less than 80 % visible anywhere: still moved onto the primary display.
+    const mostlyOff = { x: 1920 + 2560 - 100, y: 600, width: 260, height: 220, displayId: 5 };
+    const out = clampBounds(mostlyOff, [primary, right]);
+    expect(inside(out, primary.workArea)).toBe(true);
+    expect(out.displayId).toBe(1);
   });
 
   it('pulls in a page that is half off the right edge, keeping its size', () => {

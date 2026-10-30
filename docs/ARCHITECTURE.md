@@ -416,8 +416,9 @@ archived).
 runs after the Clippy window is made and opens every popped page. Each is a frameless, transparent
 `BrowserWindow`, not always-on-top, `skipTaskbar`, min 180 × 120, loading the renderer with
 `?page=<id>` (`loadRenderer`, shared with `createClippyWindow`). Where it opens: `popBounds` through
-`clampBounds` (`main/window/pageBounds.ts`, pure: displays primary first; a window whose display is
-gone moves onto the primary work area, one less than 80 % visible is pulled in on its own display,
+`clampBounds` (`main/window/pageBounds.ts`, pure: displays primary first; a window at least 80 %
+visible stays put, taking the id of the display it overlaps most if its own is gone; one less
+visible is pulled in on its own display, or onto the primary work area if that display is gone,
 the size kept unless bigger than the work area), else `defaultPageBounds(index, workArea)`
 (260 × 220, cascading 24 px down and left from the top-right). `move` / `resize` save `popBounds`
 (`setPopped(id, true, bounds)`) 500 ms after the last one. Closing a window any other way (Alt+F4)

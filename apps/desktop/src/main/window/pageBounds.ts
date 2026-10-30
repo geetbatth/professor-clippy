@@ -26,19 +26,22 @@ function overlap(a: Rect, b: Rect): number {
 
 /**
  * A saved page window's bounds made safe to open. `displays` lists the primary display first.
- * - On its display, at least {@link MIN_VISIBLE} visible (counting every display, so a window
- *   across two monitors is fine): unchanged.
+ * - At least {@link MIN_VISIBLE} visible (counting every display, so a window across two monitors
+ *   is fine): unchanged. If its display id is gone (Windows renumbers displays), it takes the id
+ *   of the display it overlaps most.
  * - Less visible but its display still attached: pulled in onto that display.
- * - Its display is gone: moved onto the primary display's work area.
+ * - Less visible and its display is gone: moved onto the primary display's work area.
  * The size is kept, shrunk only if it is bigger than the work area.
  */
 export function clampBounds(bounds: PageWindowBounds, displays: readonly DisplayArea[]): PageWindowBounds {
   const primary = displays[0];
   if (!primary) return bounds;
   const own = displays.find((d) => d.id === bounds.displayId);
-  if (own) {
-    const visible = displays.reduce((sum, d) => sum + overlap(bounds, d.workArea), 0);
-    if (visible >= MIN_VISIBLE * bounds.width * bounds.height) return bounds;
+  const visible = displays.reduce((sum, d) => sum + overlap(bounds, d.workArea), 0);
+  if (visible >= MIN_VISIBLE * bounds.width * bounds.height) {
+    if (own) return bounds;
+    const most = displays.reduce((best, d) => (overlap(bounds, d.workArea) > overlap(bounds, best.workArea) ? d : best));
+    return { ...bounds, displayId: most.id };
   }
   const target = own ?? primary;
   const area = target.workArea;
