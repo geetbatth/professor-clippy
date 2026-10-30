@@ -9,6 +9,7 @@ import { useAutoCollapse } from './hooks/useAutoCollapse';
 import { useChat } from './hooks/useChat';
 import { useClickThrough } from './hooks/useClickThrough';
 import { useSettings } from './hooks/useSettings';
+import { useTheme } from './hooks/useTheme';
 import { useUnread } from './hooks/useUnread';
 import { useWindowDrag } from './hooks/useWindowDrag';
 import { alertLevel, loudCount } from './note/alertLevel';
@@ -51,6 +52,7 @@ export function App({ runtime }: { runtime: Runtime }) {
   useEffect(() => {
     if (tab === 'settings') refreshSettings();
   }, [tab, refreshSettings]);
+  useTheme(api, settings, refreshSettings);
   const soundOn = useRef(true);
   soundOn.current = settings?.soundEnabled ?? true;
   const popUpFor = useRef<Settings['popUpFor']>('important');

@@ -12,11 +12,14 @@ import {
   AppName,
   BRAIN_SENDER,
   ClippyNotRunningError,
+  DarkThemeId,
   DEFAULT_SETTINGS,
   IsoDateTime,
+  LookPatch,
   Settings,
   NewWatchInput,
   settingsPath,
+  ThemeId,
   type AskResult,
   type ClippyClient,
   type Message,
@@ -448,6 +451,25 @@ export function createClippyServer(options: ClippyServerOptions = {}): McpServer
         const watches = await withClient((c) => c.listWatches());
         if (watches.length === 0) return ok('No active watches.');
         return ok(JSON.stringify(watches.map((w) => ({ id: w.id, project: w.project, event: w.event, nudge: w.nudge, created: iso(w.createdAt) })), null, 2));
+      },
+    );
+
+    server.registerTool(
+      'set_look',
+      {
+        title: 'Change how Professor Clippy looks',
+        description: 'Change how Professor Clippy looks: a theme, following Windows dark mode, or which dark theme to use',
+        inputSchema: {
+          theme: ThemeId.optional().describe('The theme: classic (yellow), mint, blush, sky, peach, night or chalkboard.'),
+          followSystemDark: z.boolean().optional().describe('true: switch to the dark theme whenever Windows is in dark mode; false: stop following.'),
+          darkTheme: DarkThemeId.optional().describe('The dark theme to use while following Windows dark mode: night or chalkboard.'),
+        },
+      },
+      async (input) => {
+        const patch = LookPatch.safeParse(input);
+        if (!patch.success) throw new Error(z.prettifyError(patch.error));
+        const look = await withClient((c) => c.setLook(patch.data));
+        return ok(`Look is now: theme ${look.theme}; follow Windows dark mode ${look.followSystemDark ? 'on' : 'off'}; dark theme ${look.darkTheme}.`);
       },
     );
 

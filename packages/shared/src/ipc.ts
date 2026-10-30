@@ -129,6 +129,8 @@ export interface ClippyBackend {
   addWatch(input: NewWatchInput): Promise<Watch>;
   /** Cancel a watch. */
   cancelWatch(id: string): Promise<void>;
+  /** Is Windows in dark mode right now (Electron `nativeTheme.shouldUseDarkColors`)? Changes arrive as `theme:system`. */
+  systemDark(): Promise<boolean>;
 }
 
 /** `ipcMain.handle` / `ipcRenderer.invoke` channel for each backend method. */
@@ -154,6 +156,7 @@ export const IpcInvoke = {
   listWatches: 'clippy:listWatches',
   addWatch: 'clippy:addWatch',
   cancelWatch: 'clippy:cancelWatch',
+  systemDark: 'clippy:systemDark',
 } as const satisfies { [K in keyof ClippyBackend]: `clippy:${K}` };
 
 /** Push-event channels (main → renderer via `webContents.send`). */
@@ -163,6 +166,7 @@ export const IpcEvents = {
   chatDelta: 'chat:delta',
   chatDone: 'chat:done',
   brainState: 'brain:state',
+  themeSystem: 'theme:system',
 } as const satisfies Record<string, keyof ClippyEventMap>;
 
 /** Event channel name → payload type. */
@@ -172,6 +176,8 @@ export interface ClippyEventMap {
   'chat:delta': ChatDelta;
   'chat:done': ChatDone;
   'brain:state': BrainState;
+  /** Windows switched between light and dark: `true` = dark (sent to every window). */
+  'theme:system': boolean;
 }
 
 /** A push-event channel name. */

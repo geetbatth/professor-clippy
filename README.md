@@ -34,10 +34,15 @@ that have waited less than an hour are sent; older ones stay on the desk.
   an app or the PC, below). Of the `clippy` tools
   it gets all but `ask_user` and `check_reply` (a brain turn waiting for your answer would hold
   up every chat turn behind it), so when it needs something from you it simply asks in its reply.
-  It also has ten tools no agent sees: `list_notes`, `recent_activity`, `snooze_note`,
-  `dismiss_note` and the standing-order and watch tools below. Tell him "not now, bring it back after
+  It also has eleven tools no agent sees: `list_notes`, `recent_activity`, `snooze_note`,
+  `dismiss_note`, `set_look` (colour themes, below) and the standing-order and watch tools below. Tell him "not now, bring it back after
   lunch" and he snoozes the newest unread note; ask "what happened while I was at lunch?" or
   "what's waiting on me?" and he summarises.
+- **Colour themes**: the note can be classic yellow, mint, blush, sky or peach, or one of two dark
+  ones, night and chalkboard (Clippy gets a soft rim light on those). "Follow Windows dark mode"
+  switches to your chosen dark theme while Windows is dark and back again, within a second and
+  without a restart. Tell him "go dark" or "make it mint" and he changes it (there is no picker in
+  Settings yet). In the browser preview, `?mock=1&theme=night` shows a theme.
 - **Standing orders** answer agents' questions for you. Tell him "whenever an agent asks which
   branch to use, say staging" (or add one under Settings → "Standing orders"; × cancels it) and
   from then on a question that an order clearly covers is answered the moment it arrives, with no

@@ -21,6 +21,8 @@ export interface BackendDeps {
   telegram: TelegramControl;
   /** The "Tell Clippy" global hotkey as last registered. */
   hotkey: () => HotkeyStatus;
+  /** Is Windows in dark mode now (Electron `nativeTheme.shouldUseDarkColors`)? */
+  systemDark: () => boolean;
 }
 
 /** What Settings needs from the Telegram channel. */
@@ -37,7 +39,7 @@ export function forRenderer(settings: Settings): Settings {
   return rest;
 }
 
-export function createBackend({ store, asks, brain, settings, claudeWiring, telegram, hotkey }: BackendDeps): ClippyBackend {
+export function createBackend({ store, asks, brain, settings, claudeWiring, telegram, hotkey, systemDark }: BackendDeps): ClippyBackend {
   const found = <T>(value: T | undefined, id: string): T => {
     if (value === undefined) throw new NotFoundError(`No message ${id}`);
     return value;
@@ -110,6 +112,9 @@ export function createBackend({ store, asks, brain, settings, claudeWiring, tele
     },
     async cancelWatch(id) {
       if (store.cancelWatch(id) === undefined) throw new NotFoundError(`No watch ${id}`);
+    },
+    async systemDark() {
+      return systemDark();
     },
   };
 }

@@ -8,8 +8,8 @@
   display: flex;
   flex-direction: column;
   background:
-    linear-gradient(176deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0) 30%),
-    linear-gradient(180deg, #fff58a, #ffe766);
+    linear-gradient(176deg, var(--paper-shine), transparent 30%),
+    linear-gradient(180deg, var(--paper-1), var(--paper-2));
   border-radius: 3px 3px 22px 3px;
   box-shadow:
     0 1px 0 rgba(0, 0, 0, 0.06),
@@ -26,7 +26,7 @@
   bottom: 0;
   width: 26px;
   height: 26px;
-  background: linear-gradient(135deg, #f4d84a 0%, #e7c63a 45%, rgba(0, 0, 0, 0.12) 50%, transparent 52%);
+  background: linear-gradient(135deg, var(--paper-curl) 0%, var(--paper-curl-2) 45%, rgba(0, 0, 0, 0.12) 50%, transparent 52%);
   border-top-left-radius: 4px;
   pointer-events: none;
 }
@@ -67,7 +67,7 @@
 .note-title {
   margin: 0;
   font: 700 17px 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;
-  color: #4a3d12;
+  color: var(--head);
   letter-spacing: 0.2px;
   white-space: nowrap;
 }
@@ -76,21 +76,21 @@
   height: 24px;
   border: none;
   border-radius: 50%;
-  background: rgba(74, 61, 18, 0.1);
-  color: #4a3d12;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  color: var(--ink);
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
 }
 .note-collapse:hover {
-  background: rgba(74, 61, 18, 0.2);
+  background: color-mix(in srgb, var(--ink) 20%, transparent);
 }
 
 .note-tabs {
   display: flex;
   gap: 2px;
   padding: 0 10px;
-  border-bottom: 2px dashed rgba(74, 61, 18, 0.25);
+  border-bottom: 2px dashed var(--line);
   flex: none;
 }
 .note-tab {
@@ -99,17 +99,17 @@
   border: none;
   background: none;
   font: 600 13px 'Segoe UI', sans-serif;
-  color: rgba(74, 61, 18, 0.62);
+  color: var(--ink-faint);
   cursor: pointer;
   border-radius: 8px 8px 0 0;
 }
 .note-tab:hover {
-  color: #4a3d12;
-  background: rgba(255, 255, 255, 0.25);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--tab-on) 55.556%, transparent);
 }
 .note-tab--on {
-  color: #4a3d12;
-  background: rgba(255, 255, 255, 0.45);
+  color: var(--ink);
+  background: var(--tab-on);
 }
 .note-tab--on::after {
   content: '';
@@ -119,7 +119,7 @@
   bottom: -2px;
   height: 3px;
   border-radius: 2px;
-  background: #c0392b;
+  background: var(--accent);
 }
 .note-tab-count {
   display: inline-block;
@@ -127,7 +127,7 @@
   margin-left: 5px;
   padding: 0 4px;
   border-radius: 8px;
-  background: #e53935;
+  background: var(--badge);
   color: #fff;
   font-size: 11px;
   line-height: 16px;
@@ -145,7 +145,7 @@
   width: 8px;
 }
 .note-body::-webkit-scrollbar-thumb {
-  background: rgba(74, 61, 18, 0.22);
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
   border-radius: 4px;
 }
 @media (prefers-reduced-motion: reduce) {

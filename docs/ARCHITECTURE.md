@@ -8,14 +8,14 @@ npm workspaces monorepo (Node 24, npm 11, TypeScript strict, ESM, Vitest).
 | --- | --- | --- |
 | `packages/shared` | `@clippy/shared` | Every shared contract: zod schemas and types, settings, local API routes, data-dir paths, `ClippyClient`, Electron IPC contract, Worker relay protocol. TypeScript source only (no build step). |
 | `apps/desktop` | `@clippy/desktop` | Electron + electron-vite + React. Hosts the local API (127.0.0.1), SQLite store, scheduler and Clippy's brain. The character (`src/renderer/src/clippy/`) is a set of painted robot sprites driven by a pure mood state machine (`mood.ts`): `poses.ts` maps moods to sprites and aligns them on one stage, CSS does the motion, and clicks pass through his transparent pixels (alpha masks built when the sprites are preloaded). |
-| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Ten extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`, `watch_for`, `list_watches`, `cancel_watch`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. Three more (`list_open_apps`, `restart_app`, `restart_computer`) need env `CLIPPY_POWER_TOOLS=1`, also set only for the brain (see "Restarting apps and the PC"). |
+| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Eleven extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `set_look`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`, `watch_for`, `list_watches`, `cancel_watch`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. Three more (`list_open_apps`, `restart_app`, `restart_computer`) need env `CLIPPY_POWER_TOOLS=1`, also set only for the brain (see "Restarting apps and the PC"). |
 | `apps/hook` | `@clippy/hook` | Claude Code hook; posts a note when an agent finishes or needs permission, and (away, opt-in) turns a `PermissionRequest` into a phone approval. Built like `apps/mcp`. |
 | `apps/worker` | `@clippy/worker` | Cloudflare Worker plus one SQLite-backed Durable Object (`ClippyDO`, binding `CLIPPY`) relaying WhatsApp Cloud API traffic. |
 | `scripts/` | | Repo scripts: the Claude Code wiring (`install-claude-wiring.ts`, also bundled into the app for "Connect Claude Code"), SQLite smoke test, run-in-Electron helper. |
 
 Root scripts: `npm test`, `npm run typecheck`, `npm run build` (each runs in every workspace), `npm run dev` (desktop app), `npm run package` (build, then the NSIS installer from `apps/desktop/electron-builder.yml` into `apps/desktop/release/`; the built MCP server and hook ship as `resources/mcp` and `resources/hook`).
 
-`@clippy/shared` is consumed as TypeScript source. Vite (desktop, mcp, hook), wrangler (worker) and Vitest bundle or transform it; it is never `require`d from `node_modules` at runtime. Its root entry is Node-only. Renderer, preload and Worker code import the Node-free subpaths (`@clippy/shared/schemas`, `/settings`, `/api`, `/ipc`, `/relay`).
+`@clippy/shared` is consumed as TypeScript source. Vite (desktop, mcp, hook), wrangler (worker) and Vitest bundle or transform it; it is never `require`d from `node_modules` at runtime. Its root entry is Node-only. Renderer, preload and Worker code import the Node-free subpaths (`@clippy/shared/schemas`, `/settings`, `/theme`, `/api`, `/ipc`, `/relay`).
 
 ## Phone channels: WhatsApp and Telegram
 
@@ -250,6 +250,29 @@ wait plus 60 s) or for leftovers from before a restart (open approvals are kept 
 `approvalRequests`; `startServices` calls `core.approvals.expireLeftovers()` after the power ones),
 and "Dismissed" when the desk note is dismissed (state `done` with no answer). Each edits the
 Telegram copy like any answered ask.
+
+## Colour themes
+
+Seven themes (`THEMES` in `@clippy/shared/theme`: classic, mint, blush, sky, peach, and the dark night
+and chalkboard). The settings `theme`, `followSystemDark` (default off) and `darkTheme` (default
+night) choose one; `resolveTheme(settings, systemDark)` says which one is painted. Colours live
+only in `renderer/src/styles/theme.css`, one `:root[data-theme="<id>"]` block per theme defining
+the same tokens (`--paper-1`, `--ink`, `--card`, `--btn`, `--bubble`, ...; `classic` is also the
+`:root` default and reproduces the original yellow exactly), and every other stylesheet uses
+`var(--token)`, with `color-mix(in srgb, var(--ink) N%, transparent)` for see-through shades.
+`test/renderer/theme.test.ts` checks every theme defines every token. Left as literal colours on
+purpose: Clippy's own artwork and shadows, drop shadows, the white on the red badges, the switch
+knob, the dark wiring-log panel, the "Clippy is missing" screen and the dev gallery.
+
+`hooks/useTheme.ts` sets `data-theme` and `data-dark` on `<html>` (`themeAttrs`, `theme.ts`). Under
+`data-dark="true"` Clippy's sprite gets a rim light, and native controls turn dark. Windows' mode
+comes from the `systemDark()` IPC method (`nativeTheme.shouldUseDarkColors`) and the `theme:system`
+event: `forwardSystemTheme` (`main/window/systemTheme.ts`) listens to `nativeTheme` `updated` once
+and sends it to every `BrowserWindow`. `POST /look` (`Routes.setLook`, body `LookPatch`, only the
+three theme keys, at least one) saves through `ApiDeps.setLook`, which `startServices` backs with
+`SettingsStore.update`; `ClippyClient.setLook` and the brain-only MCP tool `set_look` use it, so
+"go dark" works. The renderer re-reads the settings when the brain finishes a turn
+(`brain:state` idle), since that is when `set_look` may have changed them.
 
 ## Storage
 

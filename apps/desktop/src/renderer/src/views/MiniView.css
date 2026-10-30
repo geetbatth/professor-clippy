@@ -11,7 +11,7 @@
   box-sizing: border-box;
   border: 2px solid #ffffff;
   border-radius: 12px;
-  background: #e53935;
+  background: var(--badge);
   color: #ffffff;
   font: 700 12px/20px 'Segoe UI', sans-serif;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
@@ -32,10 +32,10 @@
 @keyframes badge-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.7);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--badge) 70%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 7px rgba(229, 57, 53, 0);
+    box-shadow: 0 0 0 7px transparent;
   }
 }
 @media (prefers-reduced-motion: reduce) {

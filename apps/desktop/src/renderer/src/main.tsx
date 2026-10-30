@@ -5,6 +5,7 @@ import { preloadSprites } from './clippy/sprites';
 import { Gallery } from './dev/Gallery';
 import { resolveRuntime } from './runtime';
 import { BackendMissing } from './views/BackendMissing';
+import './styles/theme.css';
 import './styles/global.css';
 import './styles/controls.css';
 

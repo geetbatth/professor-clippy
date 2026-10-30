@@ -82,6 +82,8 @@ export async function startFakeApi(appDataDir?: string) {
       }
     }
     switch (route) {
+      case 'POST /look':
+        return send(200, { theme: body.theme ?? 'classic', followSystemDark: body.followSystemDark ?? false, darkTheme: body.darkTheme ?? 'night' });
       case 'GET /health':
         return send(200, { ok: true, version: '0.0.0-fake' });
       case 'POST /messages': {

@@ -22,6 +22,7 @@ describe('IPC channels', () => {
       'setSettings',
       'setTelegramToken',
       'snooze',
+      'systemDark',
       'telegramSendTest',
       'telegramStatus',
       'telegramUnpair',
@@ -37,6 +38,7 @@ describe('IPC channels', () => {
       'chat:done',
       'message:new',
       'message:updated',
+      'theme:system',
     ]);
     expectTypeOf<(typeof IpcEvents)[keyof typeof IpcEvents]>().toEqualTypeOf<ClippyEvent>();
   });

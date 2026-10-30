@@ -37,6 +37,7 @@ const argSchemas: { [K in keyof ClippyBackend]: z.ZodType<Parameters<ClippyBacke
   listWatches: z.tuple([]),
   addWatch: z.tuple([NewWatchInput]),
   cancelWatch: z.tuple([id]),
+  systemDark: z.tuple([]),
 };
 
 export interface ClippyIpc {

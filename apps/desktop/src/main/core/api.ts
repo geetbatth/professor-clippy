@@ -13,6 +13,7 @@
  * - `POST /approvals` posts an agent's permission request for the phone (only when the user is
  *   away), never waiting for the answer; the hook long-polls the ask. `POST /asks/:id/answer`
  *   refuses (403) to answer an open one, too.
+ * - `POST /look` changes only the three theme settings (a `LookPatch`), through `ApiDeps.setLook`.
  */
 import { timingSafeEqual } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
@@ -21,6 +22,7 @@ import type { AddressInfo } from 'node:net';
 import {
   AnswerAskBody,
   ApprovalRequestBody,
+  LookPatch,
   MATCH_ORDER_TIMEOUT_MS,
   MAX_LONG_POLL_S,
   MessageFilter,
@@ -34,6 +36,7 @@ import {
   Routes,
   SnoozeBody,
   type Health,
+  type Look,
   type RouteDef,
 } from '@clippy/shared';
 import { z } from 'zod';
@@ -49,6 +52,9 @@ import type { Store } from './store';
 const MAX_BODY_BYTES = 1024 * 1024;
 /** How long `close()` waits for in-flight requests before dropping connections. */
 const CLOSE_GRACE_MS = 1000;
+
+/** What `POST /look` answers when the app was started without access to its settings. */
+const NO_SETTINGS_MESSAGE = "Professor Clippy can't change his look right now.";
 
 export interface ApiDeps {
   store: Store;
@@ -74,6 +80,8 @@ export interface ApiDeps {
   matchOrder?: (input: NewAskInput) => Promise<{ orderId: string; answer: string } | undefined>;
   /** Default {@link MATCH_ORDER_TIMEOUT_MS} (a test seam). */
   matchOrderTimeoutMs?: number;
+  /** Saves a change to the colour theme settings (`POST /look`). Absent: that route answers 403. */
+  setLook?: (patch: LookPatch) => Promise<Look>;
 }
 
 export interface StartApiOptions extends ApiDeps {
@@ -185,6 +193,14 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       },
     ],
     [Routes.withdrawApproval, ({ id }) => (deps.approvals?.withdraw(id), { status: 204 })],
+    [
+      Routes.setLook,
+      async ({ req }) => {
+        const patch = await body(req, LookPatch);
+        if (!deps.setLook) throw new ForbiddenError(NO_SETTINGS_MESSAGE);
+        return ok(await deps.setLook(patch));
+      },
+    ],
   ]);
 
   return (req, res) => {

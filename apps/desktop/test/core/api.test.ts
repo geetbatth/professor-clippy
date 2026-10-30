@@ -200,6 +200,57 @@ describe('local API (raw HTTP)', () => {
   });
 });
 
+describe('look', () => {
+  let dir: string;
+  let core: Core | undefined;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'clippy-look-'));
+  });
+  afterEach(async () => {
+    await core?.stop();
+    core = undefined;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const post = async (body: unknown) => {
+    const res = await fetch(`http://127.0.0.1:${core!.port}/look`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${core!.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, json: (await res.json()) as any };
+  };
+
+  it('saves the look through setLook and returns it', async () => {
+    const saved: unknown[] = [];
+    core = await startCore({
+      dataDir: dir,
+      clock: new FakeClock(T0),
+      setLook: async (patch) => {
+        saved.push(patch);
+        return { theme: patch.theme ?? 'classic', followSystemDark: patch.followSystemDark ?? false, darkTheme: patch.darkTheme ?? 'night' };
+      },
+    });
+    expect(await post({ theme: 'night' })).toEqual({ status: 200, json: { theme: 'night', followSystemDark: false, darkTheme: 'night' } });
+    expect(saved).toEqual([{ theme: 'night' }]);
+  });
+
+  it('answers 400 for an empty patch, an unknown theme or another setting, and saves nothing', async () => {
+    const setLook = vi.fn(async () => ({ theme: 'classic' as const, followSystemDark: false, darkTheme: 'night' as const }));
+    core = await startCore({ dataDir: dir, clock: new FakeClock(T0), setLook });
+    expect((await post({})).status).toBe(400);
+    expect((await post({ theme: 'neon' })).status).toBe(400);
+    expect((await post({ darkTheme: 'mint' })).status).toBe(400);
+    expect((await post({ soundEnabled: false })).status).toBe(400);
+    expect(setLook).not.toHaveBeenCalled();
+  });
+
+  it('answers 403 when the app has no settings to change', async () => {
+    core = await startCore({ dataDir: dir, clock: new FakeClock(T0) });
+    expect((await post({ theme: 'night' })).status).toBe(403);
+  });
+});
+
 describe('standing orders', () => {
   let dir: string;
   let core: Core | undefined;

@@ -19,6 +19,7 @@ describe('createBackend', () => {
   let backend: ReturnType<typeof createBackend>;
   let settings: SettingsStore;
   let telegramCalls: unknown[][];
+  let dark = false;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'clippy-backend-'));
@@ -51,7 +52,7 @@ describe('createBackend', () => {
       sendTest: async () => ({ ok: false, error: 'not paired' }),
     };
     settings = await SettingsStore.load(join(dir, 'settings.json'));
-    backend = createBackend({ store, asks, brain, settings, claudeWiring, telegram, hotkey: () => ({ accelerator: 'Alt+T', ok: false, error: 'taken' }) });
+    backend = createBackend({ store, asks, brain, settings, claudeWiring, telegram, hotkey: () => ({ accelerator: 'Alt+T', ok: false, error: 'taken' }), systemDark: () => dark });
   });
   afterEach(() => {
     store.close();
@@ -100,7 +101,7 @@ describe('createBackend', () => {
     const secrets = { available: () => true, encrypt: (s: string) => `enc(${s})`, decrypt: (s: string) => s.slice(4, -1) };
     const withToken = await SettingsStore.load(join(dir, 'settings.json'), { secrets });
     await withToken.setTelegramToken('123456:AAHfakefakefakefakefakefake');
-    const b = createBackend({ store, asks, brain: { ask: async () => ({}), newChat: () => {} }, settings: withToken, claudeWiring: { connect: async () => ({ ok: true, log: [], warnings: [] }) }, hotkey: () => ({ accelerator: '', ok: true }), telegram: { status: () => ({ tokenSaved: true, state: 'off' }), setToken: async () => ({ tokenSaved: true, state: 'off' }), unpair: async () => ({ tokenSaved: true, state: 'off' }), sendTest: async () => ({ ok: true }) } });
+    const b = createBackend({ store, asks, brain: { ask: async () => ({}), newChat: () => {} }, settings: withToken, claudeWiring: { connect: async () => ({ ok: true, log: [], warnings: [] }) }, hotkey: () => ({ accelerator: '', ok: true }), systemDark: () => false, telegram: { status: () => ({ tokenSaved: true, state: 'off' }), setToken: async () => ({ tokenSaved: true, state: 'off' }), unpair: async () => ({ tokenSaved: true, state: 'off' }), sendTest: async () => ({ ok: true }) } });
     expect(withToken.get().telegramBotTokenEnc).toBeDefined();
     expect(await b.getSettings()).not.toHaveProperty('telegramBotTokenEnc');
     expect(await b.setSettings({ telegramChatId: 42 })).toMatchObject({ telegramChatId: 42 });
@@ -127,6 +128,12 @@ describe('createBackend', () => {
     await backend.cancelWatch(first.id);
     expect((await backend.listWatches()).map((w) => w.nudge)).toEqual(['Look']);
     await expect(backend.cancelWatch('01ARZ3NDEKTSV4RRFFQ69G5FAV')).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('reports whether Windows is in dark mode as it is now', async () => {
+    expect(await backend.systemDark()).toBe(false);
+    dark = true;
+    expect(await backend.systemDark()).toBe(true);
   });
 
   it('reports the Tell Clippy hotkey status', async () => {

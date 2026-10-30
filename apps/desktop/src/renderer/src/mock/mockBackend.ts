@@ -7,6 +7,7 @@ import { ulid } from 'ulid';
 import type { ClippyEvent, ClippyEventMap, ClippyWindowApi, TelegramStatus } from '@clippy/shared/ipc';
 import type { AskResult, Message, MessageFilter, StandingOrder, Watch } from '@clippy/shared/schemas';
 import { applySettingsPatch, DEFAULT_SETTINGS, SettingsPatch, type Settings } from '@clippy/shared/settings';
+import type { ThemeId } from '@clippy/shared/theme';
 import { MOCK_REPLIES, sampleMessages } from './sampleData';
 
 export interface MockOptions {
@@ -18,6 +19,8 @@ export interface MockOptions {
   chunkMs?: number;
   /** Start as a fresh install (the first-run wizard shows). */
   firstRun?: boolean;
+  /** Start with this colour theme (`?theme=night` in the preview). */
+  theme?: ThemeId;
   /** Start with a Telegram bot token saved (and this chat paired, if given). */
   telegram?: { chatId?: number; chatName?: string };
 }
@@ -53,6 +56,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
   let settings: Settings = {
     ...DEFAULT_SETTINGS,
     firstRunDone: !opts.firstRun,
+    ...(opts.theme !== undefined && { theme: opts.theme }),
     ...(opts.telegram?.chatId !== undefined && { telegramChatId: opts.telegram.chatId }),
     ...(opts.telegram?.chatName !== undefined && { telegramChatName: opts.telegram.chatName }),
   };
@@ -232,6 +236,9 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
       const watch = watches.get(id);
       if (!watch) throw new Error(`No watch ${id}`);
       watches.set(id, { ...watch, active: false });
+    },
+    async systemDark() {
+      return false; // the preview pretends Windows is in light mode
     },
     telegramStart(code, chat = { id: 123456789, firstName: 'You' }) {
       if (!telegramToken || settings.telegramChatId !== undefined || code.toUpperCase() !== pairingCode) return false;

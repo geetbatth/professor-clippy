@@ -8,6 +8,7 @@ import {
   ApiError,
   ApprovalResult,
   Health,
+  Look,
   MATCH_ORDER_TIMEOUT_MS,
   MAX_LONG_POLL_S,
   OpenApp,
@@ -15,6 +16,7 @@ import {
   Routes,
   routePath,
   type ApprovalRequestBody,
+  type LookPatch,
   type RouteDef,
 } from './api';
 import { portPath, tokenPath } from './paths';
@@ -256,6 +258,11 @@ export class ClippyClient {
   /** `POST /approvals/:id/withdraw`: the agent stopped waiting; close the question ("Withdrawn"). */
   async withdrawApproval(id: string): Promise<void> {
     await this.#request(Routes.withdrawApproval, { id });
+  }
+
+  /** `POST /look`: change the colour theme settings; returns them as they are now. */
+  setLook(patch: LookPatch): Promise<Look> {
+    return this.#request(Routes.setLook, { body: patch, schema: Look });
   }
 
   async #request<T = undefined>(

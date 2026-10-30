@@ -5,6 +5,7 @@
  * never show fake notes: it reports the backend as missing instead.
  */
 import type { ClippyWindowApi } from '@clippy/shared/ipc';
+import { ThemeId } from '@clippy/shared/theme';
 import type { ClippyWindowShell } from '../../main/window/windowApi';
 import { chooseBackend } from './backendChoice';
 import { createMockBackend, type MockBackend } from './mock/mockBackend';
@@ -44,7 +45,10 @@ export function resolveRuntime(search: string = location.search): Runtime | unde
   if (choice === 'missing') return undefined;
   let api: ClippyWindowApi;
   if (choice === 'mock') {
-    const backend = createMockBackend({ firstRun: new URLSearchParams(search).has('firstrun') });
+    const params = new URLSearchParams(search);
+    // `?theme=night` previews a theme.
+    const theme = ThemeId.safeParse(params.get('theme'));
+    const backend = createMockBackend({ firstRun: params.has('firstrun'), ...(theme.success && { theme: theme.data }) });
     window.clippyMock = backend;
     api = backend;
   } else {

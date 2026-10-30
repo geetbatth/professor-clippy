@@ -9,6 +9,7 @@
  */
 import { z } from 'zod';
 import { AnsweredVia, Timestamp } from './schemas';
+import { Settings, SettingsPatch } from './settings';
 
 /** HTTP method of a route. */
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -73,6 +74,7 @@ export const Routes = {
   listApps: { method: 'GET', path: '/power/apps' },
   requestApproval: { method: 'POST', path: '/approvals' },
   withdrawApproval: { method: 'POST', path: '/approvals/:id/withdraw' },
+  setLook: { method: 'POST', path: '/look' },
 } as const satisfies Record<string, RouteDef>;
 
 /** Fill a route's `:id` placeholder (URL-encoded). */
@@ -199,6 +201,19 @@ export const ApprovalResult = z.discriminatedUnion('status', [
   z.object({ status: z.literal('waiting'), id: z.string() }),
 ]);
 export type ApprovalResult = z.infer<typeof ApprovalResult>;
+
+/**
+ * `POST /look` body: the colour-theme settings, at least one of them. Nothing else can be changed
+ * through this route (it is what Clippy's brain uses for "go dark").
+ */
+export const LookPatch = SettingsPatch.pick({ theme: true, followSystemDark: true, darkTheme: true })
+  .strict()
+  .refine((p) => Object.values(p).some((v) => v !== undefined), 'Give at least one of theme, followSystemDark, darkTheme');
+export type LookPatch = z.infer<typeof LookPatch>;
+
+/** `POST /look` response: the theme settings as they are now. */
+export const Look = Settings.pick({ theme: true, followSystemDark: true, darkTheme: true });
+export type Look = z.infer<typeof Look>;
 
 /** Error response body for any non-2xx status. */
 export const ApiError = z.object({ error: z.string() });

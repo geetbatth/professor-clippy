@@ -20,11 +20,11 @@
 .wiring-warning {
   margin: 0;
   font-size: 11.5px;
-  color: #8a4b00;
+  color: var(--warn);
 }
 .wiring-ok {
   margin: 0;
   font-size: 12px;
   font-weight: 600;
-  color: #2e6b2e;
+  color: var(--ok);
 }

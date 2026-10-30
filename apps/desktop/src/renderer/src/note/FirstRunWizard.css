@@ -21,38 +21,38 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: rgba(74, 61, 18, 0.14);
-  color: rgba(74, 61, 18, 0.7);
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+  color: var(--ink-soft);
   font-size: 11px;
   font-weight: 700;
   line-height: 20px;
   text-align: center;
 }
 .wizard-steps li.on {
-  background: #4a3d12;
-  color: #fff8d1;
+  background: var(--btn);
+  color: var(--btn-ink);
 }
 .wizard-steps li.done {
-  background: #c9e6bf;
-  color: #2e6b2e;
+  background: var(--ok-step);
+  color: var(--ok);
 }
 .wizard-title {
   margin: 0;
   font: 700 15px 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;
-  color: #3a300c;
+  color: var(--ink-label);
 }
 .wizard-text {
   margin: 0;
   line-height: 1.4;
-  color: #3a300c;
+  color: var(--ink-label);
 }
 .wizard-small {
   font-size: 11.5px;
-  color: rgba(74, 61, 18, 0.78);
+  color: color-mix(in srgb, var(--ink) 78%, transparent);
 }
 .wizard code {
   font-size: 11px;
-  background: rgba(255, 255, 255, 0.5);
+  background: color-mix(in srgb, var(--reply) 50%, transparent);
   border-radius: 3px;
   padding: 0 3px;
 }

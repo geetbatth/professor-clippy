@@ -382,6 +382,19 @@ describe('startServices', () => {
     expect(core.store.listActiveWatches()).toEqual([]);
   });
 
+  it('POST /look saves the theme into the settings file and returns the look', async () => {
+    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: quietBrief(), brain: { emit: () => {} } });
+    const res = await fetch(`http://127.0.0.1:${services.core.port}/look`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${services.core.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ theme: 'night', followSystemDark: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ theme: 'night', followSystemDark: true, darkTheme: 'night' });
+    expect(services.settings.get()).toMatchObject({ theme: 'night', followSystemDark: true });
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toMatchObject({ theme: 'night', followSystemDark: true });
+  });
+
   it('wires settings changes to the relay and writes the brain files first', async () => {
     let transports = 0;
     services = await startServices({

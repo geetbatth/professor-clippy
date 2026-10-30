@@ -4,6 +4,7 @@ import {
   APPROVAL_WAIT_S,
   ApprovalRequestBody,
   ApprovalResult,
+  LookPatch,
   RestartAppBody,
   RestartPcBody,
   Routes,
@@ -37,6 +38,7 @@ describe('Routes', () => {
       'GET /power/apps',
       'POST /approvals',
       'POST /approvals/:id/withdraw',
+      'POST /look',
     ]);
   });
 });
@@ -80,6 +82,22 @@ describe('power bodies', () => {
   it('restart-pc takes an optional reason', () => {
     expect(RestartPcBody.parse({})).toEqual({});
     expect(RestartPcBody.parse({ reason: 'updates' })).toEqual({ reason: 'updates' });
+  });
+});
+
+describe('LookPatch', () => {
+  it('takes any of the three look settings, but at least one', () => {
+    expect(LookPatch.parse({ theme: 'night' })).toEqual({ theme: 'night' });
+    expect(LookPatch.parse({ followSystemDark: true, darkTheme: 'chalkboard' })).toEqual({ followSystemDark: true, darkTheme: 'chalkboard' });
+    expect(LookPatch.safeParse({}).success).toBe(false);
+  });
+
+  it('refuses an unknown theme, a light dark theme and settings that are not the look', () => {
+    expect(LookPatch.safeParse({ theme: 'neon' }).success).toBe(false);
+    expect(LookPatch.safeParse({ darkTheme: 'mint' }).success).toBe(false);
+    // Unrelated settings are not smuggled through this route.
+    expect(LookPatch.safeParse({ soundEnabled: false }).success).toBe(false);
+    expect(LookPatch.safeParse({ theme: 'mint', soundEnabled: false }).success).toBe(false);
   });
 });
 

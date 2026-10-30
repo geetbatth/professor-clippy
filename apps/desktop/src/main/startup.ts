@@ -110,6 +110,11 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
       },
       ...(idleSeconds && { isUserActive: () => idleSeconds() < settings.get().awayThresholdS }),
       allowPowerActions: () => settings.get().allowPowerActions,
+      // "Go dark" from Clippy's brain: the same settings the Look section changes.
+      setLook: async (patch) => {
+        const { theme, followSystemDark, darkTheme } = await settings.update(patch);
+        return { theme, followSystemDark, darkTheme };
+      },
       // Phone approvals need the hook too: it is what asks, and turning it off should stop them.
       approvalsEnabled: () => settings.get().phoneApprovals && settings.get().hookEnabled,
       ...(options.powerExecutor && { powerExecutor: options.powerExecutor }),

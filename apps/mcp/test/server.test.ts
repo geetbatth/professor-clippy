@@ -254,6 +254,7 @@ describe('brain-only note tools', () => {
     'list_standing_orders',
     'list_watches',
     'recent_activity',
+    'set_look',
     'snooze_note',
     'watch_for',
   ];
@@ -431,6 +432,43 @@ describe('brain-only watch tools', () => {
     const r = await call('cancel_watch', { id: 'missing' });
     expect(r.isError).toBe(true);
     expect(texts(r)[0]).toMatch(/404/);
+  });
+});
+
+describe('set_look', () => {
+  const BRAIN = { CLIPPY_SENDER: 'clippy-brain' };
+
+  it('exists only for the brain, never for an agent', async () => {
+    await setup({ env: BRAIN });
+    expect((await client!.listTools()).tools.map((t) => t.name)).toContain('set_look');
+    await client!.close();
+    await api?.close();
+
+    for (const sender of ['codex', undefined]) {
+      await setup({ env: sender ? { CLIPPY_SENDER: sender } : {} });
+      expect((await client!.listTools()).tools.map((t) => t.name)).not.toContain('set_look');
+      await client!.close();
+      await api?.close();
+    }
+  });
+
+  it('changes the look through POST /look and says what it is now', async () => {
+    const { api } = await setup({ env: BRAIN });
+    const r = await call('set_look', { theme: 'night' });
+    expect(r.isError).toBeFalsy();
+    expect(api.requests.find((q) => q.path === '/look')?.body).toEqual({ theme: 'night' });
+    expect(texts(r)[0]).toContain('night');
+    const follow = await call('set_look', { followSystemDark: true, darkTheme: 'chalkboard' });
+    expect(follow.isError).toBeFalsy();
+    expect(api.requests.filter((q) => q.path === '/look').at(-1)?.body).toEqual({ followSystemDark: true, darkTheme: 'chalkboard' });
+  });
+
+  it('refuses an empty change, an unknown theme and a light theme as the dark one', async () => {
+    const { api } = await setup({ env: BRAIN });
+    expect((await call('set_look', {})).isError).toBe(true);
+    expect((await call('set_look', { theme: 'neon' })).isError).toBe(true);
+    expect((await call('set_look', { darkTheme: 'mint' })).isError).toBe(true);
+    expect(api.requests.some((q) => q.path === '/look')).toBe(false);
   });
 });
 

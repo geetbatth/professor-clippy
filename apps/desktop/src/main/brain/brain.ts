@@ -27,6 +27,8 @@ export const SESSION_KV_KEY = 'brainSessionId';
  * `list_open_apps`, `restart_app` and `restart_computer` only *request* a restart: the user
  * confirms it with a tap, and the brain cannot (decision "PC control" 1). They exist only with
  * `CLIPPY_POWER_TOOLS=1`, which `buildMcpConfig` sets for the brain alone.
+ *
+ * `set_look` changes the colour theme ("go dark"); it is brain-only like the note tools.
  */
 export const BRAIN_CLIPPY_TOOLS = [
   'leave_message',
@@ -48,6 +50,7 @@ export const BRAIN_CLIPPY_TOOLS = [
   'list_open_apps',
   'restart_app',
   'restart_computer',
+  'set_look',
 ] as const;
 /** clippy MCP tools the brain must never see (removed from its context, not just denied). */
 export const BRAIN_BLOCKED_CLIPPY_TOOLS = ['ask_user', 'check_reply'] as const;

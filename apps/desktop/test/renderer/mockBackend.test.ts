@@ -34,6 +34,13 @@ describe('mock backend', () => {
     expect(await b.hotkeyStatus()).toEqual({ accelerator: '', ok: true });
   });
 
+  it('takes the look settings and reports a light Windows, so the preview can show every theme', async () => {
+    const b = createMockBackend();
+    expect(await b.systemDark()).toBe(false);
+    expect(await b.getSettings()).toMatchObject({ theme: 'classic', followSystemDark: false, darkTheme: 'night' });
+    expect(await b.setSettings({ theme: 'night', followSystemDark: true })).toMatchObject({ theme: 'night', followSystemDark: true });
+  });
+
   it('keeps standing orders: add, list, cancel', async () => {
     const b = createMockBackend();
     const order = await b.addOrder('say yes');

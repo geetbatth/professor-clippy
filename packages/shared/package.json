@@ -9,6 +9,7 @@
     "./schemas": "./src/schemas.ts",
     "./settings": "./src/settings.ts",
     "./api": "./src/api.ts",
+    "./theme": "./src/theme.ts",
     "./paths": "./src/paths.ts",
     "./client": "./src/client.ts",
     "./ipc": "./src/ipc.ts",

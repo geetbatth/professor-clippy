@@ -5,6 +5,7 @@
  * `Settings.parse({})` yields {@link DEFAULT_SETTINGS}.
  */
 import { z } from 'zod';
+import { DarkThemeId, ThemeId } from './theme';
 
 /** Saved position of mini Clippy (screen coordinates on an Electron display). */
 export const WindowPos = z.object({
@@ -53,6 +54,14 @@ const fields = {
    * Clippy" box from anywhere. Empty = no shortcut.
    */
   tellHotkey: z.string().max(60),
+  /** The colour theme of the note (see `THEMES` in `./theme`). */
+  theme: ThemeId,
+  /** Switch to `darkTheme` whenever Windows is in dark mode, and back when it isn't. */
+  followSystemDark: z.boolean(),
+  /** The theme used while following Windows dark mode and Windows is dark. */
+  darkTheme: DarkThemeId,
+  /** Clippy points out a few things about the app now and then (the pad's tips). */
+  showTips: z.boolean(),
   /** Hide mini Clippy while a fullscreen app is focused. */
   hideOnFullscreen: z.boolean(),
   /** Launch at Windows login. */
@@ -117,6 +126,10 @@ export const Settings = z.object({
   briefWeekdaysOnly: fields.briefWeekdaysOnly.default(true),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.default(600),
   tellHotkey: fields.tellHotkey.default('Control+Alt+Space'),
+  theme: fields.theme.default('classic'),
+  followSystemDark: fields.followSystemDark.default(false),
+  darkTheme: fields.darkTheme.default('night'),
+  showTips: fields.showTips.default(true),
   hideOnFullscreen: fields.hideOnFullscreen.default(true),
   autoStart: fields.autoStart.default(true),
   allowPowerActions: fields.allowPowerActions.default(false),
@@ -154,6 +167,10 @@ export const SettingsPatch = z.object({
   briefWeekdaysOnly: fields.briefWeekdaysOnly.optional(),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.optional(),
   tellHotkey: fields.tellHotkey.optional(),
+  theme: fields.theme.optional(),
+  followSystemDark: fields.followSystemDark.optional(),
+  darkTheme: fields.darkTheme.optional(),
+  showTips: fields.showTips.optional(),
   hideOnFullscreen: fields.hideOnFullscreen.optional(),
   autoStart: fields.autoStart.optional(),
   allowPowerActions: fields.allowPowerActions.optional(),

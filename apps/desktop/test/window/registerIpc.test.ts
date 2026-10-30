@@ -51,6 +51,7 @@ function fakeBackend(): ClippyBackend {
     listWatches: vi.fn(async () => []),
     addWatch: vi.fn(async (input: { nudge: string }) => ({ id: 'W1', event: 'finished' as const, nudge: input.nudge, active: true, createdAt: 1 })),
     cancelWatch: vi.fn(async () => {}),
+    systemDark: vi.fn(async () => true),
   };
 }
 
@@ -93,6 +94,7 @@ describe('registerIpc', () => {
     expect(backend.addWatch).toHaveBeenCalledWith({ project: 'api', nudge: 'Deploy' });
     await handlers.get(IpcInvoke.cancelWatch)!(e, 'W1');
     expect(backend.cancelWatch).toHaveBeenCalledWith('W1');
+    await expect(handlers.get(IpcInvoke.systemDark)!(e)).resolves.toBe(true);
   });
 
   it('rejects bad arguments before they reach the backend', () => {
@@ -108,6 +110,8 @@ describe('registerIpc', () => {
     expect(() => handlers.get(IpcInvoke.connectClaude)!(e, 'uninstall')).toThrow();
     expect(() => handlers.get(IpcInvoke.setTelegramToken)!(e, 42)).toThrow();
     expect(() => handlers.get(IpcInvoke.hotkeyStatus)!(e, 'extra')).toThrow();
+    expect(() => handlers.get(IpcInvoke.systemDark)!(e, 'extra')).toThrow();
+    expect(() => handlers.get(IpcInvoke.setSettings)!(e, { theme: 'neon' })).toThrow();
     expect(() => handlers.get(IpcInvoke.addWatch)!(e, { nudge: '' })).toThrow();
     expect(() => handlers.get(IpcInvoke.addWatch)!(e, { event: 'soon', nudge: 'x' })).toThrow();
     expect(() => handlers.get(IpcInvoke.addOrder)!(e, '')).toThrow();

@@ -4,7 +4,7 @@
  * tray icon.
  */
 import { homedir } from 'node:os';
-import { app, globalShortcut, powerMonitor } from 'electron';
+import { app, BrowserWindow, globalShortcut, nativeTheme, powerMonitor } from 'electron';
 import { appDataDir, settingsPath, type ClippyEvent, type ClippyEventMap, type HotkeyStatus, type Settings } from '@clippy/shared';
 import { createBackend } from './backend';
 import { findNode, resolveMcpServerPath } from './brain/mcpConfig';
@@ -16,6 +16,7 @@ import { createTray, type ClippyTray } from './tray';
 import { createClippyWindow, type ClippyWindow } from './window/createClippyWindow';
 import { registerTellHotkey, type TellHotkey } from './window/hotkey';
 import { registerIpc, type ClippyIpc } from './window/registerIpc';
+import { forwardSystemTheme } from './window/systemTheme';
 import { WindowChannels } from './window/windowApi';
 import { createWindowsExecutor } from './power/executor';
 import { electronSecretBox } from './secrets';
@@ -92,7 +93,7 @@ async function main(): Promise<void> {
   // The Tell Clippy hotkey; its status is what Settings shows.
   let tellHotkey: TellHotkey | undefined;
   let tellStatus: HotkeyStatus = { accelerator: settings.get().tellHotkey, ok: true };
-  const backend = createBackend({ store: core.store, asks: core.asks, brain, settings, claudeWiring, telegram, hotkey: () => tellStatus });
+  const backend = createBackend({ store: core.store, asks: core.asks, brain, settings, claudeWiring, telegram, hotkey: () => tellStatus, systemDark: () => nativeTheme.shouldUseDarkColors });
   clippy = createClippyWindow({
     loadPos: () => settings.get().windowPos,
     savePos: (windowPos) => {
@@ -129,6 +130,9 @@ async function main(): Promise<void> {
   };
   applyTellHotkey(settings.get().tellHotkey);
 
+  // Windows switching light/dark reaches every window (the note now, popped-out pages later) at once.
+  const stopSystemTheme = forwardSystemTheme(nativeTheme, () => BrowserWindow.getAllWindows());
+
   const tray: ClippyTray = createTray({
     onShow: showClippy,
     muted: () => !settings.get().soundEnabled,
@@ -163,6 +167,7 @@ async function main(): Promise<void> {
     e.preventDefault();
     quitting = true;
     tellHotkey?.dispose();
+    stopSystemTheme();
     phoneGate.stop();
     watcher.stop();
     brief.stop();

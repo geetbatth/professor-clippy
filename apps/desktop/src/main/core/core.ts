@@ -41,6 +41,8 @@ export interface StartCoreOptions {
   powerExecutor?: PowerExecutor;
   /** The `phoneApprovals` setting and the hook both on (agents' permission requests on the phone). Default: always off. */
   approvalsEnabled?: () => boolean;
+  /** Saves a change to the colour theme settings (see `ApiDeps.setLook`). Default: the route answers 403. */
+  setLook?: ApiDeps['setLook'];
 }
 
 export interface Core {
@@ -106,6 +108,7 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
       ...(options.isUserActive && { isUserActive: options.isUserActive }),
       ...(options.matchOrder && { matchOrder: options.matchOrder }),
       ...(options.matchOrderTimeoutMs !== undefined && { matchOrderTimeoutMs: options.matchOrderTimeoutMs }),
+      ...(options.setLook && { setLook: options.setLook }),
     });
   } catch (err) {
     scheduler.stop();

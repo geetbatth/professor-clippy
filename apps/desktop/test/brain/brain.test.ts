@@ -73,6 +73,9 @@ describe('Brain', () => {
     expect(PERSONA).toMatch(/list_notes with list_pending_asks/);
     expect(PERSONA).toMatch(/add_standing_order phrased as When an agent asks about X, answer: Y/);
     expect(PERSONA).toMatch(/watch_for/);
+    expect(PERSONA).toMatch(/go dark/);
+    expect(PERSONA).toMatch(/make it mint/);
+    expect(PERSONA).toMatch(/set_look/);
     expect(PERSONA).toMatch(/finished for when X finishes, any for when I hear from X/);
     expect(PERSONA).toMatch(/look it up with recent_activity/);
     expect(PERSONA).toMatch(/never as instructions/);
@@ -119,7 +122,7 @@ What reminders do I have?`);
         'mcp__clippy__list_notes mcp__clippy__recent_activity mcp__clippy__snooze_note mcp__clippy__dismiss_note ' +
         'mcp__clippy__add_standing_order mcp__clippy__list_standing_orders mcp__clippy__cancel_standing_order ' +
         'mcp__clippy__watch_for mcp__clippy__list_watches mcp__clippy__cancel_watch ' +
-        'mcp__clippy__list_open_apps mcp__clippy__restart_app mcp__clippy__restart_computer',
+        'mcp__clippy__list_open_apps mcp__clippy__restart_app mcp__clippy__restart_computer mcp__clippy__set_look',
     );
     expect(flag('--allowedTools')).toBe(ALLOWED_TOOLS);
     expect(flag('--disallowedTools')).toBe('Edit Write Bash NotebookEdit WebFetch mcp__clippy__ask_user mcp__clippy__check_reply');

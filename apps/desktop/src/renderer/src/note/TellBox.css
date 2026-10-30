@@ -8,30 +8,30 @@
   gap: 5px;
   margin-top: 10px;
   padding: 8px 0 2px;
-  background: linear-gradient(180deg, rgba(255, 236, 110, 0), #ffe96e 30%);
+  background: linear-gradient(180deg, transparent, var(--paper-fade) 30%);
 }
 .tell-input {
   width: 100%;
   box-sizing: border-box;
   padding: 7px 11px;
-  border: 1px solid rgba(74, 61, 18, 0.3);
+  border: 1px solid var(--field-border);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.92);
+  background: color-mix(in srgb, var(--reply) 92%, transparent);
   font-size: 13px;
   outline: none;
 }
 .tell-input:focus {
-  border-color: #4a3d12;
+  border-color: var(--ink);
 }
 .tell-reply {
   position: relative;
   max-height: 120px;
   overflow-y: auto;
   padding: 6px 28px 6px 11px;
-  border: 1px solid rgba(74, 61, 18, 0.15);
+  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
   border-radius: 12px 12px 12px 4px;
-  background: #ffffff;
-  color: #2f2710;
+  background: var(--reply);
+  color: var(--ink-strong);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -41,7 +41,7 @@
   overflow-wrap: anywhere;
 }
 .tell-text--wait {
-  color: rgba(74, 61, 18, 0.65);
+  color: color-mix(in srgb, var(--ink) 65%, transparent);
   font-style: italic;
 }
 .tell-text--live::after {
@@ -63,14 +63,14 @@
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: rgba(74, 61, 18, 0.1);
-  color: #4a3d12;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  color: var(--ink);
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
 }
 .tell-clear:hover {
-  background: rgba(74, 61, 18, 0.2);
+  background: color-mix(in srgb, var(--ink) 20%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {
   .tell-text--live::after {

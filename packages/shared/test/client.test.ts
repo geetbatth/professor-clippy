@@ -116,6 +116,8 @@ function fakeApi() {
         return body.tool === 'Bash' ? send(201, { status: 'waiting', id: ASK_ID }) : send(200, { status: 'at-desk' });
       case `POST /approvals/${ASK_ID}/withdraw`:
         return send(204);
+      case 'POST /look':
+        return send(200, { theme: body.theme ?? 'classic', followSystemDark: body.followSystemDark ?? false, darkTheme: body.darkTheme ?? 'night' });
       case 'GET /broken':
         return send(200, { not: 'a message' });
       default:
@@ -267,6 +269,13 @@ describe('ClippyClient approvals', () => {
     await expect(client.requestApproval({ tool: 'Read', sender: 'a' })).resolves.toEqual({ status: 'at-desk' });
     await expect(client.withdrawApproval(ASK_ID)).resolves.toBeUndefined();
     expect(last()).toMatchObject({ method: 'POST', path: `/approvals/${ASK_ID}/withdraw` });
+  });
+});
+
+describe('ClippyClient.setLook', () => {
+  it('posts the patch and returns the resulting look', async () => {
+    await expect(client.setLook({ theme: 'night' })).resolves.toEqual({ theme: 'night', followSystemDark: false, darkTheme: 'night' });
+    expect(last()).toMatchObject({ method: 'POST', path: '/look', body: { theme: 'night' } });
   });
 });
 
