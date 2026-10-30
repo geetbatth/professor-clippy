@@ -8,6 +8,7 @@ describe('Settings', () => {
       awayThresholdS: 180,
       soundEnabled: true,
       popUpFor: 'important',
+      phoneWhen: 'away',
       unsolicitedAdvice: false,
       askTimeoutDefaultS: 600,
       hideOnFullscreen: true,
@@ -39,6 +40,15 @@ describe('Settings', () => {
   it('accepts an away threshold of 0 (always interrupt) and patches it', () => {
     expect(Settings.parse({ awayThresholdS: 0 }).awayThresholdS).toBe(0);
     expect(SettingsPatch.parse({ awayThresholdS: 600 })).toEqual({ awayThresholdS: 600 });
+  });
+});
+
+describe('Settings: phoneWhen', () => {
+  it('defaults to away, accepts always, rejects anything else, and is patchable', () => {
+    expect(Settings.parse({}).phoneWhen).toBe('away');
+    expect(Settings.parse({ phoneWhen: 'always' }).phoneWhen).toBe('always');
+    expect(Settings.safeParse({ phoneWhen: 'never' }).success).toBe(false);
+    expect(SettingsPatch.parse({ phoneWhen: 'always' })).toEqual({ phoneWhen: 'always' });
   });
 });
 

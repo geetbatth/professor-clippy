@@ -131,6 +131,7 @@ describe('startServices', () => {
         makeTransport: () => transport,
         relayLog: () => {},
         idleSeconds: () => idle,
+        phoneGate: { tickMs: 20 },
       });
       const { port, token } = services.core;
       const post = async (input: object) => {
@@ -152,10 +153,13 @@ describe('startServices', () => {
       const away = await post({ body: '✅ shop agent finished, again', quietIfActive: true });
       expect(away).toMatchObject({ state: 'unread', quietIfActive: true });
 
+      // The away note goes at once; the normal note was held at the PC and follows on a tick
+      // (which may even land before the away note's request does, hence the sort).
       await waitFor(() => fake.sentTexts.length === 2 && relaySends.length === 2, 3000, 'the mirrors');
       await new Promise((r) => setTimeout(r, 50));
-      expect(fake.sentTexts.map((t) => t.split('\n')[0])).toEqual(['📝 a normal note', '📝 ✅ shop agent finished, again']);
-      expect(relaySends.map((s) => s.text.split('\n')[0])).toEqual(['📝 a normal note', '📝 ✅ shop agent finished, again']);
+      const expected = ['📝 ✅ shop agent finished, again', '📝 a normal note'].sort();
+      expect(fake.sentTexts.map((t) => t.split('\n')[0]).sort()).toEqual(expected);
+      expect(relaySends.map((s) => s.text.split('\n')[0]).sort()).toEqual(expected);
       expect(services.core.store.listMessages({ state: 'unread' }).map((m) => m.id).sort()).toEqual([normal.id, away.id].sort());
 
       // The threshold is read live from settings.
@@ -166,6 +170,87 @@ describe('startServices', () => {
       await fake.close();
       guard.restore();
     }
+  });
+
+  describe('the phone only hears while the user is away', () => {
+    /** Starts the services with both channels on, then posts one agent note through the API. */
+    async function postNote(idleSeconds: () => number, settings: object = {}) {
+      const fake = await FakeTelegram.start();
+      const relaySends: RelaySendRequest[] = [];
+      const transport: RelayTransport = {
+        start() {},
+        stop() {},
+        reconnect() {},
+        async send(request) {
+          relaySends.push(request);
+          return { waId: `wamid.${relaySends.length}`, mode: 'freeform' };
+        },
+        async putReminder() {},
+        async deleteReminder() {},
+      };
+      writeFileSync(
+        join(dir, 'settings.json'),
+        JSON.stringify({ telegramBotToken: fake.token, telegramChatId: 4242, workerUrl: 'https://relay.example.workers.dev', workerSecret: 's', ...settings }),
+      );
+      services = await startServices({
+        dataDir: dir,
+        settingsFile: join(dir, 'settings.json'),
+        brain: { emit: () => {} },
+        secrets: fakeSecrets,
+        telegram: { baseUrl: fake.baseUrl, log: () => {} },
+        makeTransport: () => transport,
+        relayLog: () => {},
+        idleSeconds,
+        phoneGate: { tickMs: 20 },
+      });
+      await fetch(`http://127.0.0.1:${services.core.port}/messages`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${services.core.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ sender: 'claude-code', body: 'a note' }),
+      });
+      await new Promise((r) => setTimeout(r, 150));
+      return { fake, relaySends };
+    }
+
+    it('does not send an agent note to Telegram or WhatsApp while the user is at the PC', async () => {
+      const guard = guardFetch();
+      const { fake, relaySends } = await postNote(() => 0);
+      try {
+        expect(fake.sentTexts).toEqual([]);
+        expect(relaySends).toEqual([]);
+        expect(services!.phoneGate.heldIds).toHaveLength(1);
+      } finally {
+        await services?.telegram.stop();
+        await fake.close();
+        guard.restore();
+      }
+    });
+
+    it('sends it at once when the user is away', async () => {
+      const guard = guardFetch();
+      const { fake, relaySends } = await postNote(() => 10_000);
+      try {
+        expect(fake.sentTexts).toEqual(['📝 a note\n\n<i>— claude-code</i>']);
+        expect(relaySends.map((s) => s.text)).toEqual(['📝 a note\n\n— claude-code']);
+      } finally {
+        await services?.telegram.stop();
+        await fake.close();
+        guard.restore();
+      }
+    });
+
+    it('sends it at once at the PC when the setting is "Always"', async () => {
+      const guard = guardFetch();
+      const { fake, relaySends } = await postNote(() => 0, { phoneWhen: 'always' });
+      try {
+        expect(fake.sentTexts).toHaveLength(1);
+        expect(relaySends).toHaveLength(1);
+      } finally {
+        await services?.telegram.stop();
+        await fake.close();
+        guard.restore();
+      }
+    });
   });
 
   it('without an idle source, away-only notes interrupt like any other', async () => {

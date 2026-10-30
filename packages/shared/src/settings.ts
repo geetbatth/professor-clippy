@@ -32,6 +32,12 @@ const fields = {
    * Quiet arrivals still land in the stack with the unread badge.
    */
   popUpFor: z.enum(['important', 'everything']),
+  /**
+   * When notes, questions and reminders also go to the phone (WhatsApp, Telegram): 'away' = only
+   * once you have been away from the PC for `awayThresholdS`, 'always' = at once. WhatsApp
+   * reminders are still sent by the Worker on time either way.
+   */
+  phoneWhen: z.enum(['away', 'always']),
   /** Clippy may volunteer advice without being asked. */
   unsolicitedAdvice: z.boolean(),
   /** Default `ask_user` wait, seconds. */
@@ -82,6 +88,7 @@ export const Settings = z.object({
   awayThresholdS: fields.awayThresholdS.default(180),
   soundEnabled: fields.soundEnabled.default(true),
   popUpFor: fields.popUpFor.default('important'),
+  phoneWhen: fields.phoneWhen.default('away'),
   unsolicitedAdvice: fields.unsolicitedAdvice.default(false),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.default(600),
   hideOnFullscreen: fields.hideOnFullscreen.default(true),
@@ -112,6 +119,7 @@ export const SettingsPatch = z.object({
   awayThresholdS: fields.awayThresholdS.optional(),
   soundEnabled: fields.soundEnabled.optional(),
   popUpFor: fields.popUpFor.optional(),
+  phoneWhen: fields.phoneWhen.optional(),
   unsolicitedAdvice: fields.unsolicitedAdvice.optional(),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.optional(),
   hideOnFullscreen: fields.hideOnFullscreen.optional(),

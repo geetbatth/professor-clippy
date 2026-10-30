@@ -148,6 +148,21 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
                 </span>
               </label>
               {awayError && <p className="card-error">Whole minutes from 0 to {AWAY_MAX_MINUTES}, please.</p>}
+              <label className="setting setting--sub">
+                <span className="setting-text">
+                  <span className="setting-label">Send to my phone</span>
+                  <span className="setting-hint">Away means the minutes above. Held notes follow once you leave; WhatsApp reminders still go out on time.</span>
+                </span>
+                <select
+                  className="field-input setting-select"
+                  value={settings.phoneWhen}
+                  aria-label="When notes are sent to my phone"
+                  onChange={(e) => void update({ phoneWhen: e.target.value as Settings['phoneWhen'] })}
+                >
+                  <option value="away">Only when I'm away</option>
+                  <option value="always">Always</option>
+                </select>
+              </label>
             </>
           )}
         </Fragment>

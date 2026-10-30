@@ -8,8 +8,9 @@ mortarboard, robot arms and caster wheels. Your AI agents (Claude Code and
 any other MCP client on this PC) leave him notes, reminders and questions; he pops up, wiggles,
 and waits until you deal with them. He is quiet by default: he only pops up for questions,
 reminders and urgent things (Settings → Pop up for → Everything changes that); other notes wait
-under his unread badge. Every note and question is mirrored to your WhatsApp and/or
-Telegram, and you can answer, or just chat with him, from your phone.
+under his unread badge. Notes and questions are mirrored to your WhatsApp and/or Telegram once
+you have been away from the PC for a few minutes (Settings → Send to my phone → Always sends them
+at once), and you can answer, or just chat with him, from your phone.
 
 <img src="docs/screenshots/expanded-notes.png" width="300" alt="The sticky note with agent messages"> <img src="docs/screenshots/first-run.png" width="300" alt="The first-run wizard">
 
@@ -124,12 +125,15 @@ approved, `wrangler login`, set six secrets, `wrangler deploy`, point Meta's web
 
 How it behaves once connected:
 
-- Every agent note and question is sent to your WhatsApp. Within 24 h of your last WhatsApp
+- Every agent note and question is sent to your WhatsApp (once you are away from the PC, unless
+  Settings → Send to my phone is "Always"; notes you deal with at the desk first are never sent).
+  Within 24 h of your last WhatsApp
   message to Clippy it is plain text; otherwise it goes out as the approved `clippy_note`
   template (cut at 1000 characters, "…more on desktop").
 - **Quote-reply** to a question to answer it. Any other message goes to Clippy's brain, which
   replies on WhatsApp (and can answer pending questions for you).
-- Reminders are synced to the Worker, which sends them on time even when the PC is off; the
+- Reminders are synced to the Worker, which sends them on time even when the PC is off or you are
+  at the PC (the away setting does not hold them back); the
   desktop shows them later as "missed while you were away". Reminders that already exist when you
   connect WhatsApp (or fix a wrong secret, or switch to another Worker) are synced then; any the
   Worker hasn't confirmed are filled in the next time the app starts.

@@ -105,9 +105,10 @@ export class Relay {
     this.#running = true;
     const { bus } = this.#d;
     this.#unsubscribe.push(
-      bus.on('message:new', (m) => {
+      bus.on('message:mirror', (m) => {
         // Ruling: mirror notes and asks only. Reminders go out from the Worker; desk chat is
-        // not mirrored (only replies to WhatsApp messages are sent, from #inbound).
+        // not mirrored (only replies to WhatsApp messages are sent, from #inbound). The phone
+        // gate decides when (at once if the user is away, else once they are).
         if (m.kind === 'note' || m.kind === 'ask') this.#mirror(m.id);
       }),
       bus.on('reminder:created', (r) => this.#putReminder(r.id)),

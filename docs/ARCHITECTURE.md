@@ -83,6 +83,19 @@ History, `quietIfActive: true`); the renderer only reacts to unread notes and bo
 skip notes already done, so there is no pop-up, sound, quip, badge or mirror. Away: a normal
 unread note. Without an idle source every note interrupts.
 
+## Phone only when away
+
+Nothing mirrors to the phone on `message:new`. `PhoneGate` (`main/phoneGate.ts`) watches
+`message:new` for notes, asks and fired reminders that are not already `done`, and emits
+`message:mirror`, which the relay (notes and asks) and Telegram (also reminders) subscribe to
+instead. Away (or the `phoneWhen` setting is `always`): at once. At the PC: the id is held, and a
+`tickMs` (30 s) timer re-reads held messages from the store; once the user is away the ones still
+pending (asks: still unanswered) are mirrored, once. Dismissed or answered ones are dropped, a
+snoozed one stays held until it wakes. `isUserAway` is built in `startServices`: idle time at or
+over `awayThresholdS` (0 = always away); without an idle source, always away. Telegram's startup
+replay of missed reminders skips the gate, and WhatsApp reminders still come from the Worker.
+`test/phoneGate.test.ts` covers the rules; relay/Telegram tests use `test/alwaysMirror.ts`.
+
 ## Storage
 
 **Driver: Node's built-in `node:sqlite` (`DatabaseSync`).** No native module, so there is no `better-sqlite3` and no `@electron/rebuild` step.

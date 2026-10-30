@@ -11,6 +11,7 @@ import { SettingsStore } from '../../src/main/settings';
 import { MAX_WRONG_CODES, PAIRING_KV_KEY, TelegramManager } from '../../src/main/telegram';
 import { MISSED_NOTE } from '../../src/main/telegram/format';
 import { OFFSET_KV_PREFIX } from '../../src/main/telegram/telegram';
+import { alwaysMirror } from '../alwaysMirror';
 import { FakeTelegram, fakeSecrets, guardFetch, waitFor } from './fakeTelegram';
 
 const ME = 4242;
@@ -45,6 +46,7 @@ async function setup(
   if (options.chatId !== undefined) await settings.update({ telegramChatId: options.chatId });
   const bus = new Bus();
   const store = new Store({ path: ':memory:', bus });
+  const stopGate = alwaysMirror(bus, store);
   const scheduler = new Scheduler({ store, bus });
   const asks = new Asks({ store, bus });
   const asked: [string, unknown][] = [];
@@ -83,6 +85,7 @@ async function setup(
   c.manager = make();
   cleanups.push(async () => {
     scheduler.stop();
+    stopGate();
     await fake.close();
     store.close();
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });

@@ -57,7 +57,7 @@ async function main(): Promise<void> {
   if (!mcpServerPath) console.warn('[clippy] MCP server not built (apps/mcp/dist/index.js); the brain runs without clippy tools');
   // Settings, core, brain, relay and Telegram; both channels are subscribed before any API
   // request is handled.
-  const { core, settings, brain, relay, telegram } = await startServices({
+  const { core, settings, brain, phoneGate, relay, telegram } = await startServices({
     dataDir,
     settingsFile: settingsPath(),
     version: app.getVersion(),
@@ -133,6 +133,7 @@ async function main(): Promise<void> {
     if (stopped) return;
     e.preventDefault();
     quitting = true;
+    phoneGate.stop();
     relay.stop();
     // Aborts the long-poll in flight; never wait long for an update being handled.
     const telegramStopped = Promise.race([telegram.stop(), new Promise((r) => setTimeout(r, 2000))]);

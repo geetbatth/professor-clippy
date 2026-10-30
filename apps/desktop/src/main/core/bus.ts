@@ -10,6 +10,11 @@ export interface CoreEventMap {
   'message:new': Message;
   /** A stored message changed (done, snoozed, woke from snooze, answered, waId set, ...). */
   'message:updated': Message;
+  /**
+   * A note, ask or fired reminder may now go to the phone (WhatsApp, Telegram). Emitted by the
+   * phone gate: at once when the user is away (or the setting says always), else once they are.
+   */
+  'message:mirror': Message;
   /** A reminder fired. `reminder` is its state after firing (advanced or inactive); `message` is the created reminder Message. */
   'reminder:fired': { reminder: Reminder; message: Message };
   /** A reminder was scheduled (for syncing to the WhatsApp relay). */

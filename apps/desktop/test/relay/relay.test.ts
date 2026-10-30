@@ -18,6 +18,7 @@ import { Store } from '../../src/main/core/store';
 import { RelayManager, relayConfig } from '../../src/main/relay';
 import { formatForWhatsApp, normalizeWorkerUrl, Relay, SEEN_KV_KEY, SYNCED_KV_PREFIX } from '../../src/main/relay/relay';
 import { RelayHttpError, type FrameHandler, type RelayTransport } from '../../src/main/relay/relayClient';
+import { alwaysMirror } from '../alwaysMirror';
 import { FakeWorker, waitFor } from './fakeWorker';
 
 /** In-memory transport: records calls; `failures` makes the next calls throw. */
@@ -64,6 +65,7 @@ class FakeTransport implements RelayTransport {
 function setup(brainReply: (text: string) => BrainReply | Promise<BrainReply> = () => ({}), retryDelaysMs = [10, 20]) {
   const bus = new Bus();
   const store = new Store({ path: ':memory:', bus });
+  alwaysMirror(bus, store);
   const scheduler = new Scheduler({ store, bus });
   const asks = new Asks({ store, bus });
   const transport = new FakeTransport();
@@ -288,6 +290,7 @@ describe('RelayManager', () => {
   it('is off without a Worker URL and secret, and restarts only when they change', () => {
     const bus = new Bus();
     const store = new Store({ path: ':memory:', bus });
+    alwaysMirror(bus, store);
     const transports: FakeTransport[] = [];
     const manager = new RelayManager({
       store,
@@ -336,6 +339,7 @@ describe('RelayManager: reminder gap-fill', () => {
   function managerSetup(customise: (t: FakeTransport, secret: string) => void = () => {}) {
     const bus = new Bus();
     const store = new Store({ path: ':memory:', bus });
+    alwaysMirror(bus, store);
     const scheduler = new Scheduler({ store, bus });
     const transports: FakeTransport[] = [];
     const make = () =>
@@ -520,6 +524,7 @@ describe('RelayManager: withdrawing reminders when WhatsApp is disconnected or m
   function managerSetup(options: { customise?: (t: FakeTransport, index: number) => void; withdrawTimeoutMs?: number } = {}) {
     const bus = new Bus();
     const store = new Store({ path: ':memory:', bus });
+    alwaysMirror(bus, store);
     const scheduler = new Scheduler({ store, bus });
     const transports: FakeTransport[] = [];
     const logs: string[] = [];
@@ -783,6 +788,7 @@ describe('Relay over a real socket (fake Worker)', () => {
   it('mirrors an ask, then a WhatsApp quote-reply answers it and is acked', async () => {
     const bus = new Bus();
     const store = new Store({ path: join(dir, 'clippy.db'), bus });
+    alwaysMirror(bus, store);
     const scheduler = new Scheduler({ store, bus });
     const asks = new Asks({ store, bus });
     const manager = new RelayManager({ store, bus, scheduler, asks, brain: { ask: async () => ({}) }, log: () => {} });

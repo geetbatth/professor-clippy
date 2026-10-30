@@ -189,7 +189,8 @@ export class Telegram {
     this.#running = true;
     const { bus } = this.#d;
     this.#unsubscribe.push(
-      bus.on('message:new', (m) => this.#onNew(m)),
+      // The phone gate's `message:mirror`: at once if the user is away, else once they are.
+      bus.on('message:mirror', (m) => this.#onNew(m)),
       // No tgMsgId check here: an answer that lands while the ask's send is still in flight must
       // still edit it. The edit job runs after that send in the queue and re-reads the message.
       bus.on('ask:answered', ({ message }) => this.#editAnswered(message.id)),
