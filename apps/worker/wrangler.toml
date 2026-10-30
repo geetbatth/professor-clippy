@@ -1,0 +1,13 @@
+# Professor Clippy WhatsApp relay. Secrets (Meta token, app secret, worker secret, ...)
+# are set with `wrangler secret put` by the relay task; none live in this file.
+name = "professor-clippy-relay"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+[[durable_objects.bindings]]
+name = "CLIPPY"
+class_name = "ClippyDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ClippyDO"]

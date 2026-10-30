@@ -1,0 +1,91 @@
+/**
+ * Electron IPC contract between the desktop main process and the renderer.
+ *
+ * The preload script exposes `window.clippy: ClippyWindowApi`, implemented by
+ * mapping each {@link ClippyBackend} method to `ipcRenderer.invoke(IpcInvoke[method], ...args)`
+ * (handled in main with `ipcMain.handle`), and `on(event, cb)` to
+ * `ipcRenderer.on(event, ...)` for the push events in {@link IpcEvents}.
+ *
+ * This module is type-only apart from the channel-name constants, so it is safe
+ * to import from sandboxed preload and renderer code.
+ */
+import type { AskResult, Message, MessageFilter } from './schemas';
+import type { Settings, SettingsPatch } from './settings';
+
+/** Brain activity, for Clippy's thinking animation. */
+export type BrainState = 'idle' | 'thinking';
+
+/** `chat:delta` payload: the next chunk of Clippy's in-progress chat reply. */
+export interface ChatDelta {
+  /** Text to append to the reply being streamed. */
+  text: string;
+}
+
+/**
+ * `chat:done` payload: the reply finished. `message` is the persisted
+ * `kind: 'chat', role: 'clippy'` Message; `error` is set instead if the brain failed.
+ */
+export interface ChatDone {
+  message?: Message;
+  error?: string;
+}
+
+/** Request/response API the renderer calls (all async, via `ipcRenderer.invoke`). */
+export interface ClippyBackend {
+  /** Messages matching a filter (e.g. `{ state: 'unread' }` for the sticky-note stack). */
+  listMessages(filter: MessageFilter): Promise<Message[]>;
+  /** Dismiss a message into history. Also emits `message:updated`. */
+  markDone(id: string): Promise<Message>;
+  /** Snooze a message until `until` (epoch ms). Also emits `message:updated`. */
+  snooze(id: string, until: number): Promise<Message>;
+  /** Answer an ask from the desk (`answeredVia: 'desk'`). */
+  answerAsk(id: string, answer: string): Promise<AskResult>;
+  /** Send a chat line to Clippy's brain. Resolves with the stored user chat Message; the reply streams via `chat:delta` / `chat:done`. */
+  sendChat(text: string): Promise<Message>;
+  /** Start a fresh brain session (drops the resumed Claude Code session). */
+  newChat(): Promise<void>;
+  /** Full-text search over history. */
+  searchHistory(q: string): Promise<Message[]>;
+  getSettings(): Promise<Settings>;
+  /** Apply a partial update and return the resulting settings. */
+  setSettings(patch: SettingsPatch): Promise<Settings>;
+}
+
+/** `ipcMain.handle` / `ipcRenderer.invoke` channel for each backend method. */
+export const IpcInvoke = {
+  listMessages: 'clippy:listMessages',
+  markDone: 'clippy:markDone',
+  snooze: 'clippy:snooze',
+  answerAsk: 'clippy:answerAsk',
+  sendChat: 'clippy:sendChat',
+  newChat: 'clippy:newChat',
+  searchHistory: 'clippy:searchHistory',
+  getSettings: 'clippy:getSettings',
+  setSettings: 'clippy:setSettings',
+} as const satisfies { [K in keyof ClippyBackend]: `clippy:${K}` };
+
+/** Push-event channels (main → renderer via `webContents.send`). */
+export const IpcEvents = {
+  messageNew: 'message:new',
+  messageUpdated: 'message:updated',
+  chatDelta: 'chat:delta',
+  chatDone: 'chat:done',
+  brainState: 'brain:state',
+} as const satisfies Record<string, keyof ClippyEventMap>;
+
+/** Event channel name → payload type. */
+export interface ClippyEventMap {
+  'message:new': Message;
+  'message:updated': Message;
+  'chat:delta': ChatDelta;
+  'chat:done': ChatDone;
+  'brain:state': BrainState;
+}
+
+/** A push-event channel name. */
+export type ClippyEvent = keyof ClippyEventMap;
+
+/** What preload exposes as `window.clippy`. `on` returns an unsubscribe function. */
+export type ClippyWindowApi = ClippyBackend & {
+  on<E extends ClippyEvent>(event: E, cb: (payload: ClippyEventMap[E]) => void): () => void;
+};

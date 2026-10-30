@@ -1,0 +1,25 @@
+{
+  "name": "@clippy/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared contracts for Professor Clippy: zod schemas, paths, HTTP client, IPC and relay protocol.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schemas": "./src/schemas.ts",
+    "./settings": "./src/settings.ts",
+    "./api": "./src/api.ts",
+    "./paths": "./src/paths.ts",
+    "./client": "./src/client.ts",
+    "./ipc": "./src/ipc.ts",
+    "./relay": "./src/relay.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

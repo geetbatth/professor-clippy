@@ -1,0 +1,24 @@
+{
+  "name": "@clippy/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Professor Clippy WhatsApp relay: Cloudflare Worker + one SQLite-backed Durable Object.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
+  },
+  "dependencies": {
+    "@clippy/shared": "0.1.0",
+    "rrule": "2.8.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.11",
+    "@cloudflare/workers-types": "5.20261030.1",
+    "wrangler": "4.156.0"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "professor-clippy",
+  "private": true,
+  "type": "module",
+  "description": "Professor Clippy: a desktop sticky-note assistant that AI agents message via MCP, mirrored to WhatsApp.",
+  "workspaces": [
+    "packages/shared",
+    "apps/desktop",
+    "apps/mcp",
+    "apps/hook",
+    "apps/worker"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "npm run dev -w apps/desktop",
+    "smoke:sqlite": "node scripts/sqlite-smoke.mjs",
+    "smoke:sqlite:electron": "node scripts/run-in-electron.mjs scripts/sqlite-smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}
