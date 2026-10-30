@@ -191,7 +191,7 @@ export function createPageWindows(opts: PageWindowsOptions): PageWindows {
       if (open.get(page.id) === entry) open.delete(page.id);
     });
 
-    loadRenderer(win, { ...opts, query: { ...opts.query, page: page.id } });
+    loadRenderer(win, { rendererUrl: opts.rendererUrl, rendererFile: opts.rendererFile, query: { ...opts.query, page: page.id } });
   }
 
   function close(id: string): void {
