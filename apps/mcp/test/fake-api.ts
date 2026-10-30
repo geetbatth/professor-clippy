@@ -7,7 +7,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import type { AnsweredVia, AskResult, Message, Reminder } from '@clippy/shared';
+import type { AnsweredVia, AskResult, Message, Reminder, StandingOrder, Watch } from '@clippy/shared';
 
 export const TOKEN = 'f'.repeat(64);
 
@@ -26,6 +26,8 @@ export async function startFakeApi(appDataDir?: string) {
   const requests: RecordedRequest[] = [];
   const messages: Message[] = [];
   const reminders: Reminder[] = [];
+  const orders: StandingOrder[] = [];
+  const watches: Watch[] = [];
   const waiters = new Map<string, Array<() => void>>();
 
   const askResult = (m: Message): AskResult =>
@@ -76,6 +78,25 @@ export async function startFakeApi(appDataDir?: string) {
         messages.push(m);
         return send(201, m);
       }
+      case 'GET /messages': {
+        const { state, kind } = Object.fromEntries(url.searchParams);
+        const list = messages.filter((m) => (!state || m.state === state) && (!kind || m.kind === kind));
+        return send(200, [...list].sort((a, b) => b.createdAt - a.createdAt));
+      }
+      case 'POST /messages/:id/done': {
+        const m = messages.find((x) => x.id === id);
+        if (!m) return send(404, { error: 'no such message' });
+        m.state = 'done';
+        m.doneAt = Date.now();
+        return send(200, m);
+      }
+      case 'POST /messages/:id/snooze': {
+        const m = messages.find((x) => x.id === id);
+        if (!m) return send(404, { error: 'no such message' });
+        m.state = 'snoozed';
+        m.snoozedUntil = body.until;
+        return send(200, m);
+      }
       case 'POST /reminders': {
         const r: Reminder = {
           id: nextId(),
@@ -96,6 +117,32 @@ export async function startFakeApi(appDataDir?: string) {
         const r = reminders.find((x) => x.id === id);
         if (!r) return send(404, { error: 'no such reminder' });
         r.active = false;
+        return send(204);
+      }
+      case 'GET /orders':
+        return send(200, orders.filter((o) => o.active));
+      case 'POST /orders': {
+        const o: StandingOrder = { id: nextId(), text: body.text, active: true, createdAt: Date.now() };
+        orders.push(o);
+        return send(201, o);
+      }
+      case 'DELETE /orders/:id': {
+        const o = orders.find((x) => x.id === id);
+        if (!o) return send(404, { error: 'no such order' });
+        o.active = false;
+        return send(204);
+      }
+      case 'GET /watches':
+        return send(200, watches.filter((w) => w.active));
+      case 'POST /watches': {
+        const w: Watch = { id: nextId(), project: body.project, event: body.event ?? 'finished', nudge: body.nudge, active: true, createdAt: Date.now() };
+        watches.push(w);
+        return send(201, w);
+      }
+      case 'DELETE /watches/:id': {
+        const w = watches.find((x) => x.id === id);
+        if (!w) return send(404, { error: 'no such watch' });
+        w.active = false;
         return send(204);
       }
       case 'POST /asks': {
@@ -163,6 +210,8 @@ export async function startFakeApi(appDataDir?: string) {
     requests,
     messages,
     reminders,
+    orders,
+    watches,
     answer,
     close: () =>
       new Promise<void>((resolve) => {

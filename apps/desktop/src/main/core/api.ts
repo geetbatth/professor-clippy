@@ -15,11 +15,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import {
   AnswerAskBody,
+  MATCH_ORDER_TIMEOUT_MS,
   MAX_LONG_POLL_S,
   MessageFilter,
   NewAskInput,
   NewMessageInput,
   NewReminderInput,
+  NewStandingOrderInput,
+  NewWatchInput,
   Routes,
   SnoozeBody,
   type Health,
@@ -50,6 +53,13 @@ export interface ApiDeps {
    * away-only note (`quietIfActive`) goes. Absent: treated as away (every note interrupts).
    */
   isUserActive?: () => boolean;
+  /**
+   * Finds a standing order that answers a new ask. A match answers the ask on the spot; no match,
+   * a rejection or taking longer than `matchOrderTimeoutMs` posts it as a normal question.
+   */
+  matchOrder?: (input: NewAskInput) => Promise<{ orderId: string; answer: string } | undefined>;
+  /** Default {@link MATCH_ORDER_TIMEOUT_MS} (a test seam). */
+  matchOrderTimeoutMs?: number;
 }
 
 export interface StartApiOptions extends ApiDeps {
@@ -106,7 +116,16 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     [Routes.createReminder, async ({ req }) => created(scheduler.create(await body(req, NewReminderInput)))],
     [Routes.listReminders, () => ok(scheduler.list())],
     [Routes.cancelReminder, ({ id }) => (scheduler.cancel(id), { status: 204 })],
-    [Routes.createAsk, async ({ req }) => created(asks.create(await body(req, NewAskInput)))],
+    [
+      Routes.createAsk,
+      async ({ req, signal }) => {
+        const input = await body(req, NewAskInput);
+        const match = await matchStandingOrder(input);
+        // The agent gave up while we were matching: storing the ask now would orphan it (a retry would duplicate it).
+        if (signal.aborted) return { status: 499 };
+        return created(asks.create(input, match));
+      },
+    ],
     [Routes.listPendingAsks, () => ok(asks.listPending())],
     [Routes.getAsk, async ({ id, url, signal }) => ok(await asks.wait(id, parseWait(url.searchParams.get('wait')) * 1000, signal))],
     [
@@ -116,6 +135,18 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         return ok(asks.answer(id, answer, via));
       },
     ],
+    [Routes.listOrders, () => ok(store.listActiveOrders())],
+    [Routes.addOrder, async ({ req }) => created(store.insertOrder((await body(req, NewStandingOrderInput)).text))],
+    [Routes.cancelOrder, ({ id }) => (found(store.cancelOrder(id), 'order', id), { status: 204 })],
+    [Routes.listWatches, () => ok(store.listActiveWatches())],
+    [
+      Routes.addWatch,
+      async ({ req }) => {
+        const { project, event, nudge } = await body(req, NewWatchInput);
+        return created(store.insertWatch({ project, event: event ?? 'finished', nudge }));
+      },
+    ],
+    [Routes.cancelWatch, ({ id }) => (found(store.cancelWatch(id), 'watch', id), { status: 204 })],
   ]);
 
   return (req, res) => {
@@ -133,6 +164,22 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       send(res, reply);
     })();
   };
+
+  /** A standing order's answer to a new ask, if one is found in time. Never rejects. */
+  async function matchStandingOrder(input: NewAskInput): Promise<{ orderId: string; answer: string } | undefined> {
+    if (!deps.matchOrder) return undefined;
+    let timer: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<undefined>((resolve) => {
+      timer = setTimeout(resolve, deps.matchOrderTimeoutMs ?? MATCH_ORDER_TIMEOUT_MS, undefined);
+    });
+    try {
+      return await Promise.race([deps.matchOrder(input), timedOut]);
+    } catch {
+      return undefined; // no order is better than no ask
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   async function dispatch(req: IncomingMessage, res: ServerResponse): Promise<Reply> {
     if (!authorized(req.headers.authorization)) return { status: 401, body: { error: 'Unauthorized' } };

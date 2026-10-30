@@ -35,6 +35,10 @@ export const WindowChannels = {
   dragEnd: 'window:dragEnd',
   /** main → renderer: global cursor position relative to the window's top-left (`CursorPoint`). */
   cursor: 'window:cursor',
+  /** main -> renderer: the global hotkey was pressed; open Notes and focus the Tell Clippy box. */
+  tell: 'window:tell',
+  /** renderer -> main: give keyboard focus back (the box is done; the window never keeps it). */
+  blur: 'window:blur',
 } as const;
 
 export interface CursorPoint {
@@ -53,6 +57,10 @@ export interface ClippyWindowShell {
   onCursor(cb: (point: CursorPoint) => void): () => void;
   /** Mode changed by main. Returns an unsubscribe function. */
   onModeChanged(cb: (mode: WindowMode) => void): () => void;
+  /** The Tell Clippy hotkey was pressed. Returns an unsubscribe function. */
+  onTell(cb: () => void): () => void;
+  /** Hand keyboard focus back to whatever app had it. */
+  blur(): void;
 }
 
 export function isWindowMode(value: unknown): value is WindowMode {

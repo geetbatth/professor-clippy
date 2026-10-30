@@ -6,7 +6,7 @@ export type Tab = 'notes' | 'chat' | 'history' | 'settings';
 
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: 'notes', label: 'Notes' },
-  { id: 'chat', label: 'Chat' },
+  { id: 'chat', label: 'Clippy' },
   { id: 'history', label: 'History' },
   { id: 'settings', label: 'Settings' },
 ];

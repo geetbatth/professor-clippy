@@ -1,5 +1,5 @@
 /**
- * "Agent-finished pings: only when I've been away for N min": edited in whole minutes, stored
+ * "I count as away after N min": edited in whole minutes, stored
  * in seconds (`awayThresholdS`). 0 means always ping.
  */
 export const AWAY_MAX_MINUTES = 24 * 60;

@@ -32,8 +32,12 @@ export class Asks {
     this.#clock = options.clock ?? systemClock;
   }
 
-  /** Post a question; returns the stored ask Message (emits `message:new`). */
-  create(input: NewAskInput): Message {
+  /**
+   * Post a question; returns the stored ask Message (emits `message:new`). With `auto`, a standing
+   * order has already answered it: it is stored answered (`answeredVia: 'clippy'`) and done, so it
+   * never pops up or goes to the phone, and an agent waiting on it gets the answer at once.
+   */
+  create(input: NewAskInput, auto?: { orderId: string; answer: string }): Message {
     return this.#store.createMessage({
       kind: 'ask',
       body: input.question,
@@ -41,6 +45,7 @@ export class Asks {
       urgent: input.urgent ?? false,
       ...(input.project !== undefined && { project: input.project }),
       ...(input.options !== undefined && { options: input.options }),
+      ...(auto && { state: 'done' as const, answer: auto.answer, answeredVia: 'clippy' as const, orderId: auto.orderId }),
     });
   }
 

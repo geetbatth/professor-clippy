@@ -8,8 +8,13 @@ import type { RelayTransport } from '../src/main/relay/relayClient';
 import { startServices, type Services } from '../src/main/startup';
 import { Store } from '../src/main/core/store';
 import { MISSED_NOTE } from '../src/main/telegram/format';
+import { fakeRunner, type ScriptedRun } from './brain/fixtures';
+import { FakeClock } from './core/fakeClock';
 import { FakeTelegram, fakeSecrets, guardFetch, waitFor } from './telegram/fakeTelegram';
 
+
+/** A Saturday noon clock: the weekday-only morning brief stays out of tests that count messages. */
+const quietBrief = () => ({ clock: new FakeClock(new Date(2026, 9, 31, 12).getTime()) });
 
 describe('startServices', () => {
   let dir: string;
@@ -18,6 +23,9 @@ describe('startServices', () => {
     dir = mkdtempSync(join(tmpdir(), 'clippy-startup-'));
   });
   afterEach(async () => {
+    services?.phoneGate.stop();
+    services?.watcher.stop();
+    services?.brief.stop();
     services?.relay.stop();
     await services?.telegram.stop();
     services?.brain.dispose();
@@ -44,6 +52,7 @@ describe('startServices', () => {
     services = await startServices({
       dataDir: dir,
       settingsFile: join(dir, 'settings.json'),
+      brief: quietBrief(),
       brain: { emit: () => {} },
       makeTransport: () => transport,
       relayLog: () => {},
@@ -64,6 +73,43 @@ describe('startServices', () => {
     expect(services.relay.active).toBe(true);
   });
 
+  it('answers an ask from a standing order with the brain runner and hooks-off settings, and runs nothing without orders', async () => {
+    const script: ScriptedRun[] = [];
+    const fake = fakeRunner(script);
+    services = await startServices({
+      dataDir: dir,
+      settingsFile: join(dir, 'settings.json'),
+      brief: quietBrief(),
+      brain: { emit: () => {}, runner: fake.runner, cwd: 'C:/home', env: { PATH: 'x' } },
+    });
+    const { core } = services;
+    const post = async (question: string) => {
+      const res = await fetch(`http://127.0.0.1:${core.port}/asks`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${core.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ question, sender: 'claude-code' }),
+      });
+      return (await res.json()) as Message;
+    };
+
+    // No orders: a normal ask, and the CLI is never started.
+    expect(await post('Which branch?')).toMatchObject({ state: 'unread' });
+    expect(fake.calls).toEqual([]);
+
+    // The order is read from the running core at the time of the ask.
+    const order = core.store.insertOrder('When an agent asks which branch to use, answer: staging');
+    const reply = JSON.stringify({ type: 'result', is_error: false, result: JSON.stringify({ order: order.id, answer: 'staging' }) });
+    script.push({ stdout: reply });
+    const answered = await post('Which branch should I deploy?');
+    expect(answered).toMatchObject({ state: 'done', answer: 'staging', answeredVia: 'clippy', orderId: order.id });
+    expect(fake.calls).toHaveLength(1);
+    const call = fake.calls[0]!;
+    expect(call.stdin).toContain('Which branch should I deploy?');
+    expect(call.stdin).toContain(order.id);
+    expect(call.cwd).toBe('C:/home');
+    expect(call.args[call.args.indexOf('--settings') + 1]).toBe(join(dir, 'brain', 'brain-settings.json'));
+  });
+
   it('has Telegram listening before the first API request, and sends what the startup catch-up fired', async () => {
     const guard = guardFetch();
     const fake = await FakeTelegram.start();
@@ -78,6 +124,7 @@ describe('startServices', () => {
       services = await startServices({
         dataDir: dir,
         settingsFile: join(dir, 'settings.json'),
+        brief: quietBrief(),
         brain: { emit: () => {} },
         secrets: fakeSecrets,
         telegram: { baseUrl: fake.baseUrl, log: () => {} },
@@ -125,12 +172,14 @@ describe('startServices', () => {
       services = await startServices({
         dataDir: dir,
         settingsFile: join(dir, 'settings.json'),
+        brief: quietBrief(),
         brain: { emit: () => {} },
         secrets: fakeSecrets,
         telegram: { baseUrl: fake.baseUrl, log: () => {} },
         makeTransport: () => transport,
         relayLog: () => {},
         idleSeconds: () => idle,
+        phoneGate: { tickMs: 20 },
       });
       const { port, token } = services.core;
       const post = async (input: object) => {
@@ -152,10 +201,13 @@ describe('startServices', () => {
       const away = await post({ body: '✅ shop agent finished, again', quietIfActive: true });
       expect(away).toMatchObject({ state: 'unread', quietIfActive: true });
 
+      // The away note goes at once; the normal note was held at the PC and follows on a tick
+      // (which may even land before the away note's request does, hence the sort).
       await waitFor(() => fake.sentTexts.length === 2 && relaySends.length === 2, 3000, 'the mirrors');
       await new Promise((r) => setTimeout(r, 50));
-      expect(fake.sentTexts.map((t) => t.split('\n')[0])).toEqual(['📝 a normal note', '📝 ✅ shop agent finished, again']);
-      expect(relaySends.map((s) => s.text.split('\n')[0])).toEqual(['📝 a normal note', '📝 ✅ shop agent finished, again']);
+      const expected = ['📝 ✅ shop agent finished, again', '📝 a normal note'].sort();
+      expect(fake.sentTexts.map((t) => t.split('\n')[0]).sort()).toEqual(expected);
+      expect(relaySends.map((s) => s.text.split('\n')[0]).sort()).toEqual(expected);
       expect(services.core.store.listMessages({ state: 'unread' }).map((m) => m.id).sort()).toEqual([normal.id, away.id].sort());
 
       // The threshold is read live from settings.
@@ -168,8 +220,90 @@ describe('startServices', () => {
     }
   });
 
+  describe('the phone only hears while the user is away', () => {
+    /** Starts the services with both channels on, then posts one agent note through the API. */
+    async function postNote(idleSeconds: () => number, settings: object = {}) {
+      const fake = await FakeTelegram.start();
+      const relaySends: RelaySendRequest[] = [];
+      const transport: RelayTransport = {
+        start() {},
+        stop() {},
+        reconnect() {},
+        async send(request) {
+          relaySends.push(request);
+          return { waId: `wamid.${relaySends.length}`, mode: 'freeform' };
+        },
+        async putReminder() {},
+        async deleteReminder() {},
+      };
+      writeFileSync(
+        join(dir, 'settings.json'),
+        JSON.stringify({ telegramBotToken: fake.token, telegramChatId: 4242, workerUrl: 'https://relay.example.workers.dev', workerSecret: 's', ...settings }),
+      );
+      services = await startServices({
+        dataDir: dir,
+        settingsFile: join(dir, 'settings.json'),
+        brief: quietBrief(),
+        brain: { emit: () => {} },
+        secrets: fakeSecrets,
+        telegram: { baseUrl: fake.baseUrl, log: () => {} },
+        makeTransport: () => transport,
+        relayLog: () => {},
+        idleSeconds,
+        phoneGate: { tickMs: 20 },
+      });
+      await fetch(`http://127.0.0.1:${services.core.port}/messages`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${services.core.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ sender: 'claude-code', body: 'a note' }),
+      });
+      await new Promise((r) => setTimeout(r, 150));
+      return { fake, relaySends };
+    }
+
+    it('does not send an agent note to Telegram or WhatsApp while the user is at the PC', async () => {
+      const guard = guardFetch();
+      const { fake, relaySends } = await postNote(() => 0);
+      try {
+        expect(fake.sentTexts).toEqual([]);
+        expect(relaySends).toEqual([]);
+        expect(services!.phoneGate.heldIds).toHaveLength(1);
+      } finally {
+        await services?.telegram.stop();
+        await fake.close();
+        guard.restore();
+      }
+    });
+
+    it('sends it at once when the user is away', async () => {
+      const guard = guardFetch();
+      const { fake, relaySends } = await postNote(() => 10_000);
+      try {
+        expect(fake.sentTexts).toEqual(['📝 a note\n\n<i>— claude-code</i>']);
+        expect(relaySends.map((s) => s.text)).toEqual(['📝 a note\n\n— claude-code']);
+      } finally {
+        await services?.telegram.stop();
+        await fake.close();
+        guard.restore();
+      }
+    });
+
+    it('sends it at once at the PC when the setting is "Always"', async () => {
+      const guard = guardFetch();
+      const { fake, relaySends } = await postNote(() => 0, { phoneWhen: 'always' });
+      try {
+        expect(fake.sentTexts).toHaveLength(1);
+        expect(relaySends).toHaveLength(1);
+      } finally {
+        await services?.telegram.stop();
+        await fake.close();
+        guard.restore();
+      }
+    });
+  });
+
   it('without an idle source, away-only notes interrupt like any other', async () => {
-    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brain: { emit: () => {} } });
+    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: quietBrief(), brain: { emit: () => {} } });
     const res = await fetch(`http://127.0.0.1:${services.core.port}/messages`, {
       method: 'POST',
       headers: { authorization: `Bearer ${services.core.token}`, 'content-type': 'application/json' },
@@ -178,11 +312,28 @@ describe('startServices', () => {
     expect(((await res.json()) as Message).state).toBe('unread');
   });
 
+  it('nudges when a watched agent finishes, through the API a hook posts to', async () => {
+    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: quietBrief(), brain: { emit: () => {} } });
+    const { core } = services;
+    const post = (path: string, body: unknown) =>
+      fetch(`http://127.0.0.1:${core.port}${path}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${core.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    await post('/watches', { project: 'payments', nudge: 'Deploy to staging' });
+    await post('/messages', { body: '✅ payments agent finished', sender: 'claude-code', project: 'payments', quietIfActive: true, event: 'agent-finished' });
+    const nudge = core.store.listMessages({}).find((m) => m.sender === 'clippy');
+    expect(nudge).toMatchObject({ title: '⏰ Nudge', body: 'Deploy to staging\n(payments agent finished)', state: 'unread' });
+    expect(core.store.listActiveWatches()).toEqual([]);
+  });
+
   it('wires settings changes to the relay and writes the brain files first', async () => {
     let transports = 0;
     services = await startServices({
       dataDir: dir,
       settingsFile: join(dir, 'settings.json'),
+      brief: quietBrief(),
       brain: { emit: () => {} },
       makeTransport: () => {
         transports++;
@@ -195,5 +346,19 @@ describe('startServices', () => {
     expect(services.relay.active).toBe(true);
     expect(transports).toBe(1);
     expect(services.brain.buildArgs(undefined)).toContain(join(dir, 'brain', 'brain-settings.json'));
+  });
+
+  it('leaves the morning brief when it is due, rearms it when its settings change, and stops it with the app', async () => {
+    const clock = new FakeClock(new Date(2026, 9, 30, 10, 30).getTime()); // a Friday, 90 minutes after 09:00
+    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brief: { clock }, brain: { emit: () => {} } });
+    const briefs = () => services!.core.store.listMessages({}).filter((m) => m.sender === 'clippy' && m.title === '☀️ Morning brief');
+    expect(briefs()).toHaveLength(1);
+    expect(clock.pending).toBe(1);
+    await services.settings.update({ briefEnabled: false });
+    expect(clock.pending).toBe(0);
+    await services.settings.update({ briefEnabled: true, briefTime: '18:00' });
+    expect(clock.nextAt).toBe(new Date(2026, 9, 30, 11, 30).getTime()); // armed in hour-long steps, not sent early
+    services.brief.stop();
+    expect(clock.pending).toBe(0);
   });
 });

@@ -6,7 +6,11 @@ import {
   NewAskInput,
   NewMessageInput,
   NewReminderInput,
+  NewStandingOrderInput,
+  NewWatchInput,
   Reminder,
+  StandingOrder,
+  Watch,
 } from '../src/schemas';
 
 const ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2W';
@@ -152,5 +156,48 @@ describe('MessageFilter', () => {
     expect(MessageFilter.parse({})).toEqual({});
     const full = { state: 'done', kind: 'ask', q: 'deploy' };
     expect(MessageFilter.parse(full)).toEqual(full);
+  });
+});
+
+describe('StandingOrder', () => {
+  it('parses an order, and a message that an order answered', () => {
+    const order = { id: ID, text: 'When an agent asks which branch, answer: staging', active: true, createdAt: 5 };
+    expect(StandingOrder.parse(order)).toEqual(order);
+    expect(StandingOrder.safeParse({ ...order, id: 'abc' }).success).toBe(false);
+    expect(Message.parse({ ...note, orderId: ID }).orderId).toBe(ID);
+    expect(Message.parse(note)).not.toHaveProperty('orderId');
+  });
+
+  it('takes 1 to 500 characters of text', () => {
+    expect(NewStandingOrderInput.parse({ text: 'x' })).toEqual({ text: 'x' });
+    expect(NewStandingOrderInput.safeParse({ text: '' }).success).toBe(false);
+    expect(NewStandingOrderInput.safeParse({ text: 'x'.repeat(500) }).success).toBe(true);
+    expect(NewStandingOrderInput.safeParse({ text: 'x'.repeat(501) }).success).toBe(false);
+  });
+});
+
+describe('Watch', () => {
+  it('parses a watch, with and without a project or a firing time', () => {
+    const watch = { id: ID, project: 'payments', event: 'finished', nudge: 'Deploy to staging', active: true, createdAt: 5 };
+    expect(Watch.parse(watch)).toEqual(watch);
+    const fired = { id: ID, event: 'any', nudge: 'Look', active: false, createdAt: 5, firedAt: 9 };
+    expect(Watch.parse(fired)).toEqual(fired);
+    expect(Watch.safeParse({ ...watch, event: 'sometimes' }).success).toBe(false);
+  });
+
+  it('takes a nudge of 1 to 500 characters, an optional project of 1 to 200, and the finished or any event', () => {
+    expect(NewWatchInput.parse({ nudge: 'x' })).toEqual({ nudge: 'x' });
+    expect(NewWatchInput.parse({ project: 'api', event: 'any', nudge: 'x' })).toEqual({ project: 'api', event: 'any', nudge: 'x' });
+    expect(NewWatchInput.safeParse({ nudge: '' }).success).toBe(false);
+    expect(NewWatchInput.safeParse({ nudge: 'x'.repeat(501) }).success).toBe(false);
+    expect(NewWatchInput.safeParse({ project: '', nudge: 'x' }).success).toBe(false);
+    expect(NewWatchInput.safeParse({ project: 'p'.repeat(201), nudge: 'x' }).success).toBe(false);
+    expect(NewWatchInput.safeParse({ event: 'done', nudge: 'x' }).success).toBe(false);
+  });
+
+  it('carries what a note is about on a message and its input', () => {
+    expect(Message.parse({ ...note, event: 'agent-finished' }).event).toBe('agent-finished');
+    expect(Message.parse(note)).not.toHaveProperty('event');
+    expect(Message.safeParse({ ...note, event: 'nope' }).success).toBe(false);
   });
 });

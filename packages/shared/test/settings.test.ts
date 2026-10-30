@@ -7,11 +7,18 @@ describe('Settings', () => {
       hookEnabled: true,
       awayThresholdS: 180,
       soundEnabled: true,
-      unsolicitedAdvice: true,
+      popUpFor: 'important',
+      phoneWhen: 'away',
+      unsolicitedAdvice: false,
+      briefEnabled: true,
+      briefTime: '09:00',
+      briefWeekdaysOnly: true,
       askTimeoutDefaultS: 600,
+      tellHotkey: 'Control+Alt+Space',
       hideOnFullscreen: true,
       autoStart: true,
       firstRunDone: false,
+      quietDefaultsApplied: false,
     });
     expect(DEFAULT_SETTINGS).toEqual(Settings.parse({}));
   });
@@ -37,6 +44,41 @@ describe('Settings', () => {
   it('accepts an away threshold of 0 (always interrupt) and patches it', () => {
     expect(Settings.parse({ awayThresholdS: 0 }).awayThresholdS).toBe(0);
     expect(SettingsPatch.parse({ awayThresholdS: 600 })).toEqual({ awayThresholdS: 600 });
+  });
+});
+
+describe('Settings: phoneWhen', () => {
+  it('defaults to away, accepts always, rejects anything else, and is patchable', () => {
+    expect(Settings.parse({}).phoneWhen).toBe('away');
+    expect(Settings.parse({ phoneWhen: 'always' }).phoneWhen).toBe('always');
+    expect(Settings.safeParse({ phoneWhen: 'never' }).success).toBe(false);
+    expect(SettingsPatch.parse({ phoneWhen: 'always' })).toEqual({ phoneWhen: 'always' });
+  });
+});
+
+describe('Settings: tellHotkey', () => {
+  it('defaults to Control+Alt+Space, may be empty (off), is capped at 60 chars and patchable', () => {
+    expect(Settings.parse({}).tellHotkey).toBe('Control+Alt+Space');
+    expect(Settings.parse({ tellHotkey: '' }).tellHotkey).toBe('');
+    expect(Settings.safeParse({ tellHotkey: 'x'.repeat(61) }).success).toBe(false);
+    expect(SettingsPatch.parse({ tellHotkey: 'Alt+T' })).toEqual({ tellHotkey: 'Alt+T' });
+  });
+});
+
+describe('Settings: quiet by default', () => {
+  it('pops up for important things only, with advice quips off', () => {
+    const s = Settings.parse({});
+    expect(s.popUpFor).toBe('important');
+    expect(s.unsolicitedAdvice).toBe(false);
+    expect(s.quietDefaultsApplied).toBe(false);
+    expect(Settings.parse({ popUpFor: 'everything' }).popUpFor).toBe('everything');
+    expect(Settings.safeParse({ popUpFor: 'nothing' }).success).toBe(false);
+    expect(SettingsPatch.parse({ popUpFor: 'everything' })).toEqual({ popUpFor: 'everything' });
+  });
+
+  it('the migration marker is not patchable', () => {
+    expect(SettingsPatch.parse({ quietDefaultsApplied: true })).toEqual({});
+    expect(applySettingsPatch(Settings.parse({ quietDefaultsApplied: true }), { soundEnabled: false }).quietDefaultsApplied).toBe(true);
   });
 });
 
@@ -96,5 +138,23 @@ describe('applySettingsPatch', () => {
 
   it('ignores undefined values', () => {
     expect(applySettingsPatch(current, { autoStart: undefined })).toEqual(current);
+  });
+});
+
+describe('Settings: morning brief', () => {
+  it('accepts a 24-hour HH:MM time and refuses anything else', () => {
+    for (const ok of ['00:00', '09:05', '23:59']) expect(Settings.parse({ briefTime: ok }).briefTime).toBe(ok);
+    for (const bad of ['9:00', '24:00', '12:60', '9am', '', '09:00:00']) {
+      expect(Settings.safeParse({ briefTime: bad }).success).toBe(false);
+      expect(SettingsPatch.safeParse({ briefTime: bad }).success).toBe(false);
+    }
+  });
+
+  it('patches the three brief settings', () => {
+    expect(SettingsPatch.parse({ briefEnabled: false, briefTime: '07:30', briefWeekdaysOnly: false })).toEqual({
+      briefEnabled: false,
+      briefTime: '07:30',
+      briefWeekdaysOnly: false,
+    });
   });
 });

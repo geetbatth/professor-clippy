@@ -27,6 +27,8 @@ const browserShell: ClippyWindowShell = {
   dragEnd: () => {},
   onCursor: () => () => {},
   onModeChanged: () => () => {},
+  onTell: () => () => {},
+  blur: () => {},
 };
 
 declare global {

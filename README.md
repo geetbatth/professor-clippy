@@ -6,8 +6,12 @@ A Windows desktop sticky note with a robot professor standing on it: Professor C
 steel canister stencilled "PROF. CLIPPY", with a paperclip head in mismatched goggles and a
 mortarboard, robot arms and caster wheels. Your AI agents (Claude Code and
 any other MCP client on this PC) leave him notes, reminders and questions; he pops up, wiggles,
-and waits until you deal with them. Every note and question is mirrored to your WhatsApp and/or
-Telegram, and you can answer, or just chat with him, from your phone.
+and waits until you deal with them. He is quiet by default: he only pops up for questions,
+reminders and urgent things (Settings → Pop up for → Everything changes that); other notes wait
+under his unread badge. Notes and questions are mirrored to your WhatsApp and/or Telegram once
+you have been away from the PC for a few minutes (Settings → Send to my phone → Always sends them
+at once), and you can answer, or just chat with him, from your phone. When you go away, only notes
+that have waited less than an hour are sent; older ones stay on the desk.
 
 <img src="docs/screenshots/expanded-notes.png" width="300" alt="The sticky note with agent messages"> <img src="docs/screenshots/first-run.png" width="300" alt="The first-run wizard">
 
@@ -16,14 +20,46 @@ Telegram, and you can answer, or just chat with him, from your phone.
   `check_reply`, `list_reminders`, `cancel_reminder`, `list_pending_asks`, `answer_pending`.
 - **A Claude Code hook** leaves a note when an agent finishes or needs your permission.
   "Agent finished" notes only interrupt you when you have been away from the PC (no keyboard or
-  mouse input) for a while: Settings → "Agent-finished pings: only when I've been away for N
+  mouse input) for a while: Settings → "I count as away after N
   min" (default 3; 0 = always). While you are at the PC they go quietly into History, with no
   pop-up, sound or WhatsApp/Telegram message. Permission requests always come through.
+- **Tell Clippy** is a one-line box under the notes (and a global hotkey, default
+  **Ctrl+Alt+Space**, Settings → "Tell Clippy hotkey"; empty = off). Press it from any app, type
+  "remind me at 3 to call Dave" and Enter; his reply shows under the box (× clears it). Escape
+  tucks him away again. It is the same conversation as the **Clippy** tab. If the hotkey is
+  taken by another app, Settings says so.
 - **Clippy's own chat brain** is Claude Code running headless with your Claude Code login (no
   API key). It can read files and search the web, manage your messages and reminders, and
   answer agents' questions for you; it cannot edit files or run commands. Of the `clippy` tools
   it gets all but `ask_user` and `check_reply` (a brain turn waiting for your answer would hold
   up every chat turn behind it), so when it needs something from you it simply asks in its reply.
+  It also has ten tools no agent sees: `list_notes`, `recent_activity`, `snooze_note`,
+  `dismiss_note` and the standing-order and watch tools below. Tell him "not now, bring it back after
+  lunch" and he snoozes the newest unread note; ask "what happened while I was at lunch?" or
+  "what's waiting on me?" and he summarises.
+- **Standing orders** answer agents' questions for you. Tell him "whenever an agent asks which
+  branch to use, say staging" (or add one under Settings → "Standing orders"; × cancels it) and
+  from then on a question that an order clearly covers is answered the moment it arrives, with no
+  pop-up: it goes straight into History as "Answered by standing order: ...". A one-shot Claude
+  Code run (Haiku, no tools) judges whether an order covers the question; if none does, or it
+  takes longer than 20 seconds, the question reaches you as usual. For a question with options,
+  the answer must be one of them. Don't put secrets in standing orders: an agent's question could
+  get Clippy to repeat one.
+- **Watches** nudge you when an agent finishes. Tell him "when the payments agent finishes,
+  remind me to deploy" and the next time an agent working in a project whose folder name contains
+  "payments" finishes (even when you were at the PC and the note went quietly into History),
+  he leaves a note titled "⏰ Nudge" whose text is "deploy" plus a line like "(payments agent
+  finished)". It fires once. They are listed under Settings → "Waiting for" (× cancels one). The
+  nudge is a loud note from Clippy, so it reaches your phone when you are away like any other.
+  Finished watches need the Claude Code hook switched on in Settings, since the hook is what
+  reports that an agent finished.
+- **A morning brief** (Settings → Morning brief; 09:00 on weekdays by default) is one loud note
+  from Clippy: today's reminders, the questions waiting on you, your unread notes, and what the
+  agents did overnight per project. A quiet day gets a single "Clear day" line. If the PC was off at
+  the time, it comes when you are back, if that is before noon or within two hours of the time.
+  Changing the time re-arms the timer without sending on the spot; if today's brief has not been
+  sent and is still inside that catch-up window, the next timer tick (within the hour) or a wake
+  from sleep may send it.
 - **WhatsApp** goes through Meta's WhatsApp Cloud API and a small Cloudflare Worker you deploy
   yourself. Nothing on your PC listens on the network: the app's local API binds to 127.0.0.1
   with a bearer token, and the PC connects out to the Worker.
@@ -71,7 +107,7 @@ npm run package
 - On first start the note opens on a **first-run wizard**:
   1. WhatsApp: paste your Worker URL and relay secret, or **Skip WhatsApp for now**.
   2. Telegram (optional): paste your bot token and pair, or **Skip Telegram for now**.
-  3. Sounds, unsolicited advice and start with Windows.
+  3. Sounds, unsolicited advice (off by default) and start with Windows.
   4. **Connect Claude Code**: shows exactly what would change (a dry run) and installs only when
      you click **Looks good, install**. You can skip this and do it later from Settings.
 - Uninstall from Windows Settings → Apps. To clean Claude Code up too, run
@@ -122,12 +158,16 @@ approved, `wrangler login`, set six secrets, `wrangler deploy`, point Meta's web
 
 How it behaves once connected:
 
-- Every agent note and question is sent to your WhatsApp. Within 24 h of your last WhatsApp
+- Every agent note and question is sent to your WhatsApp (once you are away from the PC, unless
+  Settings → Send to my phone is "Always"; notes you deal with at the desk first are never sent, and a question left unanswered for
+  half the time `ask_user` waits, 5 minutes by default, is sent even while you are at the PC).
+  Within 24 h of your last WhatsApp
   message to Clippy it is plain text; otherwise it goes out as the approved `clippy_note`
   template (cut at 1000 characters, "…more on desktop").
 - **Quote-reply** to a question to answer it. Any other message goes to Clippy's brain, which
   replies on WhatsApp (and can answer pending questions for you).
-- Reminders are synced to the Worker, which sends them on time even when the PC is off; the
+- Reminders are synced to the Worker, which sends them on time even when the PC is off or you are
+  at the PC (the away setting does not hold them back); the
   desktop shows them later as "missed while you were away". Reminders that already exist when you
   connect WhatsApp (or fix a wrong secret, or switch to another Worker) are synced then; any the
   Worker hasn't confirmed are filled in the next time the app starts.

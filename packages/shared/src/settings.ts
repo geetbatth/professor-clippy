@@ -26,10 +26,33 @@ const fields = {
    */
   awayThresholdS: z.number().int().nonnegative().max(24 * 60 * 60),
   soundEnabled: z.boolean(),
+  /**
+   * What makes Clippy pop up (ding, quip, wiggle, open the note): 'important' = questions,
+   * reminders, urgent notes and Clippy's own notes; 'everything' = every new note too.
+   * Quiet arrivals still land in the stack with the unread badge.
+   */
+  popUpFor: z.enum(['important', 'everything']),
+  /**
+   * When notes, questions and reminders also go to the phone (WhatsApp, Telegram): 'away' = only
+   * once you have been away from the PC for `awayThresholdS`, 'always' = at once. WhatsApp
+   * reminders are still sent by the Worker on time either way.
+   */
+  phoneWhen: z.enum(['away', 'always']),
   /** Clippy may volunteer advice without being asked. */
   unsolicitedAdvice: z.boolean(),
+  /** Clippy leaves a "Morning brief" note (today's reminders, what waits on you, what the agents did overnight). */
+  briefEnabled: z.boolean(),
+  /** Local time of the morning brief, 24-hour `HH:MM`. */
+  briefTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM, 24-hour'),
+  /** No morning brief on Saturdays and Sundays. */
+  briefWeekdaysOnly: z.boolean(),
   /** Default `ask_user` wait, seconds. */
   askTimeoutDefaultS: z.number().int().positive(),
+  /**
+   * Global shortcut (an Electron accelerator, e.g. `Control+Alt+Space`) that opens the "Tell
+   * Clippy" box from anywhere. Empty = no shortcut.
+   */
+  tellHotkey: z.string().max(60),
   /** Hide mini Clippy while a fullscreen app is focused. */
   hideOnFullscreen: z.boolean(),
   /** Launch at Windows login. */
@@ -63,6 +86,11 @@ const fields = {
   telegramChatName: z.string().min(1),
   /** The first-run wizard has been finished or skipped. */
   firstRunDone: z.boolean(),
+  /**
+   * Internal marker: the one-time "quiet by default" migration (advice quips off) has run.
+   * Set by main on load and never patchable, so after it the user's own advice toggle wins.
+   */
+  quietDefaultsApplied: z.boolean(),
 };
 
 /** Full settings object with defaults applied. */
@@ -70,8 +98,14 @@ export const Settings = z.object({
   hookEnabled: fields.hookEnabled.default(true),
   awayThresholdS: fields.awayThresholdS.default(180),
   soundEnabled: fields.soundEnabled.default(true),
-  unsolicitedAdvice: fields.unsolicitedAdvice.default(true),
+  popUpFor: fields.popUpFor.default('important'),
+  phoneWhen: fields.phoneWhen.default('away'),
+  unsolicitedAdvice: fields.unsolicitedAdvice.default(false),
+  briefEnabled: fields.briefEnabled.default(true),
+  briefTime: fields.briefTime.default('09:00'),
+  briefWeekdaysOnly: fields.briefWeekdaysOnly.default(true),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.default(600),
+  tellHotkey: fields.tellHotkey.default('Control+Alt+Space'),
   hideOnFullscreen: fields.hideOnFullscreen.default(true),
   autoStart: fields.autoStart.default(true),
   workerUrl: fields.workerUrl.optional(),
@@ -81,6 +115,7 @@ export const Settings = z.object({
   telegramChatId: fields.telegramChatId.optional(),
   telegramChatName: fields.telegramChatName.optional(),
   firstRunDone: fields.firstRunDone.default(false),
+  quietDefaultsApplied: fields.quietDefaultsApplied.default(false),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -91,14 +126,21 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze(Settings.parse({}));
  * Partial update for `setSettings(patch)`. Omitted keys are left unchanged
  * (no defaults are applied). For the optional keys `workerUrl`, `workerSecret`,
  * `windowPos`, `telegramChatId` and `telegramChatName`, `null` clears the stored value.
- * The Telegram token is not patchable (main encrypts it: `setTelegramToken`).
+ * The Telegram token is not patchable (main encrypts it: `setTelegramToken`), nor is
+ * `quietDefaultsApplied`.
  */
 export const SettingsPatch = z.object({
   hookEnabled: fields.hookEnabled.optional(),
   awayThresholdS: fields.awayThresholdS.optional(),
   soundEnabled: fields.soundEnabled.optional(),
+  popUpFor: fields.popUpFor.optional(),
+  phoneWhen: fields.phoneWhen.optional(),
   unsolicitedAdvice: fields.unsolicitedAdvice.optional(),
+  briefEnabled: fields.briefEnabled.optional(),
+  briefTime: fields.briefTime.optional(),
+  briefWeekdaysOnly: fields.briefWeekdaysOnly.optional(),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.optional(),
+  tellHotkey: fields.tellHotkey.optional(),
   hideOnFullscreen: fields.hideOnFullscreen.optional(),
   autoStart: fields.autoStart.optional(),
   workerUrl: fields.workerUrl.nullable().optional(),

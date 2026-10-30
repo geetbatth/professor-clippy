@@ -4,10 +4,17 @@ import { IpcEvents, IpcInvoke, type ClippyBackend, type ClippyEvent, type Clippy
 describe('IPC channels', () => {
   it('has one distinct invoke channel per backend method', () => {
     expect(Object.keys(IpcInvoke).sort()).toEqual([
+      'addOrder',
+      'addWatch',
       'answerAsk',
+      'cancelOrder',
+      'cancelWatch',
       'connectClaude',
       'getSettings',
+      'hotkeyStatus',
       'listMessages',
+      'listOrders',
+      'listWatches',
       'markDone',
       'newChat',
       'searchHistory',

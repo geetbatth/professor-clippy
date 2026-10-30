@@ -73,7 +73,8 @@ export class SettingsStore {
 
   /**
    * Read `file` (missing or corrupt → defaults). Nothing is written until the first update,
-   * except to encrypt a plaintext `telegramBotToken` (which is then removed from the file).
+   * except to encrypt a plaintext `telegramBotToken` (which is then removed from the file) and
+   * to run the one-time quiet-by-default migration on an existing file.
    */
   static async load(file: string, options: SettingsStoreOptions = {}): Promise<SettingsStore> {
     let raw: unknown;
@@ -85,6 +86,7 @@ export class SettingsStore {
     const store = new SettingsStore(file, parseSettingsLenient(raw), options);
     const plain = raw && typeof raw === 'object' ? (raw as Record<string, unknown>)[PLAINTEXT_TOKEN_KEY] : undefined;
     if (typeof plain === 'string' && plain.trim()) await store.#migratePlainToken(plain.trim());
+    await store.#applyQuietDefaults(raw !== undefined); // after the token, so a kept plaintext token is never dropped
     return store;
   }
 
@@ -173,6 +175,24 @@ export class SettingsStore {
   }
 
   // ---- internals ------------------------------------------------------------
+
+  /**
+   * One-time migration to "quiet by default": advice quips go off (the user asked for that),
+   * then `quietDefaultsApplied` is set so their own toggle wins from here on. With no file
+   * (fresh install) it is only marked in memory and lands in the file with the first update.
+   * Never fatal: if the rewrite fails the migration simply runs again next start.
+   */
+  async #applyQuietDefaults(fileExists: boolean): Promise<void> {
+    if (this.#current.quietDefaultsApplied) return;
+    const next = Settings.parse({ ...this.#current, unsolicitedAdvice: false, quietDefaultsApplied: true });
+    this.#current = next;
+    if (!fileExists) return;
+    try {
+      await this.#write(next);
+    } catch (err) {
+      this.#log(`could not save the quiet-by-default migration (${err instanceof Error ? err.message : String(err)}); trying again next start`);
+    }
+  }
 
   async #commit(next: Settings): Promise<Settings> {
     const prev = this.#current;

@@ -27,6 +27,31 @@ describe('mock backend', () => {
     expect((await b.listMessages({ state: 'done', kind: 'ask' }))[0]?.answer).toBe('17');
   });
 
+  it('reports the hotkey from the current setting', async () => {
+    const b = createMockBackend();
+    expect(await b.hotkeyStatus()).toEqual({ accelerator: 'Control+Alt+Space', ok: true });
+    await b.setSettings({ tellHotkey: '' });
+    expect(await b.hotkeyStatus()).toEqual({ accelerator: '', ok: true });
+  });
+
+  it('keeps standing orders: add, list, cancel', async () => {
+    const b = createMockBackend();
+    const order = await b.addOrder('say yes');
+    expect(await b.listOrders()).toEqual([expect.objectContaining({ id: order.id, text: 'say yes', active: true })]);
+    await b.cancelOrder(order.id);
+    expect(await b.listOrders()).toEqual([]);
+    await expect(b.cancelOrder(order.id + 'x')).rejects.toThrow(/No standing order/);
+  });
+
+  it('keeps watches: add, list, cancel', async () => {
+    const b = createMockBackend();
+    const watch = await b.addWatch({ project: 'payments', nudge: 'Deploy' });
+    expect(await b.listWatches()).toEqual([expect.objectContaining({ id: watch.id, project: 'payments', event: 'finished', active: true })]);
+    await b.cancelWatch(watch.id);
+    expect(await b.listWatches()).toEqual([]);
+    await expect(b.cancelWatch(watch.id + 'x')).rejects.toThrow(/No watch/);
+  });
+
   it('lists newest first', async () => {
     const unread = await createMockBackend().listMessages({ state: 'unread' });
     const times = unread.map((m) => m.createdAt);

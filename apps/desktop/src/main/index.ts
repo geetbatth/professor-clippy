@@ -4,8 +4,8 @@
  * tray icon.
  */
 import { homedir } from 'node:os';
-import { app, powerMonitor } from 'electron';
-import { appDataDir, settingsPath, type ClippyEvent, type ClippyEventMap, type Settings } from '@clippy/shared';
+import { app, globalShortcut, powerMonitor } from 'electron';
+import { appDataDir, settingsPath, type ClippyEvent, type ClippyEventMap, type HotkeyStatus, type Settings } from '@clippy/shared';
 import { createBackend } from './backend';
 import { findNode, resolveMcpServerPath } from './brain/mcpConfig';
 import { resolveClaude } from './brain/runner';
@@ -14,7 +14,9 @@ import { Bus } from './core/bus';
 import { startServices } from './startup';
 import { createTray, type ClippyTray } from './tray';
 import { createClippyWindow, type ClippyWindow } from './window/createClippyWindow';
+import { registerTellHotkey, type TellHotkey } from './window/hotkey';
 import { registerIpc, type ClippyIpc } from './window/registerIpc';
+import { WindowChannels } from './window/windowApi';
 import { electronSecretBox } from './secrets';
 import { runInstallInUtilityProcess } from './wiringProcess';
 
@@ -57,7 +59,7 @@ async function main(): Promise<void> {
   if (!mcpServerPath) console.warn('[clippy] MCP server not built (apps/mcp/dist/index.js); the brain runs without clippy tools');
   // Settings, core, brain, relay and Telegram; both channels are subscribed before any API
   // request is handled.
-  const { core, settings, brain, relay, telegram } = await startServices({
+  const { core, settings, brain, phoneGate, watcher, brief, relay, telegram } = await startServices({
     dataDir,
     settingsFile: settingsPath(),
     version: app.getVersion(),
@@ -84,7 +86,10 @@ async function main(): Promise<void> {
     findClaude: () => resolveClaude(),
     runInstall: (job) => runInstallInUtilityProcess(job),
   });
-  const backend = createBackend({ store: core.store, asks: core.asks, brain, settings, claudeWiring, telegram });
+  // The Tell Clippy hotkey; its status is what Settings shows.
+  let tellHotkey: TellHotkey | undefined;
+  let tellStatus: HotkeyStatus = { accelerator: settings.get().tellHotkey, ok: true };
+  const backend = createBackend({ store: core.store, asks: core.asks, brain, settings, claudeWiring, telegram, hotkey: () => tellStatus });
   clippy = createClippyWindow({
     loadPos: () => settings.get().windowPos,
     savePos: (windowPos) => {
@@ -102,6 +107,25 @@ async function main(): Promise<void> {
     win.hide();
   });
 
+  /** (Re)register the hotkey. The one place Clippy takes keyboard focus, so the user can type. */
+  const applyTellHotkey = (accelerator: string) => {
+    tellHotkey?.dispose();
+    tellHotkey = registerTellHotkey(
+      accelerator,
+      () => {
+        if (win.isDestroyed()) return;
+        win.show();
+        win.focus();
+        clippy?.setMode('expanded');
+        win.webContents.send(WindowChannels.tell);
+      },
+      globalShortcut,
+    );
+    tellStatus = { accelerator, ok: tellHotkey.ok, ...(tellHotkey.error && { error: tellHotkey.error }) };
+    if (tellHotkey.error) console.warn(`[clippy] ${tellHotkey.error}`);
+  };
+  applyTellHotkey(settings.get().tellHotkey);
+
   const tray: ClippyTray = createTray({
     onShow: showClippy,
     muted: () => !settings.get().soundEnabled,
@@ -113,6 +137,7 @@ async function main(): Promise<void> {
 
   settings.onChange((next, prev) => {
     if (next.autoStart !== prev.autoStart) applyLoginItem(next);
+    if (next.tellHotkey !== prev.tellHotkey) applyTellHotkey(next.tellHotkey);
     if (next.soundEnabled !== prev.soundEnabled) {
       if (!win.isDestroyed()) win.webContents.setAudioMuted(!next.soundEnabled);
       tray.refresh();
@@ -122,6 +147,7 @@ async function main(): Promise<void> {
 
   powerMonitor.on('resume', () => {
     core.scheduler.onResume();
+    brief.onResume();
     // The socket may have died silently while asleep: reconnect now rather than on the next ping.
     relay.reconnect();
     telegram.poke();
@@ -133,6 +159,10 @@ async function main(): Promise<void> {
     if (stopped) return;
     e.preventDefault();
     quitting = true;
+    tellHotkey?.dispose();
+    phoneGate.stop();
+    watcher.stop();
+    brief.stop();
     relay.stop();
     // Aborts the long-poll in flight; never wait long for an update being handled.
     const telegramStopped = Promise.race([telegram.stop(), new Promise((r) => setTimeout(r, 2000))]);

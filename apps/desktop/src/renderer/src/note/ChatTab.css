@@ -21,6 +21,23 @@
   font: 13px/1.4 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;
   color: rgba(74, 61, 18, 0.7);
 }
+.chat-hint p {
+  margin: 0 0 6px;
+}
+.chat-hint ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chat-hint li {
+  margin: 3px 0;
+}
+.chat-hint li::before {
+  content: '\201C';
+}
+.chat-hint li::after {
+  content: '\201D';
+}
 .chat-line {
   max-width: 82%;
   padding: 6px 11px;

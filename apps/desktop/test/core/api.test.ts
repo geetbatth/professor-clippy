@@ -5,7 +5,7 @@ import { MAX_LONG_POLL_S } from '@clippy/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseWait } from '../../src/main/core/api';
 import { Bus, type CoreEventMap } from '../../src/main/core/bus';
-import { startCore, type Core } from '../../src/main/core/core';
+import { startCore, type Core, type StartCoreOptions } from '../../src/main/core/core';
 import { FakeClock } from './fakeClock';
 
 const T0 = Date.UTC(2026, 9, 30, 16);
@@ -182,6 +182,155 @@ describe('local API (raw HTTP)', () => {
 
   it('only listens on 127.0.0.1', async () => {
     await expect(fetch(`http://[::1]:${core.port}/health`)).rejects.toThrow();
+  });
+});
+
+describe('standing orders', () => {
+  let dir: string;
+  let core: Core | undefined;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'clippy-orders-'));
+  });
+  afterEach(async () => {
+    await core?.stop();
+    core = undefined;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const start = async (options: Partial<StartCoreOptions> = {}) => {
+    core = await startCore({ dataDir: dir, clock: new FakeClock(T0), ...options });
+    return async (method: string, path: string, body?: unknown) => {
+      const res = await fetch(`http://127.0.0.1:${core!.port}${path}`, {
+        method,
+        headers: { authorization: `Bearer ${core!.token}`, ...(body !== undefined && { 'content-type': 'application/json' }) },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const text = await res.text();
+      return { status: res.status, json: (text ? JSON.parse(text) : undefined) as any };
+    };
+  };
+  const ASK = { question: 'Which branch?', options: ['main', 'staging'], sender: 'claude-code', project: 'clippy' };
+
+  it('adds, lists oldest first and cancels orders', async () => {
+    const call = await start();
+    const first = await call('POST', '/orders', { text: 'say staging' });
+    expect(first).toMatchObject({ status: 201, json: { text: 'say staging', active: true } });
+    await call('POST', '/orders', { text: 'say yes' });
+    expect((await call('GET', '/orders')).json.map((o: { text: string }) => o.text)).toEqual(['say staging', 'say yes']);
+
+    expect(await call('DELETE', `/orders/${first.json.id}`)).toEqual({ status: 204, json: undefined });
+    expect((await call('GET', '/orders')).json.map((o: { text: string }) => o.text)).toEqual(['say yes']);
+    expect((await call('DELETE', '/orders/01JB2Z3K4M5N6P7Q8R9S0T1V2Z')).status).toBe(404);
+  });
+
+  it('validates the order text (1 to 500 characters)', async () => {
+    const call = await start();
+    expect((await call('POST', '/orders', { text: '' })).status).toBe(400);
+    expect((await call('POST', '/orders', { text: 'x'.repeat(501) })).status).toBe(400);
+    expect((await call('POST', '/orders', {})).status).toBe(400);
+  });
+
+  it('adds, lists oldest first and cancels watches, defaulting the event to finished', async () => {
+    const call = await start();
+    const first = await call('POST', '/watches', { project: 'payments', nudge: 'Deploy' });
+    expect(first).toMatchObject({ status: 201, json: { project: 'payments', event: 'finished', nudge: 'Deploy', active: true } });
+    await call('POST', '/watches', { event: 'any', nudge: 'Look' });
+    expect((await call('GET', '/watches')).json.map((w: { nudge: string }) => w.nudge)).toEqual(['Deploy', 'Look']);
+
+    expect(await call('DELETE', `/watches/${first.json.id}`)).toEqual({ status: 204, json: undefined });
+    expect((await call('GET', '/watches')).json.map((w: { nudge: string }) => w.nudge)).toEqual(['Look']);
+    expect((await call('DELETE', '/watches/01JB2Z3K4M5N6P7Q8R9S0T1V2Z')).status).toBe(404);
+  });
+
+  it('validates a watch', async () => {
+    const call = await start();
+    expect((await call('POST', '/watches', { nudge: '' })).status).toBe(400);
+    expect((await call('POST', '/watches', { nudge: 'x'.repeat(501) })).status).toBe(400);
+    expect((await call('POST', '/watches', { project: '', nudge: 'x' })).status).toBe(400);
+    expect((await call('POST', '/watches', { event: 'soon', nudge: 'x' })).status).toBe(400);
+    expect((await call('POST', '/watches', {})).status).toBe(400);
+  });
+
+  it('keeps the event a note was posted with', async () => {
+    const call = await start();
+    const note = await call('POST', '/messages', { body: 'done', sender: 'claude-code', event: 'agent-finished' });
+    expect(note).toMatchObject({ status: 201, json: { event: 'agent-finished' } });
+    expect((await call('POST', '/messages', { body: 'x', sender: 's', event: 'bogus' })).status).toBe(400);
+  });
+
+  it('answers an ask at once when matchOrder finds an order for it', async () => {
+    const matchOrder = vi.fn(async () => ({ orderId: '01JB2Z3K4M5N6P7Q8R9S0T1V2A', answer: 'staging' }));
+    const call = await start({ matchOrder });
+    const res = await call('POST', '/asks', ASK);
+    expect(res.status).toBe(201);
+    expect(matchOrder).toHaveBeenCalledWith(expect.objectContaining({ question: 'Which branch?', options: ['main', 'staging'] }));
+    expect(res.json).toMatchObject({
+      kind: 'ask',
+      body: 'Which branch?',
+      state: 'done',
+      answer: 'staging',
+      answeredVia: 'clippy',
+      orderId: '01JB2Z3K4M5N6P7Q8R9S0T1V2A',
+    });
+    // The agent's long-poll gets the answer straight away, and nothing is left waiting on the user.
+    expect((await call('GET', `/asks/${res.json.id}?wait=30`)).json).toEqual({
+      id: res.json.id,
+      status: 'answered',
+      answer: 'staging',
+      answeredVia: 'clippy',
+    });
+    expect((await call('GET', '/asks/pending')).json).toEqual([]);
+  });
+
+  it.each([
+    ['finds no order', async () => undefined],
+    ['rejects', async () => Promise.reject(new Error('boom'))],
+  ])('posts a normal unanswered ask when matchOrder %s', async (_name, matchOrder) => {
+    const call = await start({ matchOrder });
+    const res = await call('POST', '/asks', ASK);
+    expect(res.status).toBe(201);
+    expect(res.json).toMatchObject({ kind: 'ask', state: 'unread' });
+    expect(res.json).not.toHaveProperty('answer');
+    expect((await call('GET', '/asks/pending')).json).toHaveLength(1);
+  });
+
+  it('posts a normal ask when matchOrder takes longer than the limit', async () => {
+    const matchOrder = () => new Promise<undefined>(() => {}); // never settles
+    const call = await start({ matchOrder, matchOrderTimeoutMs: 30 });
+    const res = await call('POST', '/asks', ASK);
+    expect(res.status).toBe(201);
+    expect(res.json).toMatchObject({ state: 'unread' });
+  });
+
+  it('does not store the ask when the agent hangs up while the match is still running', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const matchOrder = vi.fn(async () => {
+      await gate;
+      return { orderId: '01JB2Z3K4M5N6P7Q8R9S0T1V2A', answer: 'staging' };
+    });
+    await start({ matchOrder });
+    const controller = new AbortController();
+    const pending = fetch(`http://127.0.0.1:${core!.port}/asks`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${core!.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(ASK),
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(matchOrder).toHaveBeenCalled());
+    controller.abort();
+    await expect(pending).rejects.toThrow();
+    await new Promise((r) => setTimeout(r, 150)); // let the server notice the closed connection
+    release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(core!.store.listMessages({ kind: 'ask' })).toEqual([]);
+  });
+
+  it('is unchanged without a matcher', async () => {
+    const call = await start();
+    const res = await call('POST', '/asks', ASK);
+    expect(res.json).toMatchObject({ state: 'unread' });
+    expect(res.json).not.toHaveProperty('orderId');
   });
 });
 

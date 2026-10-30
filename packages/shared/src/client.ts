@@ -4,17 +4,20 @@
  */
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import { ApiError, Health, MAX_LONG_POLL_S, Routes, routePath, type RouteDef } from './api';
+import { ApiError, Health, MATCH_ORDER_TIMEOUT_MS, MAX_LONG_POLL_S, Routes, routePath, type RouteDef } from './api';
 import { portPath, tokenPath } from './paths';
 import {
   AskResult,
   Message,
   Reminder,
+  StandingOrder,
+  Watch,
   type AnsweredVia,
   type MessageFilter,
   type NewAskInput,
   type NewMessageInput,
   type NewReminderInput,
+  type NewWatchInput,
 } from './schemas';
 
 /** Thrown when the desktop app isn't running: port/token files missing, or the API is unreachable. */
@@ -132,9 +135,13 @@ export class ClippyClient {
     await this.#request(Routes.cancelReminder, { id });
   }
 
-  /** `POST /asks`: post a question; returns the `kind: 'ask'` Message (its `id` is the ask id). */
+  /**
+   * `POST /asks`: post a question; returns the `kind: 'ask'` Message (its `id` is the ask id).
+   * The app may spend up to {@link MATCH_ORDER_TIMEOUT_MS} checking standing orders first, so this
+   * waits that much longer than an ordinary call (giving up earlier would orphan the ask).
+   */
   createAsk(input: NewAskInput): Promise<Message> {
-    return this.#request(Routes.createAsk, { body: input, schema: Message });
+    return this.#request(Routes.createAsk, { body: input, schema: Message, timeoutMs: MATCH_ORDER_TIMEOUT_MS + this.#timeoutMs });
   }
 
   /**
@@ -165,6 +172,36 @@ export class ClippyClient {
   /** `GET /asks/pending`: unanswered asks. */
   listPendingAsks(): Promise<Message[]> {
     return this.#request(Routes.listPendingAsks, { schema: z.array(Message) });
+  }
+
+  /** `GET /orders`: active standing orders, oldest first. */
+  listOrders(): Promise<StandingOrder[]> {
+    return this.#request(Routes.listOrders, { schema: z.array(StandingOrder) });
+  }
+
+  /** `POST /orders`: add a standing order. */
+  addOrder(text: string): Promise<StandingOrder> {
+    return this.#request(Routes.addOrder, { body: { text }, schema: StandingOrder });
+  }
+
+  /** `DELETE /orders/:id`: cancel a standing order. */
+  async cancelOrder(id: string): Promise<void> {
+    await this.#request(Routes.cancelOrder, { id });
+  }
+
+  /** `GET /watches`: active watches, oldest first. */
+  listWatches(): Promise<Watch[]> {
+    return this.#request(Routes.listWatches, { schema: z.array(Watch) });
+  }
+
+  /** `POST /watches`: nudge the user when a matching agent note arrives. */
+  addWatch(input: NewWatchInput): Promise<Watch> {
+    return this.#request(Routes.addWatch, { body: input, schema: Watch });
+  }
+
+  /** `DELETE /watches/:id`: cancel a watch. */
+  async cancelWatch(id: string): Promise<void> {
+    await this.#request(Routes.cancelWatch, { id });
   }
 
   async #request<T = undefined>(

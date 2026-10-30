@@ -28,7 +28,14 @@ export function ChatTab({ chat }: { chat: ChatState }) {
       </div>
       <div className="chat-log">
         {lines.length === 0 && !chat.streaming && (
-          <p className="chat-hint">Ask me anything. I've read most of the internet, and all of your sticky notes.</p>
+          <div className="chat-hint">
+            <p>Tell me what to do. For instance:</p>
+            <ul>
+              <li>remind me at 3 to call Dave</li>
+              <li>what are my agents waiting on?</li>
+              <li>when the build finishes, remind me to deploy</li>
+            </ul>
+          </div>
         )}
         {lines.map((m) => (
           <div key={m.id} className={`chat-line chat-line--${m.role === 'user' ? 'user' : 'clippy'}`}>
@@ -60,7 +67,7 @@ export function ChatTab({ chat }: { chat: ChatState }) {
         <textarea
           value={draft}
           rows={2}
-          placeholder="Message Professor Clippy…"
+          placeholder="Tell Clippy what to do…"
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {

@@ -47,6 +47,18 @@ describe('Asks', () => {
     expect(asks.listPending().map((x) => x.id)).toEqual([m.id]);
   });
 
+  it('creates an ask already answered by a standing order, and wait resolves at once', async () => {
+    const order = store.insertOrder('say yes');
+    const m = asks.create({ question: 'Ship it?', options: ['yes', 'no'], sender: 'claude-code' }, { orderId: order.id, answer: 'yes' });
+    expect(Message.parse(m)).toEqual(m);
+    expect(m).toMatchObject({ kind: 'ask', state: 'done', answer: 'yes', answeredVia: 'clippy', orderId: order.id, doneAt: T0 });
+    expect(asks.result(m.id)).toEqual({ id: m.id, status: 'answered', answer: 'yes', answeredVia: 'clippy' });
+    await expect(asks.wait(m.id, 60_000)).resolves.toEqual({ id: m.id, status: 'answered', answer: 'yes', answeredVia: 'clippy' });
+    expect(asks.waiterCount).toBe(0);
+    expect(asks.listPending()).toEqual([]);
+    expect(() => asks.answer(m.id, 'no', 'desk')).toThrow(ConflictError);
+  });
+
   it('long-poll resolves with the answer as soon as it is given', async () => {
     const m = ask();
     const waiting = asks.wait(m.id, 60_000);

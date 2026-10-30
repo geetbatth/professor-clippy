@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClippyApiError, ClippyClient, ClippyNotRunningError } from '../src/client';
-import type { AskResult, Message, Reminder } from '../src/schemas';
+import type { AskResult, Message, Reminder, StandingOrder, Watch } from '../src/schemas';
 
 const TOKEN = 'a'.repeat(64);
 const ASK_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2W';
@@ -30,6 +30,10 @@ const message = (over: Partial<Message> = {}): Message => ({
   ...over,
 });
 
+const ORDER_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2Y';
+const order: StandingOrder = { id: ORDER_ID, text: 'say staging', active: true, createdAt: 1000 };
+const WATCH_ID = '01JB2Z3K4M5N6P7Q8R9S0T1V2C';
+const watch: Watch = { id: WATCH_ID, project: 'payments', event: 'finished', nudge: 'Deploy', active: true, createdAt: 1000 };
 const reminder: Reminder = { id: REM_ID, body: 'stretch', sender: 'test', dueAt: 5000, active: true, createdAt: 1000 };
 
 /** Tiny fake of the desktop app's local API. `answerAfterPolls` makes the ask answered on the Nth getAsk. */
@@ -60,6 +64,7 @@ function fakeApi() {
       case 'GET /health':
         return send(200, { ok: true, version: '0.1.0' });
       case 'POST /messages':
+        if (body.body === 'slow') await new Promise((r) => setTimeout(r, 200));
         return send(201, message({ body: body.body, sender: body.sender, urgent: body.urgent ?? false }));
       case 'GET /messages':
         return send(200, [message(), message({ state: 'done', doneAt: 2000 })]);
@@ -73,7 +78,20 @@ function fakeApi() {
         return send(200, [reminder]);
       case `DELETE /reminders/${REM_ID}`:
         return send(204);
+      case 'GET /orders':
+        return send(200, [order]);
+      case 'POST /orders':
+        return send(201, { ...order, text: body.text });
+      case `DELETE /orders/${ORDER_ID}`:
+        return send(204);
+      case 'GET /watches':
+        return send(200, [watch]);
+      case 'POST /watches':
+        return send(201, { ...watch, ...body });
+      case `DELETE /watches/${WATCH_ID}`:
+        return send(204);
       case 'POST /asks':
+        if (body.question === 'slow') await new Promise((r) => setTimeout(r, 200));
         return send(201, message({ kind: 'ask', body: body.question, options: body.options }));
       case 'GET /asks/pending':
         return send(200, [message({ kind: 'ask' })]);
@@ -166,6 +184,31 @@ describe('ClippyClient requests', () => {
     await expect(client.listReminders()).resolves.toEqual([reminder]);
     await expect(client.cancelReminder(REM_ID)).resolves.toBeUndefined();
     expect(last()).toMatchObject({ method: 'DELETE', path: `/reminders/${REM_ID}` });
+  });
+
+  it('lists, adds and cancels standing orders', async () => {
+    await expect(client.listOrders()).resolves.toEqual([order]);
+    expect(last()).toMatchObject({ method: 'GET', path: '/orders' });
+    await expect(client.addOrder('always say yes')).resolves.toMatchObject({ id: ORDER_ID, text: 'always say yes' });
+    expect(last()).toMatchObject({ method: 'POST', path: '/orders', body: { text: 'always say yes' } });
+    await expect(client.cancelOrder(ORDER_ID)).resolves.toBeUndefined();
+    expect(last()).toMatchObject({ method: 'DELETE', path: `/orders/${ORDER_ID}` });
+  });
+
+  it('lists, adds and cancels watches', async () => {
+    await expect(client.listWatches()).resolves.toEqual([watch]);
+    expect(last()).toMatchObject({ method: 'GET', path: '/watches' });
+    await expect(client.addWatch({ project: 'api', nudge: 'Review' })).resolves.toMatchObject({ id: WATCH_ID, project: 'api', nudge: 'Review' });
+    expect(last()).toMatchObject({ method: 'POST', path: '/watches', body: { project: 'api', nudge: 'Review' } });
+    await expect(client.cancelWatch(WATCH_ID)).resolves.toBeUndefined();
+    expect(last()).toMatchObject({ method: 'DELETE', path: `/watches/${WATCH_ID}` });
+  });
+
+  it('createAsk waits out the standing-order check, past the ordinary timeout', async () => {
+    const impatient = new ClippyClient({ baseUrl: `http://127.0.0.1:${port}`, token: TOKEN, timeoutMs: 50 });
+    // An ordinary call gives up on a 200 ms response; an ask allows MATCH_ORDER_TIMEOUT_MS more.
+    await expect(impatient.postMessage({ body: 'slow', sender: 's' })).rejects.toBeInstanceOf(ClippyNotRunningError);
+    await expect(impatient.createAsk({ question: 'slow', sender: 's' })).resolves.toMatchObject({ kind: 'ask', body: 'slow' });
   });
 
   it('creates asks, lists pending asks and answers them', async () => {

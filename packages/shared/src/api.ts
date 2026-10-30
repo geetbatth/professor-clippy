@@ -33,6 +33,12 @@ export interface RouteDef {
  * - `listPendingAsks` → Message[] (unanswered asks)
  * - `getAsk` (query `wait` = seconds to long-poll, default 0) → AskResult
  * - `answerAsk` (body AnswerAskBody) → AskResult
+ * - `listOrders` → StandingOrder[] (active ones, oldest first)
+ * - `addOrder` (body NewStandingOrderInput) → StandingOrder (201)
+ * - `cancelOrder` → 204, no body
+ * - `listWatches` → Watch[] (active ones, oldest first)
+ * - `addWatch` (body NewWatchInput) → Watch (201)
+ * - `cancelWatch` → 204, no body
  */
 export const Routes = {
   health: { method: 'GET', path: '/health' },
@@ -47,6 +53,12 @@ export const Routes = {
   listPendingAsks: { method: 'GET', path: '/asks/pending' },
   getAsk: { method: 'GET', path: '/asks/:id' },
   answerAsk: { method: 'POST', path: '/asks/:id/answer' },
+  listOrders: { method: 'GET', path: '/orders' },
+  addOrder: { method: 'POST', path: '/orders' },
+  cancelOrder: { method: 'DELETE', path: '/orders/:id' },
+  listWatches: { method: 'GET', path: '/watches' },
+  addWatch: { method: 'POST', path: '/watches' },
+  cancelWatch: { method: 'DELETE', path: '/watches/:id' },
 } as const satisfies Record<string, RouteDef>;
 
 /** Fill a route's `:id` placeholder (URL-encoded). */
@@ -62,6 +74,12 @@ export function routePath(route: RouteDef, id?: string): string {
  * each request well under fetch/undici's 300 s headers timeout).
  */
 export const MAX_LONG_POLL_S = 60;
+
+/**
+ * Longest `POST /asks` may spend looking for a standing order that answers the question before it
+ * posts the ask as usual, ms. `ClippyClient.createAsk` allows for it on top of its normal timeout.
+ */
+export const MATCH_ORDER_TIMEOUT_MS = 20_000;
 
 /** `GET /health` response. */
 export const Health = z.object({

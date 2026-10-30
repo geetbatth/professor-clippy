@@ -1,12 +1,13 @@
 /**
  * SQLite persistence (built-in `node:sqlite`): messages (+ FTS5 history search),
- * reminders and a small key/value table.
+ * reminders, standing orders, watches and a small key/value table.
  *
  * Message writes emit `message:new` / `message:updated` on the bus, so every
  * caller (local API, IPC backend, scheduler, relay) produces the same events.
  */
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from 'node:sqlite';
 import type {
+  AgentEvent,
   AnsweredVia,
   ChatRole,
   Message,
@@ -14,6 +15,9 @@ import type {
   MessageKind,
   MessageState,
   Reminder,
+  StandingOrder,
+  Watch,
+  WatchEvent,
 } from '@clippy/shared';
 import { monotonicFactory } from 'ulid';
 import type { Bus } from './bus';
@@ -35,6 +39,13 @@ export interface NewMessageRecord {
   waId?: string;
   /** Telegram message id of the copy in the paired chat. */
   tgMsgId?: number;
+  /** For an `ask` that was answered the moment it was posted (by a standing order). */
+  answer?: string;
+  answeredVia?: AnsweredVia;
+  /** The standing order that answered this ask. */
+  orderId?: string;
+  /** What a hook note is about (see `NewMessageInput.event`). */
+  event?: AgentEvent;
   /** Initial state; default `'unread'` (chat lines are stored straight into history as `'done'`). */
   state?: MessageState;
   /** For `kind: 'reminder'`: the Reminder that produced it (internal link, not part of the shared Message). */
@@ -145,6 +156,29 @@ const MIGRATIONS: readonly string[] = [
   `
   ALTER TABLE messages ADD COLUMN quiet_if_active INTEGER;
   `,
+  // 5: standing orders, and the order that auto-answered an ask.
+  `
+  CREATE TABLE standing_orders (
+    id TEXT PRIMARY KEY,
+    text TEXT NOT NULL,
+    active INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  ALTER TABLE messages ADD COLUMN order_id TEXT;
+  `,
+  // 6: watches (nudge the user when an agent finishes), and what a hook note is about.
+  `
+  CREATE TABLE watches (
+    id TEXT PRIMARY KEY,
+    project TEXT,
+    event TEXT NOT NULL,
+    nudge TEXT NOT NULL,
+    active INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    fired_at INTEGER
+  );
+  ALTER TABLE messages ADD COLUMN event TEXT;
+  `,
 ];
 
 type Row = Record<string, SQLOutputValue>;
@@ -214,8 +248,8 @@ export class Store {
     const state = record.state ?? 'unread';
     this.#db
       .prepare(
-        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, done_at, wa_id, tg_msg_id, options, role, missed, reminder_id, quiet_if_active)
-         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, $state, $createdAt, $doneAt, $waId, $tgMsgId, $options, $role, $missed, $reminderId, $quietIfActive)`,
+        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, done_at, wa_id, tg_msg_id, options, answer, answered_via, role, missed, reminder_id, quiet_if_active, order_id, event)
+         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, $state, $createdAt, $doneAt, $waId, $tgMsgId, $options, $answer, $answeredVia, $role, $missed, $reminderId, $quietIfActive, $orderId, $event)`,
       )
       .run({
         id,
@@ -231,10 +265,14 @@ export class Store {
         waId: record.waId ?? null,
         tgMsgId: record.tgMsgId ?? null,
         options: record.options ? JSON.stringify(record.options) : null,
+        answer: record.answer ?? null,
+        answeredVia: record.answeredVia ?? null,
         role: record.role ?? null,
         missed: record.missed === undefined ? null : record.missed ? 1 : 0,
         quietIfActive: record.quietIfActive ? 1 : null,
         reminderId: record.reminderId ?? null,
+        orderId: record.orderId ?? null,
+        event: record.event ?? null,
       });
     const message = this.getMessage(id)!;
     this.#emit('message:new', message);
@@ -304,6 +342,14 @@ export class Store {
     const sql = `SELECT m.* FROM ${from} ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
                  ORDER BY m.created_at DESC, m.seq DESC`;
     return this.#db.prepare(sql).all(params).map(toMessage);
+  }
+
+  /** Every message created at or after `since` (epoch ms), newest first. */
+  listMessagesSince(since: number): Message[] {
+    return this.#db
+      .prepare('SELECT * FROM messages WHERE created_at >= ? ORDER BY created_at DESC, seq DESC')
+      .all(since)
+      .map(toMessage);
   }
 
   /** Unanswered asks, newest first. */
@@ -438,6 +484,59 @@ export class Store {
     return this.getReminder(id);
   }
 
+  // ---- standing orders --------------------------------------------------------
+
+  insertOrder(text: string): StandingOrder {
+    const id = this.newId();
+    this.#db
+      .prepare('INSERT INTO standing_orders (id, text, active, created_at) VALUES (?, ?, 1, ?)')
+      .run(id, text, this.#clock.now());
+    return this.#getOrder(id)!;
+  }
+
+  /** Active standing orders, oldest first. */
+  listActiveOrders(): StandingOrder[] {
+    return this.#db
+      .prepare('SELECT * FROM standing_orders WHERE active = 1 ORDER BY created_at, id')
+      .all()
+      .map(toOrder);
+  }
+
+  /** Cancel an order (it stays stored, inactive). Returns undefined for an unknown id. */
+  cancelOrder(id: string): StandingOrder | undefined {
+    this.#db.prepare('UPDATE standing_orders SET active = 0 WHERE id = ?').run(id);
+    return this.#getOrder(id);
+  }
+
+  // ---- watches ----------------------------------------------------------------
+
+  insertWatch(input: { project?: string | undefined; event: WatchEvent; nudge: string }): Watch {
+    const id = this.newId();
+    this.#db
+      .prepare('INSERT INTO watches (id, project, event, nudge, active, created_at) VALUES (?, ?, ?, ?, 1, ?)')
+      .run(id, input.project ?? null, input.event, input.nudge, this.#clock.now());
+    return this.#getWatch(id)!;
+  }
+
+  /** Active watches, oldest first. */
+  listActiveWatches(): Watch[] {
+    return this.#db
+      .prepare('SELECT * FROM watches WHERE active = 1 ORDER BY created_at, id')
+      .all()
+      .map(toWatch);
+  }
+
+  /** Cancel a watch (it stays stored, inactive). Returns undefined for an unknown id. */
+  cancelWatch(id: string): Watch | undefined {
+    this.#db.prepare('UPDATE watches SET active = 0 WHERE id = ?').run(id);
+    return this.#getWatch(id);
+  }
+
+  /** Mark an active watch fired (inactive, with the time). False if it was no longer active. */
+  fireWatch(id: string, at: number): boolean {
+    return Number(this.#db.prepare('UPDATE watches SET active = 0, fired_at = ? WHERE id = ? AND active = 1').run(at, id).changes) === 1;
+  }
+
   // ---- kv -------------------------------------------------------------------
 
   getKv(key: string): string | undefined {
@@ -456,6 +555,16 @@ export class Store {
   }
 
   // ---- internals ------------------------------------------------------------
+
+  #getOrder(id: string): StandingOrder | undefined {
+    const row = this.#db.prepare('SELECT * FROM standing_orders WHERE id = ?').get(id);
+    return row && toOrder(row);
+  }
+
+  #getWatch(id: string): Watch | undefined {
+    const row = this.#db.prepare('SELECT * FROM watches WHERE id = ?').get(id);
+    return row && toWatch(row);
+  }
 
   #emit<E extends 'message:new' | 'message:updated'>(event: E, message: Message): void {
     const bus = this.#bus;
@@ -511,7 +620,26 @@ function toMessage(row: Row): Message {
   if (row.role !== null) message.role = String(row.role) as ChatRole;
   if (row.missed !== null) message.missed = row.missed === 1;
   if (row.quiet_if_active === 1) message.quietIfActive = true;
+  if (row.order_id !== null && row.order_id !== undefined) message.orderId = String(row.order_id);
+  if (row.event !== null && row.event !== undefined) message.event = String(row.event) as AgentEvent;
   return message;
+}
+
+function toWatch(row: Row): Watch {
+  const watch: Watch = {
+    id: String(row.id),
+    event: String(row.event) as WatchEvent,
+    nudge: String(row.nudge),
+    active: row.active === 1,
+    createdAt: Number(row.created_at),
+  };
+  if (row.project !== null) watch.project = String(row.project);
+  if (row.fired_at !== null) watch.firedAt = Number(row.fired_at);
+  return watch;
+}
+
+function toOrder(row: Row): StandingOrder {
+  return { id: String(row.id), text: String(row.text), active: row.active === 1, createdAt: Number(row.created_at) };
 }
 
 function toReminder(row: Row): Reminder {

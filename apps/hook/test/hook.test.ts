@@ -71,7 +71,7 @@ describe('Stop', () => {
     ]);
     expect(await runHook(stop({ transcript_path: path }))).toBe('posted');
     expect(posted).toEqual([
-      { body: '✅ payments agent finished\nWant me to open a PR?', sender: 'claude-code', project: 'payments', quietIfActive: true },
+      { body: '✅ payments agent finished\nWant me to open a PR?', sender: 'claude-code', project: 'payments', quietIfActive: true, event: 'agent-finished' },
     ]);
   });
 
@@ -130,6 +130,7 @@ describe('Notification', () => {
       sender: 'claude-code',
       project: 'clippy',
       urgent: true,
+      event: 'agent-needs-permission',
     });
     expect(posted[0]).not.toHaveProperty('quietIfActive');
     expect(posted).toHaveLength(2);

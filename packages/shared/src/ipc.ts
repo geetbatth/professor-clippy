@@ -9,7 +9,7 @@
  * This module is type-only apart from the channel-name constants, so it is safe
  * to import from sandboxed preload and renderer code.
  */
-import type { AskResult, Message, MessageFilter } from './schemas';
+import type { AskResult, Message, MessageFilter, NewWatchInput, StandingOrder, Watch } from './schemas';
 import type { Settings, SettingsPatch } from './settings';
 
 /** Brain activity, for Clippy's thinking animation. */
@@ -71,6 +71,15 @@ export interface TelegramTestResult {
   error?: string;
 }
 
+/** State of the "Tell Clippy" global hotkey, for the Settings status line. */
+export interface HotkeyStatus {
+  /** The accelerator in use (`''` = no hotkey). */
+  accelerator: string;
+  /** False if it couldn't be registered (malformed, or another app has it); `error` says so. */
+  ok: boolean;
+  error?: string;
+}
+
 /** Request/response API the renderer calls (all async, via `ipcRenderer.invoke`). */
 export interface ClippyBackend {
   /** Messages matching a filter (e.g. `{ state: 'unread' }` for the sticky-note stack). */
@@ -106,6 +115,20 @@ export interface ClippyBackend {
   telegramUnpair(): Promise<TelegramStatus>;
   /** Send a test message to the paired chat. */
   telegramSendTest(): Promise<TelegramTestResult>;
+  /** Whether the "Tell Clippy" global hotkey registered. */
+  hotkeyStatus(): Promise<HotkeyStatus>;
+  /** Active standing orders, oldest first. */
+  listOrders(): Promise<StandingOrder[]>;
+  /** Add a standing order (1 to 500 characters). */
+  addOrder(text: string): Promise<StandingOrder>;
+  /** Cancel a standing order. */
+  cancelOrder(id: string): Promise<void>;
+  /** Active watches ("nudge me when an agent finishes"), oldest first. */
+  listWatches(): Promise<Watch[]>;
+  /** Add a watch. */
+  addWatch(input: NewWatchInput): Promise<Watch>;
+  /** Cancel a watch. */
+  cancelWatch(id: string): Promise<void>;
 }
 
 /** `ipcMain.handle` / `ipcRenderer.invoke` channel for each backend method. */
@@ -124,6 +147,13 @@ export const IpcInvoke = {
   setTelegramToken: 'clippy:setTelegramToken',
   telegramUnpair: 'clippy:telegramUnpair',
   telegramSendTest: 'clippy:telegramSendTest',
+  hotkeyStatus: 'clippy:hotkeyStatus',
+  listOrders: 'clippy:listOrders',
+  addOrder: 'clippy:addOrder',
+  cancelOrder: 'clippy:cancelOrder',
+  listWatches: 'clippy:listWatches',
+  addWatch: 'clippy:addWatch',
+  cancelWatch: 'clippy:cancelWatch',
 } as const satisfies { [K in keyof ClippyBackend]: `clippy:${K}` };
 
 /** Push-event channels (main → renderer via `webContents.send`). */

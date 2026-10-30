@@ -1,4 +1,13 @@
 /* Cards on the sticky note: notes, reminders, asks and history items. */
+/* The Notes tab: cards (or the empty state) fill the space, the Tell Clippy box sits at the bottom. */
+.notes {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.notes-main {
+  flex: 1;
+}
 .stack {
   display: flex;
   flex-direction: column;

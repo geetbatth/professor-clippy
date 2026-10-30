@@ -1,9 +1,12 @@
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DEFAULT_SETTINGS } from '@clippy/shared';
+import { DEFAULT_SETTINGS as UNMIGRATED } from '@clippy/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseSettingsLenient, SettingsStore, type SecretBox } from '../src/main/settings';
+
+/** What a store holds after loading: the one-time quiet-defaults migration has run. */
+const DEFAULT_SETTINGS = { ...UNMIGRATED, quietDefaultsApplied: true };
 
 let dir: string;
 let file: string;
@@ -20,12 +23,33 @@ describe('SettingsStore', () => {
     expect(readdirSync(dir)).toEqual([]);
   });
 
+  it('one-time quiet migration: advice quips go off, the marker is set and written back', async () => {
+    writeFileSync(file, JSON.stringify({ unsolicitedAdvice: true, soundEnabled: false }));
+    const s = await SettingsStore.load(file);
+    expect(s.get()).toMatchObject({ unsolicitedAdvice: false, quietDefaultsApplied: true, soundEnabled: false });
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ unsolicitedAdvice: false, quietDefaultsApplied: true, soundEnabled: false });
+  });
+
+  it('after the migration their own advice toggle wins', async () => {
+    writeFileSync(file, JSON.stringify({ unsolicitedAdvice: true, quietDefaultsApplied: true }));
+    const s = await SettingsStore.load(file);
+    expect(s.get()).toMatchObject({ unsolicitedAdvice: true, quietDefaultsApplied: true });
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ unsolicitedAdvice: true, quietDefaultsApplied: true }); // not rewritten
+  });
+
+  it('a fresh install is marked migrated too, so the first advice opt-in sticks', async () => {
+    const s = await SettingsStore.load(file);
+    expect(s.get().quietDefaultsApplied).toBe(true);
+    await s.update({ unsolicitedAdvice: true });
+    expect((await SettingsStore.load(file)).get().unsolicitedAdvice).toBe(true);
+  });
+
   it('keeps every valid field of a partly broken file', async () => {
     writeFileSync(file, JSON.stringify({ soundEnabled: false, workerUrl: 'not a url', askTimeoutDefaultS: -5, autoStart: false }));
     const s = await SettingsStore.load(file);
     expect(s.get()).toEqual({ ...DEFAULT_SETTINGS, soundEnabled: false, autoStart: false });
-    expect(parseSettingsLenient('nope')).toEqual(DEFAULT_SETTINGS);
-    expect(parseSettingsLenient([1])).toEqual(DEFAULT_SETTINGS);
+    expect(parseSettingsLenient('nope')).toEqual(UNMIGRATED);
+    expect(parseSettingsLenient([1])).toEqual(UNMIGRATED);
   });
 
   it('treats unreadable JSON as defaults', async () => {

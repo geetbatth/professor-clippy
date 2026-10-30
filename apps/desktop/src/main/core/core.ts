@@ -5,7 +5,7 @@
 import { mkdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { appDataDir, dbPath, portPath, tokenPath } from '@clippy/shared';
-import { startApi, type ApiServer } from './api';
+import { startApi, type ApiDeps, type ApiServer } from './api';
 import { Asks } from './asks';
 import { Bus } from './bus';
 import { systemClock, type Clock } from './clock';
@@ -28,6 +28,10 @@ export interface StartCoreOptions {
   bus?: Bus;
   /** Is the user at the PC now? Decides away-only notes (see `ApiDeps.isUserActive`). */
   isUserActive?: () => boolean;
+  /** Finds a standing order that answers a new ask (see `ApiDeps.matchOrder`). */
+  matchOrder?: ApiDeps['matchOrder'];
+  /** Longest an ask waits for `matchOrder` (see `ApiDeps.matchOrderTimeoutMs`). */
+  matchOrderTimeoutMs?: number;
 }
 
 export interface Core {
@@ -68,6 +72,8 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
       version: options.version ?? 'dev',
       portFile: file(portPath),
       ...(options.isUserActive && { isUserActive: options.isUserActive }),
+      ...(options.matchOrder && { matchOrder: options.matchOrder }),
+      ...(options.matchOrderTimeoutMs !== undefined && { matchOrderTimeoutMs: options.matchOrderTimeoutMs }),
     });
   } catch (err) {
     scheduler.stop();

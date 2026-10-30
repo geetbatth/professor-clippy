@@ -2,7 +2,7 @@
  * The `ClippyBackend` the renderer talks to over IPC, implemented over the core service,
  * the brain and the settings store.
  */
-import type { ClippyBackend, Settings, TelegramStatus, TelegramTestResult } from '@clippy/shared';
+import type { ClippyBackend, HotkeyStatus, Settings, TelegramStatus, TelegramTestResult } from '@clippy/shared';
 import type { Asks } from './core/asks';
 import { NotFoundError } from './core/errors';
 import type { Store } from './core/store';
@@ -19,6 +19,8 @@ export interface BackendDeps {
   claudeWiring: ClaudeWiring;
   /** The Telegram channel (`TelegramManager`). */
   telegram: TelegramControl;
+  /** The "Tell Clippy" global hotkey as last registered. */
+  hotkey: () => HotkeyStatus;
 }
 
 /** What Settings needs from the Telegram channel. */
@@ -35,7 +37,7 @@ export function forRenderer(settings: Settings): Settings {
   return rest;
 }
 
-export function createBackend({ store, asks, brain, settings, claudeWiring, telegram }: BackendDeps): ClippyBackend {
+export function createBackend({ store, asks, brain, settings, claudeWiring, telegram, hotkey }: BackendDeps): ClippyBackend {
   const found = <T>(value: T | undefined, id: string): T => {
     if (value === undefined) throw new NotFoundError(`No message ${id}`);
     return value;
@@ -87,6 +89,27 @@ export function createBackend({ store, asks, brain, settings, claudeWiring, tele
     },
     async telegramSendTest() {
       return telegram.sendTest();
+    },
+    async hotkeyStatus() {
+      return hotkey();
+    },
+    async listOrders() {
+      return store.listActiveOrders();
+    },
+    async addOrder(text) {
+      return store.insertOrder(text);
+    },
+    async cancelOrder(id) {
+      if (store.cancelOrder(id) === undefined) throw new NotFoundError(`No standing order ${id}`);
+    },
+    async listWatches() {
+      return store.listActiveWatches();
+    },
+    async addWatch({ project, event, nudge }) {
+      return store.insertWatch({ project, event: event ?? 'finished', nudge });
+    },
+    async cancelWatch(id) {
+      if (store.cancelWatch(id) === undefined) throw new NotFoundError(`No watch ${id}`);
     },
   };
 }

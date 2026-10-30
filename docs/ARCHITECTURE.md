@@ -8,7 +8,7 @@ npm workspaces monorepo (Node 24, npm 11, TypeScript strict, ESM, Vitest).
 | --- | --- | --- |
 | `packages/shared` | `@clippy/shared` | Every shared contract: zod schemas and types, settings, local API routes, data-dir paths, `ClippyClient`, Electron IPC contract, Worker relay protocol. TypeScript source only (no build step). |
 | `apps/desktop` | `@clippy/desktop` | Electron + electron-vite + React. Hosts the local API (127.0.0.1), SQLite store, scheduler and Clippy's brain. The character (`src/renderer/src/clippy/`) is a set of painted robot sprites driven by a pure mood state machine (`mood.ts`): `poses.ts` maps moods to sprites and aligns them on one stage, CSS does the motion, and clicks pass through his transparent pixels (alpha masks built when the sprites are preloaded). |
-| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. |
+| `apps/mcp` | `@clippy/mcp` | stdio MCP server; forwards agent tool calls to the desktop app through `ClippyClient`. Built by Vite into one `dist/index.js`. Ten extra tools (`list_notes`, `recent_activity`, `snooze_note`, `dismiss_note`, `add_standing_order`, `list_standing_orders`, `cancel_standing_order`, `watch_for`, `list_watches`, `cancel_watch`) are registered only when `CLIPPY_SENDER` is `BRAIN_SENDER` (`clippy-brain`, from `@clippy/shared`), so only Clippy's brain sees them. |
 | `apps/hook` | `@clippy/hook` | Claude Code hook; posts a note when an agent finishes or needs permission. Built like `apps/mcp`. |
 | `apps/worker` | `@clippy/worker` | Cloudflare Worker plus one SQLite-backed Durable Object (`ClippyDO`, binding `CLIPPY`) relaying WhatsApp Cloud API traffic. |
 | `scripts/` | | Repo scripts: the Claude Code wiring (`install-claude-wiring.ts`, also bundled into the app for "Connect Claude Code"), SQLite smoke test, run-in-Electron helper. |
@@ -63,6 +63,16 @@ during `startCore` and hands them to Telegram once it is subscribed, in the same
 block that subscribes the relay. `test/startup.test.ts` checks both channels see an agent's
 first note and Telegram sends the catch-up.
 
+## Quiet by default
+
+`alertLevel(message, popUpFor)` (renderer, `note/alertLevel.ts`) decides how a new message
+announces itself. Loud (ding, quip, wiggle, note opens) for questions, reminders, urgent notes
+(permission requests) and `sender: "clippy"` notes; quiet (just the unread badge and the stack)
+for a plain agent note, unless the `popUpFor` setting is `everything`. `unsolicitedAdvice` now
+defaults to off, and `SettingsStore.load` runs a one-time migration that switches it off for
+existing files and sets `quietDefaultsApplied` (never patchable), after which the user's own
+toggle wins.
+
 ## Away-only notes
 
 `NewMessageInput.quietIfActive` (the hook sets it on its Stop "agent finished" notes, never on
@@ -72,6 +82,94 @@ permission requests) means "only interrupt if the user is away". `POST /messages
 History, `quietIfActive: true`); the renderer only reacts to unread notes and both phone channels
 skip notes already done, so there is no pop-up, sound, quip, badge or mirror. Away: a normal
 unread note. Without an idle source every note interrupts.
+
+## Phone only when away
+
+Nothing mirrors to the phone on `message:new`. `PhoneGate` (`main/phoneGate.ts`) watches
+`message:new` for notes, asks and fired reminders that are not already `done`, and emits
+`message:mirror`, which the relay (notes and asks) and Telegram (also reminders) subscribe to
+instead. Away (or the `phoneWhen` setting is `always`): at once. At the PC: the id is held, and a
+`tickMs` (30 s) timer re-reads held messages from the store; once the user is away the ones still
+unread are mirrored, once. Dismissed or answered ones are dropped, a
+snoozed one stays held until it wakes. Each held id records when it started waiting (when held; reset when it wakes from a snooze).
+Going away flushes only notes and reminders that have waited at most `FLUSH_MAX_AGE_MS` (60 min); older ones are
+dropped from the hold and stay on the desk. A held ask still unanswered `askEscalateMs()` after it started
+waiting goes anyway on the next tick, even at the PC; `startServices` wires it to half of `askTimeoutDefaultS`
+(5 min by default, read each tick so a settings change applies), so a question escalates before `ask_user` gives up.
+Notes and reminders never escalate. `isUserAway` is built in `startServices`: idle time at or
+over `awayThresholdS` (0 = always away); without an idle source, always away. Telegram's startup
+replay of missed reminders skips the gate, and WhatsApp reminders still come from the Worker.
+`test/phoneGate.test.ts` covers the rules; relay/Telegram tests use `test/alwaysMirror.ts`.
+
+## Tell Clippy
+
+`TellBox` (renderer, `note/TellBox.tsx`) sends through the same `useChat` as the Clippy tab, so
+both share one brain session; its reply is the first Clippy chat line created after the send
+(`tellReply`). The global hotkey is the `tellHotkey` setting (an Electron accelerator, `''` =
+off): `registerTellHotkey` (`main/window/hotkey.ts`) wraps `globalShortcut` and turns a malformed
+or taken accelerator into `ok: false` plus a message, which `ClippyBackend.hotkeyStatus` hands to
+Settings. `main/index.ts` re-registers it when the setting changes. On press, main shows and
+focuses the window (the only place Clippy takes focus; he is otherwise `showInactive`), expands
+it and sends `window:tell`; the renderer switches to Notes and focuses the box. `window:blur`
+gives focus back on Escape. Auto-collapse is held off while the box has focus or text.
+
+## Standing orders
+
+A standing order (`StandingOrder`, table `standing_orders`, schema version 5; routes `GET/POST
+/orders`, `DELETE /orders/:id`; IPC `listOrders` / `addOrder` / `cancelOrder`) is a sentence the user
+gave Clippy ("When an agent asks about X, answer: Y"), saved by the brain's `add_standing_order` tool
+or typed into Settings (`RulesSection`). `POST /asks` awaits `ApiDeps.matchOrder` before storing the
+ask; a match goes to `Asks.create(input, { orderId, answer })`, which stores the ask already
+`done`, `answeredVia: 'clippy'` with `Message.orderId` (column `order_id`), so it never pops up,
+isn't mirrored to a phone (both channels skip answered asks) and the agent's long-poll answers
+at once. No match, a rejection, or more than 20 s (`MATCH_ORDER_TIMEOUT_MS`) posts a normal ask.
+`startServices` builds the matcher (`main/orders.ts`) with the brain's runner, folder and
+hooks-off `brain-settings.json`, and gives `startCore` a closure that reads the active orders from
+the core once it exists (no orders: nothing is run). The matcher is one `claude -p --model haiku
+--tools ''` run (no MCP, no session, `--output-format json`); `parseOrderReply` trusts only a known
+order id, and with options only an answer that is one of them (the option's own casing). The empty
+`--tools ''` argument survives both spawn paths (an args array, and `cmdQuote` -> `""` for
+`claude.cmd`).
+
+## Watches
+
+A watch (`Watch`, table `watches`, schema version 6; routes `GET/POST /watches`, `DELETE
+/watches/:id`; IPC `listWatches` / `addWatch` / `cancelWatch`) is "when this agent finishes, remind
+me to Y": an optional project (matched as a case-insensitive substring of a message's `project`),
+an event (`finished` or `any`) and a nudge. The brain sets one with `watch_for`; Settings
+(`RulesSection`, "Waiting for") lists and cancels them. The hook now tags its notes with
+`Message.event` (`agent-finished` for Stop, `agent-needs-permission` for Notification; column
+`messages.event`), which is what `finished` waits for; `any` takes any note or question from the
+project, never a reminder or chat line. `Watcher` (`main/watches.ts`, started in `startServices`
+beside the phone gate, stopped on quit) listens to `message:new`, so a finished note stored `done`
+by the away-only rule still counts. `matchWatches` picks the watches a message triggers (never one
+from `sender: 'clippy'`, so a nudge cannot set off another watch); each is claimed with
+`Store.fireWatch` (active -> inactive, `firedAt`; it can only fire once) and answered with a note
+`{ sender: 'clippy', title: '⏰ Nudge', body: '<nudge>\n(<project> agent finished)' }`
+(the fire and the note are stored in one transaction, so the watch is only spent if the nudge is).
+That note is loud on the desk (alert level) and is mirrored to the phone by the phone gate like any
+other note. Clippy's brain (`BRAIN_SENDER`) and `clippy` notes never trigger a watch.
+
+## Morning brief
+
+Once a day (settings `briefEnabled`, `briefTime` `HH:MM` local, default 09:00, `briefWeekdaysOnly`)
+`BriefScheduler` (`main/brief.ts`, started at the end of `startServices`, `reschedule()` on a brief
+settings change, `onResume()` from the power monitor's resume, stopped on quit) creates a note
+`{ sender: 'clippy', title: '☀️ Morning brief' }`, loud on the desk and sent to the phone by the
+phone gate when away like any Clippy note. The pure `composeBrief` writes the body: today's
+reminders (`• HH:MM body`), "Waiting on you" (pending asks), "Unread" (notes) and "Overnight" (notes
+and questions since the last brief, or the last 16 h, grouped by project; the hook's
+`agent-finished` notes count as "agent finished N×" even when stored `done`; chat, `clippy` and
+`clippy-brain` messages never count). With nothing to say it is one "Clear day" line. One timer,
+capped at an hour and re-armed (like the reminder scheduler); kv `briefLastDate` (local date) means
+at most one brief a day, `briefLastAt` starts the next overnight window. A start or wake sends a
+missed brief if it is due today, not yet sent, and now is before 12:00 local or within 2 h after
+the brief time (so a late brief time still works); otherwise the day is skipped. `reschedule()`
+(a settings change) only re-arms the timer for the new time and never sends on the spot; if today's
+brief is unsent and still inside the catch-up window, the next timer tick (at most an hour away) or a
+wake from sleep may send it. "Waiting on you" counts only asks that are unanswered and not done
+(one dismissed on the desk is not waiting). Unread notes from `clippy` / `clippy-brain` are not counted
+either, so yesterday's unread brief cannot stop a "Clear day" line.
 
 ## Storage
 
