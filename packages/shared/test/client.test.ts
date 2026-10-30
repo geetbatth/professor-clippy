@@ -62,6 +62,7 @@ function fakeApi() {
       case 'GET /health':
         return send(200, { ok: true, version: '0.1.0' });
       case 'POST /messages':
+        if (body.body === 'slow') await new Promise((r) => setTimeout(r, 200));
         return send(201, message({ body: body.body, sender: body.sender, urgent: body.urgent ?? false }));
       case 'GET /messages':
         return send(200, [message(), message({ state: 'done', doneAt: 2000 })]);
@@ -82,6 +83,7 @@ function fakeApi() {
       case `DELETE /orders/${ORDER_ID}`:
         return send(204);
       case 'POST /asks':
+        if (body.question === 'slow') await new Promise((r) => setTimeout(r, 200));
         return send(201, message({ kind: 'ask', body: body.question, options: body.options }));
       case 'GET /asks/pending':
         return send(200, [message({ kind: 'ask' })]);
@@ -183,6 +185,13 @@ describe('ClippyClient requests', () => {
     expect(last()).toMatchObject({ method: 'POST', path: '/orders', body: { text: 'always say yes' } });
     await expect(client.cancelOrder(ORDER_ID)).resolves.toBeUndefined();
     expect(last()).toMatchObject({ method: 'DELETE', path: `/orders/${ORDER_ID}` });
+  });
+
+  it('createAsk waits out the standing-order check, past the ordinary timeout', async () => {
+    const impatient = new ClippyClient({ baseUrl: `http://127.0.0.1:${port}`, token: TOKEN, timeoutMs: 50 });
+    // An ordinary call gives up on a 200 ms response; an ask allows MATCH_ORDER_TIMEOUT_MS more.
+    await expect(impatient.postMessage({ body: 'slow', sender: 's' })).rejects.toBeInstanceOf(ClippyNotRunningError);
+    await expect(impatient.createAsk({ question: 'slow', sender: 's' })).resolves.toMatchObject({ kind: 'ask', body: 'slow' });
   });
 
   it('creates asks, lists pending asks and answers them', async () => {

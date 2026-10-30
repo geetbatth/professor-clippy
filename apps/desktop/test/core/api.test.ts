@@ -274,6 +274,30 @@ describe('standing orders', () => {
     expect(res.json).toMatchObject({ state: 'unread' });
   });
 
+  it('does not store the ask when the agent hangs up while the match is still running', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const matchOrder = vi.fn(async () => {
+      await gate;
+      return { orderId: '01JB2Z3K4M5N6P7Q8R9S0T1V2A', answer: 'staging' };
+    });
+    await start({ matchOrder });
+    const controller = new AbortController();
+    const pending = fetch(`http://127.0.0.1:${core!.port}/asks`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${core!.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(ASK),
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(matchOrder).toHaveBeenCalled());
+    controller.abort();
+    await expect(pending).rejects.toThrow();
+    await new Promise((r) => setTimeout(r, 150)); // let the server notice the closed connection
+    release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(core!.store.listMessages({ kind: 'ask' })).toEqual([]);
+  });
+
   it('is unchanged without a matcher', async () => {
     const call = await start();
     const res = await call('POST', '/asks', ASK);

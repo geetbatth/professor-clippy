@@ -44,19 +44,37 @@ export function buildOrderPrompt(question: string, options: string[] | undefined
   ].join('\n');
 }
 
-/** The first parseable JSON object inside `text` (which may have prose or a code fence around it). */
+/** At most this many `{ ... }` spans are tried when the reply is not bare JSON. */
+const MAX_JSON_ATTEMPTS = 24;
+
+const asObject = (text: string): Record<string, unknown> | undefined => {
+  try {
+    const value: unknown = JSON.parse(text);
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * The JSON object in `text`: the whole text if it is one, else (prose or a code fence around it) the
+ * span from an opening brace to a closing one, trying the first few braces of each kind.
+ */
 function findJsonObject(text: string): Record<string, unknown> | undefined {
+  const whole = asObject(text.trim());
+  if (whole) return whole;
   const capped = text.slice(0, 10_000);
+  const starts: number[] = [];
+  for (let i = capped.indexOf('{'); i !== -1 && starts.length < 6; i = capped.indexOf('{', i + 1)) starts.push(i);
   const ends: number[] = [];
-  for (let i = capped.indexOf('}'); i !== -1; i = capped.indexOf('}', i + 1)) ends.push(i);
-  for (let start = capped.indexOf('{'); start !== -1; start = capped.indexOf('{', start + 1)) {
-    for (let k = ends.length - 1; k >= 0 && ends[k]! > start; k--) {
-      try {
-        const value: unknown = JSON.parse(capped.slice(start, ends[k]! + 1));
-        if (value !== null && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
-      } catch {
-        // not JSON from here to there; try a shorter span
-      }
+  for (let i = capped.lastIndexOf('}'); i !== -1 && ends.length < 4; i = capped.lastIndexOf('}', i - 1)) ends.push(i);
+  let attempts = 0;
+  for (const start of starts) {
+    for (const end of ends) {
+      if (end <= start) continue;
+      if (++attempts > MAX_JSON_ATTEMPTS) return undefined;
+      const found = asObject(capped.slice(start, end + 1));
+      if (found) return found;
     }
   }
   return undefined;

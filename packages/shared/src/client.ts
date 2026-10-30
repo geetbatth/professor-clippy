@@ -4,7 +4,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import { ApiError, Health, MAX_LONG_POLL_S, Routes, routePath, type RouteDef } from './api';
+import { ApiError, Health, MATCH_ORDER_TIMEOUT_MS, MAX_LONG_POLL_S, Routes, routePath, type RouteDef } from './api';
 import { portPath, tokenPath } from './paths';
 import {
   AskResult,
@@ -133,9 +133,13 @@ export class ClippyClient {
     await this.#request(Routes.cancelReminder, { id });
   }
 
-  /** `POST /asks`: post a question; returns the `kind: 'ask'` Message (its `id` is the ask id). */
+  /**
+   * `POST /asks`: post a question; returns the `kind: 'ask'` Message (its `id` is the ask id).
+   * The app may spend up to {@link MATCH_ORDER_TIMEOUT_MS} checking standing orders first, so this
+   * waits that much longer than an ordinary call (giving up earlier would orphan the ask).
+   */
   createAsk(input: NewAskInput): Promise<Message> {
-    return this.#request(Routes.createAsk, { body: input, schema: Message });
+    return this.#request(Routes.createAsk, { body: input, schema: Message, timeoutMs: MATCH_ORDER_TIMEOUT_MS + this.#timeoutMs });
   }
 
   /**

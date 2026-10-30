@@ -15,6 +15,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import {
   AnswerAskBody,
+  MATCH_ORDER_TIMEOUT_MS,
   MAX_LONG_POLL_S,
   MessageFilter,
   NewAskInput,
@@ -37,8 +38,6 @@ import type { Store } from './store';
 const MAX_BODY_BYTES = 1024 * 1024;
 /** How long `close()` waits for in-flight requests before dropping connections. */
 const CLOSE_GRACE_MS = 1000;
-/** Longest a new ask waits for a standing order to answer it before it is posted as usual. */
-export const MATCH_ORDER_TIMEOUT_MS = 20_000;
 
 export interface ApiDeps {
   store: Store;
@@ -118,9 +117,12 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     [Routes.cancelReminder, ({ id }) => (scheduler.cancel(id), { status: 204 })],
     [
       Routes.createAsk,
-      async ({ req }) => {
+      async ({ req, signal }) => {
         const input = await body(req, NewAskInput);
-        return created(asks.create(input, await matchStandingOrder(input)));
+        const match = await matchStandingOrder(input);
+        // The agent gave up while we were matching: storing the ask now would orphan it (a retry would duplicate it).
+        if (signal.aborted) return { status: 499 };
+        return created(asks.create(input, match));
       },
     ],
     [Routes.listPendingAsks, () => ok(asks.listPending())],

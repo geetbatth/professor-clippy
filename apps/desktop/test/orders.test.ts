@@ -53,6 +53,12 @@ describe('parseOrderReply', () => {
     expect(parseOrderReply('', orders, undefined)).toBeUndefined();
   });
 
+  it('stays bounded on a reply with a great many braces', () => {
+    const noise = '{ } '.repeat(5_000);
+    expect(parseOrderReply(`${noise} {"order":"${A}","answer":"x"} ${noise}`, orders, undefined)).toBeUndefined();
+    expect(parseOrderReply(`{"order":"${A}","answer":"x"}`.padStart(30, ' '), orders, undefined)).toEqual({ orderId: A, answer: 'x' });
+  });
+
   it("snaps an answer to an option to the option's own casing, and refuses one that is not an option", () => {
     const options = ['yes', 'no'];
     expect(parseOrderReply(`{"order":"${B}","answer":"Yes"}`, orders, options)).toEqual({ orderId: B, answer: 'yes' });

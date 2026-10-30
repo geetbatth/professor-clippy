@@ -69,6 +69,12 @@ export function routePath(route: RouteDef, id?: string): string {
  */
 export const MAX_LONG_POLL_S = 60;
 
+/**
+ * Longest `POST /asks` may spend looking for a standing order that answers the question before it
+ * posts the ask as usual, ms. `ClippyClient.createAsk` allows for it on top of its normal timeout.
+ */
+export const MATCH_ORDER_TIMEOUT_MS = 20_000;
+
 /** `GET /health` response. */
 export const Health = z.object({
   ok: z.literal(true),
