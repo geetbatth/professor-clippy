@@ -7,8 +7,9 @@
  * `composeBrief` is pure. `BriefScheduler` keeps one timer (capped at an hour like the reminder
  * scheduler's, then re-armed, so a long wait and clock changes are handled). The day's brief is
  * recorded in kv (`briefLastDate`, local `YYYY-MM-DD`), so a restart or a wake from sleep never
- * sends a second one. A PC that was off at brief time still gets it when it comes back, up to
- * {@link CATCH_UP_MS} later; after that the day is skipped.
+ * sends a second one. A PC that was off at brief time still gets it when it comes back, if that is
+ * before {@link CATCH_UP_BEFORE_HOUR} (noon) or within {@link CATCH_UP_MS} of the brief time (so a
+ * late brief time still works); after that the day is skipped.
  *
  * Electron-free; `stop()` disarms the timer so nothing can fire after the store closes.
  */
@@ -20,8 +21,10 @@ import type { Store } from './core/store';
 export const BRIEF_TITLE = '☀️ Morning brief';
 /** Sender of Clippy's own generated notes. */
 const BRIEF_SENDER = 'clippy';
-/** A brief is still sent this long after its time (PC asleep or app closed); later than that the day is skipped. */
+/** A brief missed (PC asleep or app closed) is still sent this long after its time... */
 export const CATCH_UP_MS = 2 * 60 * 60 * 1000;
+/** ...or at any time before this local hour, whichever is later; after both the day is skipped. */
+export const CATCH_UP_BEFORE_HOUR = 12;
 /** Overnight activity reaches this far back when there was no earlier brief. */
 export const DEFAULT_LOOKBACK_MS = 16 * 60 * 60 * 1000;
 /** Most waiting questions named in the brief. */
@@ -48,6 +51,9 @@ export const localDate = (t: number): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
+/** Clippy's own notes (the brief, nudges, the brain's) are never news to him. */
+const isClippysOwn = (m: Message): boolean => m.sender === BRIEF_SENDER || m.sender === BRAIN_SENDER;
+
 /** First line of an ask, cut short, as its label. */
 function askLabel(m: Message): string {
   const line = m.body.split('\n', 1)[0]!.trim();
@@ -71,7 +77,7 @@ function activityLines(activity: Message[]): string[] {
   const byProject = new Map<string, Message[]>();
   for (const m of activity) {
     if (m.kind !== 'note' && m.kind !== 'ask') continue;
-    if (m.sender === BRIEF_SENDER || m.sender === BRAIN_SENDER) continue;
+    if (isClippysOwn(m)) continue;
     const project = m.project ?? 'other';
     byProject.set(project, [...(byProject.get(project) ?? []), m]);
   }
@@ -98,7 +104,7 @@ export function composeBrief(i: BriefInput): { title: string; body: string } {
   const reminders = reminderLines(i.now, i.reminders);
   const asks = i.pendingAsks;
   // Unanswered questions have their own line; the rest of the unread pile is counted once.
-  const unread = i.unread.filter((m) => m.kind !== 'ask' && m.kind !== 'chat').length;
+  const unread = i.unread.filter((m) => m.kind !== 'ask' && m.kind !== 'chat' && !isClippysOwn(m)).length;
   const activity = activityLines(i.activity);
   if (reminders.length === 0 && asks.length === 0 && unread === 0 && activity.length === 0) {
     return { title: BRIEF_TITLE, body: 'Clear day: no reminders, nothing waiting on you.' };
@@ -185,7 +191,10 @@ export class BriefScheduler {
     if (!s.briefEnabled || !this.#isBriefDay(now, s)) return;
     if (this.#store.getKv(KV_DATE) === localDate(now)) return;
     const late = now - this.#briefTime(now, s);
-    if (late < 0 || late > CATCH_UP_MS) return;
+    const today = new Date(now);
+    const noon = new Date(today.getFullYear(), today.getMonth(), today.getDate(), CATCH_UP_BEFORE_HOUR).getTime();
+    // Not due yet, or missed by more than the grace and past noon: nothing until the next brief day.
+    if (late < 0 || (late > CATCH_UP_MS && now >= noon)) return;
     const since = Number(this.#store.getKv(KV_AT)) || now - DEFAULT_LOOKBACK_MS;
     // Note and bookkeeping commit together: a failure can't leave a sent brief unrecorded (and sent twice).
     this.#store.transaction(() => {

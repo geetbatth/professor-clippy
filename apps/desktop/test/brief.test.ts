@@ -97,6 +97,10 @@ describe('composeBrief', () => {
     expect(compose({ activity: [message({ kind: 'chat' }), message({ sender: 'clippy' })] }).body).toBe(
       'Clear day: no reminders, nothing waiting on you.',
     );
+    // So are Clippy's own unread notes (yesterday's brief, a nudge, the brain's).
+    const own = [message({ sender: 'clippy', title: BRIEF_TITLE }), message({ sender: 'clippy', title: '⏰ Nudge' }), message({ sender: BRAIN_SENDER })];
+    expect(compose({ unread: own }).body).toBe('Clear day: no reminders, nothing waiting on you.');
+    expect(compose({ unread: [...own, message({})] }).body).toContain('Unread: 1 note');
   });
 });
 
@@ -160,7 +164,26 @@ describe('BriefScheduler', () => {
     expect(store.getKv('briefLastDate')).toBe(localDate(at(FRIDAY, 10, 30)));
   });
 
-  it('sends nothing when started long after the time, until tomorrow', () => {
+  it('catches up before noon even when the brief time was more than two hours ago', () => {
+    start(at(FRIDAY, 11, 30));
+    expect(sent).toHaveLength(1);
+    expect(at(FRIDAY, 11, 30) - at(FRIDAY, 9)).toBeGreaterThan(CATCH_UP_MS - 1);
+  });
+
+  it('with a late brief time, catches up within two hours of it but not after', () => {
+    settings.briefTime = '13:00';
+    start(at(FRIDAY, 14, 30));
+    expect(sent).toHaveLength(1);
+    scheduler.stop();
+    store.deleteKv('briefLastDate');
+    scheduler = make();
+    start(at(FRIDAY, 15, 30));
+    expect(sent).toHaveLength(1); // no second one: the 15:30 start is past the window
+    clock.advanceTo(at(FRIDAY + 3, 13));
+    expect(sent).toHaveLength(2);
+  });
+
+  it('sends nothing when started after noon and more than two hours late, until tomorrow', () => {
     start(at(FRIDAY, 12, 30));
     expect(sent).toHaveLength(0);
     expect(at(FRIDAY, 12, 30) - at(FRIDAY, 9)).toBeGreaterThan(CATCH_UP_MS);

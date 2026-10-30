@@ -117,6 +117,7 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
               type="checkbox"
               className="switch"
               checked={settings[key]}
+              disabled={key === 'briefWeekdaysOnly' && !settings.briefEnabled}
               onChange={(e) => void update({ [key]: e.target.checked })}
             />
           </label>
@@ -141,7 +142,7 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
             <label className="setting">
               <span className="setting-text">
                 <span className="setting-label">Brief time</span>
-                <span className="setting-hint">If the PC is off then, it comes when you are back, within two hours.</span>
+                <span className="setting-hint">If the PC is off then, it comes when you are back, before noon or within two hours.</span>
               </span>
               <input
                 type="time"

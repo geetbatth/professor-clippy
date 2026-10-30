@@ -158,9 +158,12 @@ and questions since the last brief, or the last 16 h, grouped by project; the ho
 `agent-finished` notes count as "agent finished N×" even when stored `done`; chat, `clippy` and
 `clippy-brain` messages never count). With nothing to say it is one "Clear day" line. One timer,
 capped at an hour and re-armed (like the reminder scheduler); kv `briefLastDate` (local date) means
-at most one brief a day, `briefLastAt` starts the next overnight window. A start or wake up to 2 h
-after the time still sends it; later skips the day. Changing the settings arms the new time but
-never sends on the spot.
+at most one brief a day, `briefLastAt` starts the next overnight window. A start or wake sends a
+missed brief if it is due today, not yet sent, and now is before 12:00 local or within 2 h after
+the brief time (so a late brief time still works); otherwise the day is skipped. `reschedule()`
+(a settings change) only arms the new time and never sends on the spot; a later wake from sleep
+may, if the catch-up rule allows. Unread notes from `clippy` / `clippy-brain` are not counted
+either, so yesterday's unread brief cannot stop a "Clear day" line.
 
 ## Storage
 
