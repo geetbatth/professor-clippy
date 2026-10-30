@@ -1,9 +1,30 @@
 import { useEffect, type RefObject } from 'react';
 import type { ClippyWindowShell } from '../../../main/window/windowApi';
 
-/** Elements (or their ancestors) marked `data-solid` catch the mouse; everything else clicks through. */
-export function isSolid(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('[data-solid]') !== null;
+/** A finer test for a solid element: is the point (client coordinates) really on it? */
+export type HitTest = (clientX: number, clientY: number) => boolean;
+
+const hitTests = new WeakMap<Element, HitTest>();
+
+/**
+ * Give a `data-solid` element a finer hit test (Clippy's sprites use their alpha), or remove it.
+ * Without one, the element's whole box catches the mouse.
+ */
+export function setHitTest(el: Element, test: HitTest | undefined): void {
+  if (test) hitTests.set(el, test);
+  else hitTests.delete(el);
+}
+
+/**
+ * Elements (or their ancestors) marked `data-solid` catch the mouse; everything else clicks
+ * through. An element with a hit test (`setHitTest`) only catches it where the test passes.
+ */
+export function isSolid(target: EventTarget | null, point?: { x: number; y: number }): boolean {
+  if (!(target instanceof Element)) return false;
+  const el = target.closest('[data-solid]');
+  if (!el) return false;
+  const test = point && hitTests.get(el);
+  return test ? test(point.x, point.y) : true;
 }
 
 /**
@@ -20,7 +41,7 @@ export function useClickThrough(shell: ClippyWindowShell, holdRef: RefObject<boo
       shell.setIgnoreMouse(!solid);
       if (solid) onSolidEnter();
     };
-    const onMove = (e: MouseEvent) => set(isSolid(e.target));
+    const onMove = (e: MouseEvent) => set(isSolid(e.target, { x: e.clientX, y: e.clientY }));
     const onLeave = () => set(false);
     window.addEventListener('mousemove', onMove);
     document.documentElement.addEventListener('mouseleave', onLeave);

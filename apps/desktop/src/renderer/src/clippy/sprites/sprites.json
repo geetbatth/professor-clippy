@@ -1,0 +1,47 @@
+{
+ "idle": {
+  "w": 516,
+  "h": 689,
+  "bodyCenterX": 0.599
+ },
+ "blink": {
+  "w": 515,
+  "h": 689,
+  "bodyCenterX": 0.598
+ },
+ "thinking": {
+  "w": 470,
+  "h": 702,
+  "bodyCenterX": 0.494
+ },
+ "asleep": {
+  "w": 407,
+  "h": 633,
+  "bodyCenterX": 0.403
+ },
+ "new-note": {
+  "w": 569,
+  "h": 640,
+  "bodyCenterX": 0.566
+ },
+ "urgent": {
+  "w": 533,
+  "h": 644,
+  "bodyCenterX": 0.499
+ },
+ "celebrate": {
+  "w": 486,
+  "h": 597,
+  "bodyCenterX": 0.504
+ },
+ "knock": {
+  "w": 537,
+  "h": 574,
+  "bodyCenterX": 0.484
+ },
+ "mini": {
+  "w": 284,
+  "h": 488,
+  "bodyCenterX": 0.493
+ }
+}

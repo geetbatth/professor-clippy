@@ -85,7 +85,7 @@ describe('createClippyWindow', () => {
 
   it('starts as a click-through mini window in the bottom-right corner', () => {
     const { win } = setup();
-    expect(win.bounds).toEqual({ x: 1920 - 140 - 16, y: 1040 - 160 - 16, ...WINDOW_SIZES.mini });
+    expect(win.bounds).toEqual({ x: 1920 - WINDOW_SIZES.mini.width - 16, y: 1040 - WINDOW_SIZES.mini.height - 16, ...WINDOW_SIZES.mini });
     expect(win.setIgnoreMouseEvents).toHaveBeenCalledWith(true, { forward: true });
     expect(win.setAlwaysOnTop).toHaveBeenCalledWith(true, 'screen-saver');
   });
@@ -104,7 +104,7 @@ describe('createClippyWindow', () => {
   it('mode switches sizes with top-right corners aligned, and ignores bad modes', () => {
     const { win, send, clippy } = setup({ x: 1000, y: 100, displayId: 1 });
     send(WindowChannels.mode, 'expanded');
-    expect(win.bounds).toEqual({ x: 1000 + 140 - 380, y: 100, ...WINDOW_SIZES.expanded });
+    expect(win.bounds).toEqual({ x: 1000 + WINDOW_SIZES.mini.width - WINDOW_SIZES.expanded.width, y: 100, ...WINDOW_SIZES.expanded });
     expect(clippy.getMode()).toBe('expanded');
     send(WindowChannels.mode, 'huge');
     expect(clippy.getMode()).toBe('expanded');
@@ -118,7 +118,7 @@ describe('createClippyWindow', () => {
     send(WindowChannels.dragStart);
     h.state.cursor = { x: 850, y: 400 };
     send(WindowChannels.dragMove);
-    expect(win.bounds).toMatchObject({ x: 800, y: 350, width: 140, height: 160 });
+    expect(win.bounds).toMatchObject({ x: 800, y: 350, ...WINDOW_SIZES.mini });
     h.state.cursor = { x: -500, y: 400 }; // dragged off the left edge
     send(WindowChannels.dragMove);
     send(WindowChannels.dragEnd);
@@ -169,7 +169,7 @@ describe('createClippyWindow', () => {
     // Unplug the second monitor: Clippy moves onto the first...
     h.state.displays = [h.state.displays[0]!];
     h.state.screenListeners.get('display-removed')!();
-    expect(win.bounds).toMatchObject({ x: 1920 - 140, y: 300 });
+    expect(win.bounds).toMatchObject({ x: 1920 - WINDOW_SIZES.mini.width, y: 300 });
     // ...and goes back when it returns, with nothing saved in between.
     h.state.displays = [h.state.displays[0]!, { id: 2, workArea: { x: 1920, y: 0, width: 1920, height: 1040 } }];
     h.state.screenListeners.get('display-metrics-changed')!();
@@ -179,7 +179,7 @@ describe('createClippyWindow', () => {
 
   it('starting with a saved position on a missing display clamps without saving, even after a click', () => {
     const { win, savePos, send } = setup({ x: 5000, y: 300, displayId: 9 });
-    expect(win.bounds).toMatchObject({ x: 1920 - 140, y: 300 });
+    expect(win.bounds).toMatchObject({ x: 1920 - WINDOW_SIZES.mini.width, y: 300 });
     h.state.cursor = { x: 1850, y: 350 };
     send(WindowChannels.dragStart);
     send(WindowChannels.dragMove); // cursor hasn't moved

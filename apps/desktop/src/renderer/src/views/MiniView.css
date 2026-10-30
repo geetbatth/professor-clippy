@@ -1,12 +1,10 @@
 .mini {
   position: relative;
-  width: 140px;
-  height: 160px;
 }
 .badge {
   position: absolute;
-  top: 26px;
-  right: 18px;
+  /* left/top come from the mini pose (MiniView.tsx): centred on the hat brim. */
+  margin: -12px 0 0 -12px;
   min-width: 24px;
   height: 24px;
   padding: 0 6px;

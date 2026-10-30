@@ -27,13 +27,13 @@ export const MOOD_TIMING = {
 
 /** How long each transient mood plays. CSS keyframes use the same durations. */
 export const TRANSIENT_MS: Readonly<Record<TransientMood, number>> = {
-  blink: 180,
+  blink: 140,
   wake: 1200,
   jump: 1100,
   tapGlass: 1600,
   celebrate: 2400,
 };
-/** The big (urgent / long-ignored) jump: a somersault, so it takes longer. */
+/** The big (urgent / long-ignored) jump: a bounce and a rattle, so it takes longer. */
 export const BIG_JUMP_MS = 1800;
 
 const MAX_QUEUE = 3;
@@ -56,9 +56,9 @@ export interface MoodState {
   current?: Playing & { until: number };
   queue: Playing[];
   /**
-   * Replay key: increments when a transient other than `blink` starts. The rig remounts on
-   * it to replay one-shot animations; blinks must not remount it, or every resting loop
-   * (sway, tassel, brow waggle) would restart from frame 0 every few seconds.
+   * Replay key: increments when a transient other than `blink` starts. Clippy restarts his
+   * one-shot motion on it; blinks must not bump it, or the resting bob would restart from
+   * frame 0 every few seconds.
    */
   seq: number;
 }
@@ -169,7 +169,7 @@ export function moodReducer(state: MoodState, event: MoodEvent): MoodState {
       const count = Math.max(0, event.count);
       if (count === 0) {
         const cleared: MoodState = { ...s, unread: 0, ignoredSince: undefined, lastNagAt: undefined, lastBigAt: undefined };
-        // Inbox zero is the user's doing: count it as activity, and throw the hat.
+        // Inbox zero is the user's doing: count it as activity, and celebrate.
         return prev > 0 ? play({ ...cleared, lastActivityAt: now }, { mood: 'celebrate', big: false }, now) : cleared;
       }
       // A fresh batch of unread notes starts the ignore clock.

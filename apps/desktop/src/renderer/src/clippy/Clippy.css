@@ -1,237 +1,304 @@
-/* Whole-body moves (the stage) plus shared rig settings. Part-specific moves live next to each part. */
+/*
+ * Professor Clippy: stacked sprites (only the current pose is visible) on a stage that fills its
+ * container, plus CSS motion. Layers, outermost first:
+ *   .clippy-lean    leans towards the cursor / the note (--lean, set from JS)
+ *   .clippy-motion  the mood's motion (data-motion), pivoting on his wheels
+ *   .clippy-body    the sprites (pointer handlers live here)
+ * Durations match TRANSIENT_MS / BIG_JUMP_MS in mood.ts.
+ */
+/* The stage: full height of its container, at the stage's aspect ratio (set inline), right-aligned. */
 .clippy {
-  display: block;
-  width: 100%;
+  position: relative;
   height: 100%;
-  overflow: visible;
+  max-width: 100%;
+  margin-left: auto;
   pointer-events: none;
+  container-type: size;
 }
-/* Pivots in CSS below are in the SVG's own user units. */
-.clippy * {
-  transform-box: view-box;
+.clippy-lean,
+.clippy-motion,
+.clippy-body {
+  position: absolute;
+  inset: 0;
+  transform-origin: var(--anchor-x) 100%;
 }
-.clippy-hit {
-  fill: none;
-  pointer-events: all;
+.clippy-lean {
+  transform: rotate(var(--lean, 0deg));
+  transition: transform 600ms ease-out;
+}
+.clippy-sprite {
+  position: absolute;
+  display: block;
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.clippy-sprite[data-active='true'] {
+  visibility: visible;
+  pointer-events: auto;
   cursor: grab;
 }
-.clippy-hit:active {
+.clippy-sprite[data-active='true']:active {
   cursor: grabbing;
 }
+
+/* Mini mode: a soft ground shadow under his wheels. */
 .clippy-shadow {
-  fill: rgba(20, 24, 32, 0.32);
-  filter: url(#clippy-soft);
-}
-.clippy-face {
-  transition: transform 300ms ease-out;
-}
-
-/* Stands on the bottom of his loop, so that's the pivot for sways and squashes. */
-.clippy-stage,
-.clippy-body {
-  transform-origin: 71px 154px;
+  position: absolute;
+  left: var(--anchor-x);
+  bottom: 0;
+  width: 46%;
+  height: 5%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(20, 24, 32, 0.38), rgba(20, 24, 32, 0));
 }
 
-/* idle: a gentle, self-satisfied sway */
-.clippy[data-mood='idle'] .clippy-body,
-.clippy[data-mood='blink'] .clippy-body {
-  animation: body-sway 4.6s ease-in-out infinite alternate;
+/* idle / blink / read: a gentle bob and sway */
+.clippy[data-motion='bob'] .clippy-motion {
+  animation: clippy-bob 4.4s ease-in-out infinite alternate;
 }
-@keyframes body-sway {
+@keyframes clippy-bob {
   from {
-    transform: rotate(-2.2deg);
+    transform: translateY(0) rotate(-1deg);
   }
   to {
-    transform: rotate(2.2deg);
+    transform: translateY(-1.2%) rotate(1deg);
   }
 }
 
-/* read: lean in towards the note */
-.clippy[data-mood='read'] .clippy-body {
-  transform: rotate(-4deg);
-  transition: transform 600ms ease;
+/* wake: a little hop */
+.clippy[data-motion='hop'] .clippy-motion {
+  animation: clippy-hop 1200ms ease-out;
 }
-
-/* think: head cocked, slow bob */
-.clippy[data-mood='think'] .clippy-body {
-  animation: body-ponder 2.4s ease-in-out infinite alternate;
-}
-@keyframes body-ponder {
-  from {
-    transform: rotate(3deg);
-  }
-  to {
-    transform: rotate(6deg) translateY(-1px);
-  }
-}
-
-/* sleep: slumped, breathing */
-.clippy[data-mood='sleep'] .clippy-body {
-  animation: body-snooze 3s ease-in-out infinite;
-}
-@keyframes body-snooze {
+@keyframes clippy-hop {
   0%,
   100% {
-    transform: rotate(-5deg) scale(1, 1);
-  }
-  50% {
-    transform: rotate(-5deg) scale(1.02, 1.035);
-  }
-}
-
-/* wake: a jolt and a shiver */
-.clippy[data-mood='wake'] .clippy-body {
-  animation: body-jolt 1200ms ease-out;
-}
-@keyframes body-jolt {
-  0% {
-    transform: rotate(-5deg);
-  }
-  10% {
-    transform: translateY(-12px) scale(0.94, 1.08);
-  }
-  22% {
-    transform: translateY(0) scale(1.06, 0.94);
-  }
-  32%,
-  52% {
-    transform: rotate(-3deg);
-  }
-  42%,
-  62% {
-    transform: rotate(3deg);
-  }
-  100% {
     transform: none;
-  }
-}
-
-/* jump: squash, stretch, airtime, land */
-.clippy[data-mood='jump'] .clippy-body {
-  animation: body-jump 1100ms cubic-bezier(0.3, 0, 0.3, 1);
-}
-@keyframes body-jump {
-  0% {
-    transform: none;
-  }
-  14% {
-    transform: scale(1.12, 0.84);
-  }
-  30% {
-    transform: translateY(-24px) scale(0.92, 1.1);
-  }
-  48% {
-    transform: translateY(-28px) scale(1, 1);
-  }
-  68% {
-    transform: translateY(0) scale(0.96, 1.05);
-  }
-  78% {
-    transform: scale(1.14, 0.86);
-  }
-  90% {
-    transform: scale(0.98, 1.03);
-  }
-  100% {
-    transform: none;
-  }
-}
-
-/* big jump: a full somersault, and the whole stage shudders on landing */
-.clippy[data-mood='jump'][data-big='true'] .clippy-body {
-  animation: body-flip 1800ms cubic-bezier(0.35, 0, 0.3, 1);
-}
-.clippy[data-mood='jump'][data-big='true'] .clippy-stage {
-  animation: stage-shake 1800ms linear;
-}
-/* Pivot mid-body so the somersault turns in place; squash frames shift down to keep his feet planted. */
-.clippy[data-mood='jump'][data-big='true'] .clippy-body {
-  transform-origin: 71px 100px;
-}
-@keyframes body-flip {
-  0% {
-    transform: translateY(0) rotate(0deg) scale(1, 1);
   }
   12% {
-    transform: translateY(11px) rotate(0deg) scale(1.16, 0.8);
+    transform: scale(1.04, 0.94);
   }
-  28% {
-    transform: translateY(-22px) rotate(0deg) scale(0.9, 1.1);
+  30% {
+    transform: translateY(-6%) scale(0.97, 1.04);
   }
-  42% {
-    transform: translateY(-44px) rotate(-180deg) scale(1, 1);
+  48% {
+    transform: translateY(0) scale(1, 1);
   }
   56% {
-    transform: translateY(-26px) rotate(-360deg) scale(1, 1);
+    transform: scale(1.04, 0.96);
   }
   68% {
-    transform: translateY(11px) rotate(-360deg) scale(1.18, 0.8);
-  }
-  80% {
-    transform: translateY(-3px) rotate(-360deg) scale(0.95, 1.06);
-  }
-  100% {
-    transform: translateY(0) rotate(-360deg) scale(1, 1);
-  }
-}
-@keyframes stage-shake {
-  0%,
-  66%,
-  100% {
     transform: none;
   }
-  70% {
-    transform: translateX(-3px) rotate(-2deg);
+  78% {
+    transform: translateY(-2%);
   }
-  75% {
-    transform: translateX(3px) rotate(2deg);
-  }
-  80% {
-    transform: translateX(-2px) rotate(-1deg);
-  }
-  85% {
-    transform: translateX(2px);
+  88% {
+    transform: none;
   }
 }
 
-/* tapGlass: lean right up to the screen */
-.clippy[data-mood='tapGlass'] .clippy-body {
-  animation: body-lean-in 1600ms ease-in-out;
+/* new note: he rolls in from the left on his casters, tilting, and pulls up with a bounce */
+.clippy[data-motion='roll-in'] .clippy-motion {
+  animation: clippy-roll-in 1100ms cubic-bezier(0.25, 0.7, 0.35, 1);
 }
-@keyframes body-lean-in {
+@keyframes clippy-roll-in {
+  0% {
+    transform: translateX(-30%) rotate(-7deg);
+    opacity: 0;
+  }
+  14% {
+    opacity: 1;
+  }
+  42% {
+    transform: translateX(3%) rotate(4deg);
+  }
+  56% {
+    transform: translateX(-1%) rotate(-1.5deg);
+  }
+  68% {
+    transform: translateY(-3%) rotate(0deg);
+  }
+  80% {
+    transform: translateY(0) scale(1.04, 0.96);
+  }
+  90% {
+    transform: scale(0.99, 1.01);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* urgent: a big bounce, then he rattles about */
+.clippy[data-motion='urgent'] .clippy-motion {
+  animation: clippy-urgent 1800ms linear;
+}
+@keyframes clippy-urgent {
   0%,
   100% {
     transform: none;
   }
-  14%,
+  7% {
+    transform: scale(1.08, 0.9);
+  }
+  18% {
+    transform: translateY(-5%) scale(0.95, 1.06);
+  }
+  30% {
+    transform: translateY(0) scale(1.08, 0.92);
+  }
+  38% {
+    transform: translateY(-2%) scale(1, 1);
+  }
+  46% {
+    transform: none;
+  }
+  52%,
+  64%,
+  76% {
+    transform: translateX(-2.5%) rotate(-3deg);
+  }
+  58%,
+  70%,
+  82% {
+    transform: translateX(2.5%) rotate(3deg);
+  }
+  90% {
+    transform: translateX(-1%) rotate(-1deg);
+  }
+}
+
+/* knock: the close-up, leaning in towards the glass, with three taps */
+.clippy[data-motion='knock'] .clippy-motion {
+  animation: clippy-knock 1600ms ease-in-out;
+}
+@keyframes clippy-knock {
+  0% {
+    transform: scale(0.84) translateY(3%);
+  }
+  16%,
   86% {
-    transform: scale(1.08) translateY(-3px);
+    transform: scale(1);
   }
-  27%,
-  41%,
-  55% {
-    transform: scale(1.11) translateY(-3px);
+  30%,
+  44%,
+  58% {
+    transform: scale(1.035) translateY(-0.5%);
+  }
+  37%,
+  51%,
+  65% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(0.9) translateY(2%);
   }
 }
 
-/* celebrate: happy hops */
-.clippy[data-mood='celebrate'] .clippy-body {
-  animation: body-hop 480ms ease-in-out 5;
+/* think: a slow ponder */
+.clippy[data-motion='ponder'] .clippy-motion {
+  animation: clippy-ponder 2.6s ease-in-out infinite alternate;
 }
-@keyframes body-hop {
+@keyframes clippy-ponder {
+  from {
+    transform: rotate(-1.5deg);
+  }
+  to {
+    transform: rotate(1.5deg) translateY(-0.6%);
+  }
+}
+
+/* sleep: slow breathing */
+.clippy[data-motion='snooze'] .clippy-motion {
+  animation: clippy-snooze 3.2s ease-in-out infinite;
+}
+@keyframes clippy-snooze {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.012, 1.022);
+  }
+}
+
+/* celebrate (inbox zero): happy little jumps */
+.clippy[data-motion='celebrate'] .clippy-motion {
+  animation: clippy-celebrate 600ms ease-in-out 4;
+}
+@keyframes clippy-celebrate {
   0%,
   100% {
     transform: none;
   }
   20% {
-    transform: scale(1.06, 0.94);
+    transform: scale(1.04, 0.95);
   }
-  55% {
-    transform: translateY(-12px) rotate(4deg);
+  /* Low and straight: the thrown hat is near the top of the window. */
+  50% {
+    transform: translateY(-3%);
+  }
+  75% {
+    transform: translateY(0);
   }
 }
 
-/* Reduced motion: hold each mood's pose and skip the choreography. */
+/* new note: a soft pulsing glow behind the blueprint */
+.clippy-glow {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(110, 190, 255, 0.85), rgba(70, 150, 255, 0.4) 55%, rgba(70, 150, 255, 0));
+  animation: clippy-glow 900ms ease-in-out infinite alternate;
+}
+@keyframes clippy-glow {
+  from {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+/* asleep in mini mode: z's drift up out of the canister */
+.clippy-zzz {
+  position: absolute;
+  font: 700 10cqw/1 'Segoe Print', 'Ink Free', 'Comic Sans MS', cursive;
+  color: #eef4ff;
+  text-shadow: 0 0 2px rgba(20, 30, 50, 0.9);
+}
+.clippy-zzz span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  animation: clippy-z 3s ease-out infinite;
+}
+.clippy-zzz span:nth-child(2) {
+  animation-delay: 1s;
+}
+.clippy-zzz span:nth-child(3) {
+  animation-delay: 2s;
+}
+@keyframes clippy-z {
+  0% {
+    transform: translate(0, 0) scale(0.6);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(1.2em, -2.6em) scale(1.2);
+    opacity: 0;
+  }
+}
+
+/* Reduced motion: hold each pose; no choreography, no leaning after the cursor. */
 @media (prefers-reduced-motion: reduce) {
   .clippy *,
   .clippy *::before,
@@ -239,35 +306,19 @@
     animation: none !important;
     transition: none !important;
   }
-  .clippy[data-mood='sleep'] .fx-z {
+  .clippy-lean {
+    transform: none;
+  }
+  .clippy-glow {
+    opacity: 0.8;
+  }
+  .clippy-zzz span {
     opacity: 1;
   }
-  .clippy[data-mood='sleep'] .fx-z.z2 {
-    transform: translate(8px, -12px);
+  .clippy-zzz span:nth-child(2) {
+    transform: translate(0.6em, -1em);
   }
-  .clippy[data-mood='sleep'] .fx-z.z3 {
-    transform: translate(16px, -26px);
-  }
-  .clippy[data-mood='think'] .fx-thought > *,
-  .clippy[data-mood='tapGlass'] .fx-knock > * {
-    opacity: 1;
-  }
-  /* Key poses that are normally reached by animation. */
-  .clippy[data-mood='tapGlass'] .arm-r {
-    transform: rotate(-115deg);
-  }
-  .clippy[data-mood='tapGlass'] .fist {
-    transform: scale(1.6);
-  }
-  .clippy[data-mood='celebrate'] .arm-l,
-  .clippy[data-mood='jump'] .arm-l {
-    transform: rotate(105deg);
-  }
-  .clippy[data-mood='celebrate'] .arm-r,
-  .clippy[data-mood='jump'] .arm-r {
-    transform: rotate(-105deg);
-  }
-  .clippy[data-mood='wake'] .brow {
-    transform: translateY(-8px);
+  .clippy-zzz span:nth-child(3) {
+    transform: translate(1.2em, -2em);
   }
 }

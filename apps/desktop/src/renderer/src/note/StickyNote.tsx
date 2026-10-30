@@ -25,7 +25,7 @@ export interface StickyNoteProps {
   children: ReactNode;
 }
 
-/** The yellow sticky note Clippy is clipped to: a header to drag by, tabs, and the tab's content. */
+/** The yellow sticky note Clippy stands on: a header to drag by, tabs, and the tab's content. */
 export function StickyNote({ tab, onTab, unread, onCollapse, drag, wiggleKey, tabs = true, children }: StickyNoteProps) {
   const ref = useRef<HTMLElement>(null);
   // Restart the wiggle without remounting (which would lose typed text).

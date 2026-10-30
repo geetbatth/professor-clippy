@@ -1,15 +1,12 @@
 .expanded {
   position: relative;
-  width: 380px;
-  height: 560px;
 }
+/* Same box as the mini window (sizes from WINDOW_SIZES), so he stays put when the note opens. */
 .expanded-clippy {
   position: absolute;
   top: 0;
   right: 0;
-  width: 140px;
-  height: 160px;
   z-index: 3;
-  /* His shadow falls on the note he's clipped to. */
-  filter: drop-shadow(2px 5px 3px rgba(60, 45, 0, 0.3));
+  /* His shadow falls on the note he stands on. */
+  filter: drop-shadow(2px 4px 3px rgba(60, 45, 0, 0.3));
 }

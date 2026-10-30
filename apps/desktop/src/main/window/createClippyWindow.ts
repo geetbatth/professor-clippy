@@ -52,7 +52,7 @@ export interface ClippyWindow {
   setMode(mode: WindowMode): void;
 }
 
-/** How often the global cursor is sampled for Clippy's eyes. */
+/** How often the global cursor is sampled (Clippy leans towards it). */
 const CURSOR_POLL_MS = 50;
 
 function allDisplays(): DisplayArea[] {
@@ -171,7 +171,7 @@ export function createClippyWindow(opts: ClippyWindowOptions): ClippyWindow {
     return [channel, listener] as const;
   });
 
-  // ---- global cursor for the googly eyes ----
+  // ---- global cursor, so Clippy can lean towards it ----
   let lastCursor: CursorPoint | undefined;
   const cursorTimer = setInterval(() => {
     if (win.isDestroyed() || !win.isVisible()) return;

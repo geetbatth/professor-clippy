@@ -137,7 +137,7 @@ export function App({ runtime }: { runtime: Runtime }) {
       mood={mood.mood}
       big={mood.big}
       seq={mood.seq}
-      shadow={mode === 'mini'}
+      mini={mode === 'mini'}
       title="Professor Clippy: drag me, or click me"
       {...clippyDrag}
     />

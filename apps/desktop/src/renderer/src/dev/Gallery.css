@@ -1,6 +1,6 @@
 .gallery {
   display: grid;
-  grid-template-columns: repeat(5, calc(140px * var(--zoom, 1)));
+  grid-template-columns: repeat(6, calc(var(--stage-w) * var(--zoom, 1)));
   gap: 12px;
   padding: 16px;
   background: linear-gradient(135deg, #2f4a66, #476d8f);
@@ -13,8 +13,9 @@
   cursor: pointer;
 }
 .gallery-stage {
-  width: calc(140px * var(--zoom, 1));
-  height: calc(160px * var(--zoom, 1));
+  position: relative;
+  width: calc(var(--stage-w) * var(--zoom, 1));
+  height: calc(var(--stage-h) * var(--zoom, 1));
   background: rgba(255, 255, 255, 0.07);
   border-radius: 8px;
 }
@@ -23,4 +24,32 @@
   color: #e9f0f7;
   text-align: center;
   padding-top: 4px;
+  margin: 0;
+}
+
+/* Onion skin (`&align=`): poses stacked, motion frozen, with the anchor line and floor. */
+.gallery--align {
+  grid-template-columns: repeat(4, calc(var(--stage-w) * var(--zoom, 1)));
+}
+.gallery--align .gallery-stage {
+  border-bottom: 1px solid #ff5a5a;
+  border-radius: 0;
+}
+.gallery-layer {
+  position: absolute;
+  inset: 0;
+}
+.gallery--align .clippy * {
+  animation: none !important;
+  transition: none !important;
+}
+.gallery--align .clippy-lean {
+  transform: none;
+}
+.gallery-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #ff5a5a;
 }

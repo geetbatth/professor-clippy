@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import type { ClippyWindowShell, CursorPoint } from '../../../main/window/windowApi';
 
 /**
- * Where the mouse is, in window coordinates: from main's global cursor feed (so the eyes
- * follow it anywhere on screen), and from local mouse moves (browser preview). One update per frame.
+ * Where the mouse is, in window coordinates: from main's global cursor feed (so Clippy can
+ * lean towards it anywhere on screen), and from local mouse moves (browser preview). One update per frame.
  */
 export function useCursor(shell: ClippyWindowShell): CursorPoint | null {
   const [point, setPoint] = useState<CursorPoint | null>(null);
