@@ -28,10 +28,16 @@ export function PadTab({ api, pad, onActive }: PadTabProps) {
   const [error, setError] = useState<string>();
   const openId = view.kind === 'page' ? view.page.id : undefined;
 
-  // The open page was archived (by Clippy, say): back to the list.
+  // The open page was archived (by Clippy, say) or deleted elsewhere: back to the list.
   useEffect(() => {
     if (openId && pad.archived.some((p) => p.id === openId)) setView({ kind: 'list' });
   }, [openId, pad.archived]);
+  useEffect(() => {
+    if (!openId) return;
+    return api.on('page:deleted', ({ id }) => {
+      if (id === openId) setView({ kind: 'list' });
+    });
+  }, [api, openId]);
 
   const newPage = async () => {
     try {

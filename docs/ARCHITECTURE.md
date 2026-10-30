@@ -335,8 +335,9 @@ after the last keystroke, `flush()` saves at once (blur, unmount on page / tab s
 `beforeunload`), and every save sends `baseUpdatedAt`. A refusal whose page has the same text as the
 editor last saved (only the title, colour or pin moved) is retried on the new base; otherwise the
 state is `conflict`: the typed text stays, nothing saves, and the banner's Keep mine saves it on top
-of theirs, Use theirs takes theirs. Unmounting in `conflict` keeps the typed text as a new page
-"<title> (your version)". Someone else's change while nothing is unsaved shows at once. Title,
+of theirs, Use theirs takes theirs. Leaving in `conflict` (unmount, or `beforeunload` on quit or
+window close, where React does not unmount) keeps the typed text as a new page "<title> (your
+version)", once per text (`leave()`), so a quit and the unmount after it make one copy. Someone else's change while nothing is unsaved shows at once. Title,
 colour and pin are separate `writePage` calls without a base, after a `flush()`. Opening a page (or
 a change arriving while it is open) calls `markPageSeen`. While a page has focus or a conflict,
 auto-collapse waits (`onActive`, the Tell box's rule). A page's own colour is `data-page-color` on

@@ -57,6 +57,12 @@ export interface SaveController {
   resolve(choice: 'mine' | 'theirs'): Promise<void>;
   /** The page changed (`page:changed`, or the result of another write such as a new title). */
   remote(page: Page): void;
+  /**
+   * The editor is going away (`beforeunload`, unmount): save what is typed. During a conflict
+   * nothing may save, so it returns the typed text for the editor to keep as a copy; only once
+   * per text, so a quit followed by an unmount makes one copy. Otherwise undefined.
+   */
+  leave(): string | undefined;
 }
 
 const defaultTimer = (fn: () => void, ms: number) => {
@@ -80,6 +86,8 @@ export function createSaveController(opts: SaveControllerOptions): SaveControlle
   /** The newest page heard of while a save was on its way; looked at once it lands. */
   let heard: Page | undefined;
   let cancelTimer: (() => void) | undefined;
+  /** The typed text last handed out by `leave()` during this conflict. */
+  let copied: string | undefined;
 
   const changed = () => opts.onChange?.();
 
@@ -210,6 +218,7 @@ export function createSaveController(opts: SaveControllerOptions): SaveControlle
       if (!conflict) return;
       const theirs = conflict;
       conflict = undefined;
+      copied = undefined;
       base = theirs.updatedAt;
       serverText = theirs.body;
       if (choice === 'theirs') {
@@ -223,5 +232,14 @@ export function createSaveController(opts: SaveControllerOptions): SaveControlle
       await this.flush();
     },
     remote,
+    leave() {
+      if (!conflict) {
+        void this.flush();
+        return undefined;
+      }
+      if (text === copied) return undefined;
+      copied = text;
+      return text;
+    },
   };
 }

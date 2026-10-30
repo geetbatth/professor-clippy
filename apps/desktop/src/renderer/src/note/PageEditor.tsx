@@ -5,6 +5,7 @@ import { PAGE_COLORS } from '@clippy/shared/theme';
 import { useNow } from '../hooks/useNow';
 import { createSaveController, type SaveController } from './pageSave';
 import { timeAgo } from './timeAgo';
+import './cards.css';
 import './PadTab.css';
 
 export interface PageEditorProps {
@@ -75,19 +76,20 @@ export function PageEditor({ api, page, selectTitle = false, onActive, onArchive
     [api, page.id, ctl],
   );
 
-  // Leaving (page switch, tab switch, collapse, closing the window): save what's typed.
+  // Leaving (page switch, tab switch, collapse; quitting or closing the window, where React does
+  // not unmount, so `beforeunload` too): save what's typed.
   useEffect(() => {
     const leave = () => {
-      void ctl.flush();
+      // Left without settling a conflict: their version stays on the page, the typed text becomes a copy (once).
+      const copy = ctl.leave();
+      if (copy !== undefined) void api.createPage({ title: yourVersionTitle(currentRef.current.title), body: copy });
       const t = titleRef.current.trim();
-      if (t && t !== currentRef.current.title) void api.writePage(page.id, { title: t });
+      if (t && t !== currentRef.current.title) api.writePage(page.id, { title: t }).catch(() => {}); // gone meanwhile: nothing to rename
     };
     window.addEventListener('beforeunload', leave);
     return () => {
       window.removeEventListener('beforeunload', leave);
       leave();
-      // Closed without settling a conflict: their version stays on the page, the typed text becomes a copy.
-      if (ctl.state === 'conflict') void api.createPage({ title: yourVersionTitle(currentRef.current.title), body: ctl.text });
     };
   }, [api, page.id, ctl]);
 

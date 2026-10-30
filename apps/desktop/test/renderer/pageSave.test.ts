@@ -242,6 +242,46 @@ describe('page save controller', () => {
     });
   });
 
+  describe('leaving (quit, window closed, page switch)', () => {
+    it('saves what is typed, and there is nothing to keep as a copy', async () => {
+      const { server, ctl } = setup();
+      ctl.edit('typed');
+      expect(ctl.leave()).toBeUndefined();
+      await vi.waitFor(() => expect(server.current.body).toBe('typed'));
+    });
+
+    it('during a conflict hands back the typed text once, to keep as a copy (quit then unmount makes one copy)', async () => {
+      const { server, ctl } = setup();
+      server.theirs({ body: 'from Clippy' });
+      ctl.edit('mine, typed before the quit');
+      await ctl.flush();
+      expect(ctl.state).toBe('conflict');
+      expect(ctl.leave()).toBe('mine, typed before the quit'); // beforeunload
+      expect(ctl.leave()).toBeUndefined(); // the unmount after it
+      expect(server.current.body).toBe('from Clippy');
+    });
+
+    it('hands back a fresh copy if more was typed after the last one', async () => {
+      const { server, ctl } = setup();
+      server.theirs({ body: 'from Clippy' });
+      ctl.edit('mine');
+      await ctl.flush();
+      expect(ctl.leave()).toBe('mine');
+      ctl.edit('mine, and more');
+      expect(ctl.leave()).toBe('mine, and more');
+      expect(ctl.leave()).toBeUndefined();
+    });
+
+    it('has nothing to copy once the conflict is settled', async () => {
+      const { server, ctl } = setup();
+      server.theirs({ body: 'from Clippy' });
+      ctl.edit('mine');
+      await ctl.flush();
+      await ctl.resolve('theirs');
+      expect(ctl.leave()).toBeUndefined();
+    });
+  });
+
   it('a failed save keeps the text unsaved with the error, and the next flush tries again', async () => {
     const save = vi.fn<(text: string, base: number) => Promise<WritePageResult>>().mockRejectedValueOnce(new Error('pipe broke'));
     save.mockResolvedValue({ ok: true, page: page({ body: 'x', updatedAt: T0 + 1 }) });
