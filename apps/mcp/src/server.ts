@@ -36,13 +36,20 @@ const ok = (...lines: string[]): CallToolResult => ({ content: lines.map((text) 
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
-/** Default `ask_user` timeout: `askTimeoutDefaultS` from the app's settings.json, else 600. */
+/**
+ * Default `ask_user` timeout: `askTimeoutDefaultS` from the app's settings.json,
+ * else 600. Only that field is validated, so an unrelated bad field can't reset it.
+ */
 async function defaultAskTimeoutS(): Promise<number> {
+  let value: unknown;
   try {
-    return Settings.parse(JSON.parse(await readFile(settingsPath(), 'utf8'))).askTimeoutDefaultS;
+    const raw = JSON.parse(await readFile(settingsPath(), 'utf8'));
+    if (raw && typeof raw === 'object') value = raw.askTimeoutDefaultS;
   } catch {
-    return DEFAULT_SETTINGS.askTimeoutDefaultS;
+    // missing or unreadable: use the default
   }
+  const parsed = Settings.shape.askTimeoutDefaultS.safeParse(value);
+  return parsed.success ? parsed.data : DEFAULT_SETTINGS.askTimeoutDefaultS;
 }
 
 function askResultText(result: AskResult, waitedS: number): CallToolResult {

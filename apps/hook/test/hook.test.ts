@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { MAX_LINE_CHARS, hookStatePath, lastAssistantText, lastLine, runHook } from '../src/hook';
+import { MAX_LINE_CHARS, dedupeKey, hookStatePath, lastAssistantText, lastLine, runHook } from '../src/hook';
 
 const TOKEN = 'b'.repeat(64);
 let home: string;
@@ -81,20 +81,29 @@ describe('Stop', () => {
     expect(posted[0].body).toBe('✅ payments agent finished');
   });
 
-  it('collapses duplicate Stops for the same project within 60 s', async () => {
+  it('collapses duplicate Stops for the same working directory within 60 s', async () => {
     await startApp();
     let t = 1_000_000;
     const now = () => t;
     expect(await runHook(stop(), { now })).toBe('posted');
     t += 59_000;
     expect(await runHook(stop(), { now })).toBe('duplicate');
-    expect(await runHook(stop({ cwd: '/work/other' }), { now })).toBe('posted');
+    expect(await runHook(stop({ cwd: 'c:\\CODE\\Payments' }), { now })).toBe('duplicate'); // same dir, other case
+    expect(await runHook(stop({ cwd: 'C:\\work\\other' }), { now })).toBe('posted');
     t += 2_000; // 61 s after the first post
     expect(await runHook(stop(), { now })).toBe('posted');
     expect(posted.map((p) => p.project)).toEqual(['payments', 'other', 'payments']);
     expect(JSON.parse(await readFile(hookStatePath(), 'utf8'))).toEqual({
-      lastStop: { payments: 1_061_000, other: 1_059_000 },
+      lastStop: { [dedupeKey('C:\\code\\payments')]: 1_061_000, [dedupeKey('C:\\work\\other')]: 1_059_000 },
     });
+  });
+
+  it('does not collapse two different folders that share a name', async () => {
+    await startApp();
+    const now = () => 5_000_000;
+    expect(await runHook(stop({ cwd: 'C:\\clients\\acme\\api' }), { now })).toBe('posted');
+    expect(await runHook(stop({ cwd: 'C:\\clients\\globex\\api' }), { now })).toBe('posted');
+    expect(posted.map((p) => p.project)).toEqual(['api', 'api']);
   });
 
   it('does not record a Stop that could not be posted', async () => {
@@ -139,6 +148,13 @@ describe('guards', () => {
     await writeFile(join(home, 'settings.json'), JSON.stringify({ hookEnabled: false }));
     expect(await runHook(stop())).toBe('disabled');
     expect(await runHook(JSON.stringify({ hook_event_name: 'Notification', cwd: '/p', message: 'hi' }))).toBe('disabled');
+    expect(posted).toEqual([]);
+  });
+
+  it('honours hookEnabled:false even when another settings field is invalid', async () => {
+    await startApp();
+    await writeFile(join(home, 'settings.json'), JSON.stringify({ hookEnabled: false, workerUrl: 'not a url', askTimeoutDefaultS: -1 }));
+    expect(await runHook(stop())).toBe('disabled');
     expect(posted).toEqual([]);
   });
 

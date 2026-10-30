@@ -110,7 +110,7 @@ describe('install', () => {
     }
     expect(servers).toEqual(new Set(['clippy']));
 
-    const ours = { hooks: [{ type: 'command', command: `node "${fwd(hookPath)}"` }] };
+    const ours = { hooks: [{ type: 'command', command: `node "${fwd(hookPath)}" --professor-clippy` }] };
     expect(readSettings()).toEqual({
       ...userSettings,
       hooks: { ...userSettings.hooks, Stop: [...userSettings.hooks.Stop, ours], Notification: [ours] },
@@ -148,7 +148,7 @@ describe('install', () => {
 
   it('replaces a stale hook from an older checkout instead of adding a second one', () => {
     mkdirSync(configDir, { recursive: true });
-    const stale = { type: 'command', command: 'node "D:/old/professor-clippy/apps/hook/dist/index.js"' };
+    const stale = { type: 'command', command: 'node "D:/old/professor-clippy/apps/hook/dist/index.js" --professor-clippy' };
     writeFileSync(settingsFile(), JSON.stringify({ hooks: { Stop: [{ hooks: [stale] }], Notification: [{ hooks: [stale] }] } }));
     run('install');
     const { hooks } = readSettings();
@@ -160,7 +160,9 @@ describe('install', () => {
   it('refuses to overwrite a settings.json that is not valid JSON', () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(settingsFile(), '{ "model": "opus", }');
-    expect(() => run('install')).toThrow(/not a JSON object/);
+    expect(() => run('install')).toThrow(/not a JSON object; fix it by hand and run again. Nothing was changed./);
+    expect(calls).toEqual([]); // validated before the CLI ran
+    expect(existsSync(join(configDir, 'CLAUDE.md'))).toBe(false);
     expect(readFileSync(settingsFile(), 'utf8')).toBe('{ "model": "opus", }');
   });
 
@@ -173,7 +175,11 @@ describe('install', () => {
   it('reports a failing `claude mcp add`', () => {
     const failing: ClaudeRunner = (args) =>
       args[1] === 'add' ? { status: 1, stdout: '', stderr: 'boom' } : { status: 0, stdout: '', stderr: '' };
-    expect(() => run('install', { runClaude: failing })).toThrow('claude mcp add failed: boom');
+    expect(() => run('install', { runClaude: failing })).toThrow(
+      'claude mcp add failed: boom. settings.json and CLAUDE.md were not changed; fix this and run install again.',
+    );
+    expect(existsSync(settingsFile())).toBe(false);
+    expect(existsSync(join(configDir, 'CLAUDE.md'))).toBe(false);
   });
 });
 
@@ -206,6 +212,56 @@ describe('uninstall', () => {
     expect(existsSync(configDir)).toBe(false);
     expect(log).toContain('settings.json: no Professor Clippy hooks');
     expect(log).toContain('CLAUDE.md: no hint to remove');
+  });
+});
+
+describe('foreign look-alike hooks (another monorepo with apps/hook/dist/index.js)', () => {
+  const foreign = { type: 'command', command: 'node "D:/work/acme-monorepo/apps/hook/dist/index.js"' };
+  const withForeign = { hooks: { Stop: [{ hooks: [foreign] }], Notification: [{ matcher: '', hooks: [foreign] }] } };
+
+  it('install keeps it and adds ours alongside', () => {
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(settingsFile(), JSON.stringify(withForeign));
+    run('install');
+    const ours = { hooks: [{ type: 'command', command: hookCommand(hookPath) }] };
+    expect(readSettings()).toEqual({
+      hooks: { Stop: [...withForeign.hooks.Stop, ours], Notification: [...withForeign.hooks.Notification, ours] },
+    });
+  });
+
+  it('uninstall leaves it alone', () => {
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(settingsFile(), JSON.stringify(withForeign));
+    run('install');
+    run('uninstall');
+    expect(readSettings()).toEqual(withForeign);
+  });
+
+  it('uninstall without our hooks does not touch the file', () => {
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(settingsFile(), JSON.stringify(withForeign));
+    const log = run('uninstall');
+    expect(log).toContain('settings.json: no Professor Clippy hooks');
+    expect(readFileSync(settingsFile(), 'utf8')).toBe(JSON.stringify(withForeign));
+    expect(backups()).toEqual([]);
+  });
+});
+
+describe('CLAUDE.md line endings', () => {
+  const mixed = '# Rules\r\nOne\nTwo\r\n';
+
+  it('uninstall does not rewrite a mixed-EOL CLAUDE.md that has no hint', () => {
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, 'CLAUDE.md'), mixed);
+    const log = run('uninstall');
+    expect(log).toContain('CLAUDE.md: no hint to remove');
+    expect(readFileSync(join(configDir, 'CLAUDE.md'), 'utf8')).toBe(mixed);
+  });
+
+  it('removing the hint keeps every other byte, mixed EOLs included', () => {
+    expect(removeHint(addHint(mixed))).toBe(mixed);
+    expect(removeHint(`A\n${CLAUDE_MD_HINT}\r\nB\r\n`)).toBe('A\nB\r\n');
+    expect(removeHint(mixed)).toBe(mixed);
   });
 });
 

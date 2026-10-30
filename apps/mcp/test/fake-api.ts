@@ -121,8 +121,8 @@ export async function startFakeApi(appDataDir?: string) {
         const wait = Math.min(Number(url.searchParams.get('wait') ?? 0), 60);
         if (ask.answer === undefined && wait > 0) {
           await new Promise<void>((resolve) => {
-            // +20 ms so the client's whole-second deadline has always passed when we return
-            const timer = setTimeout(resolve, wait * 1000 + 20);
+            // exactly `wait` seconds, like the real server
+            const timer = setTimeout(resolve, wait * 1000);
             const list = waiters.get(ask.id) ?? [];
             list.push(() => {
               clearTimeout(timer);

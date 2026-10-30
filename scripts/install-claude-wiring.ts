@@ -7,10 +7,13 @@
  * install:
  *  1. `claude mcp add --scope user clippy -- node <apps/mcp/dist/index.js>` (the CLI
  *     writes that to ~/.claude.json; this script never edits that file itself).
- *  2. Merges `Stop` and `Notification` hooks running `node <apps/hook/dist/index.js>`
- *     into <config dir>/settings.json, keeping everything else (backed up first).
+ *  2. Merges `Stop` and `Notification` hooks running
+ *     `node <apps/hook/dist/index.js> --professor-clippy` into <config dir>/settings.json,
+ *     keeping everything else (backed up first). The marker argument is how our
+ *     entries are recognised; nothing else is ever modified or removed.
  *  3. Appends the Professor Clippy hint to <config dir>/CLAUDE.md once.
- * uninstall reverses all three. Both are idempotent.
+ * uninstall reverses all three. Both are idempotent. All files are read and
+ * validated before the CLI runs or anything is written.
  *
  * Config dir: `<home>/.claude` with `--home <dir>`, else `CLAUDE_CONFIG_DIR`, else
  * `~/.claude`. With `--home`, the `claude` CLI also runs with
@@ -58,12 +61,13 @@ export interface WiringOptions {
 /** Forward slashes: safe inside the bash/cmd command strings Claude Code runs, and fine for Node. */
 const slashes = (p: string) => resolve(p).replace(/\\/g, '/');
 
-export const hookCommand = (hookPath: string) => `node "${slashes(hookPath)}"`;
+/** Extra argument tagging our hook commands (the hook ignores its argv). It alone identifies our entries. */
+export const HOOK_MARKER = '--professor-clippy';
 
-/** Our hook entries: the exact command, or any `node ".../apps/hook/dist/index.js"` (e.g. from an older checkout). */
-const isOurHook = (command: unknown, wanted: string) =>
-  typeof command === 'string' &&
-  (command === wanted || /^node\s+"?[^"]*[\\/]apps[\\/]hook[\\/]dist[\\/]index\.js"?\s*$/i.test(command));
+export const hookCommand = (hookPath: string) => `node "${slashes(hookPath)}" ${HOOK_MARKER}`;
+
+/** Our hook entries, from this checkout or any other: commands carrying {@link HOOK_MARKER} as an argument. */
+const isOurHook = (command: unknown) => typeof command === 'string' && /(?:^|\s)--professor-clippy(?:\s|$)/.test(command);
 
 export function resolveConfigDir(home: string | undefined, env: NodeJS.ProcessEnv) {
   if (home) {
@@ -89,7 +93,7 @@ type HookGroup = { matcher?: string; hooks?: Array<{ type?: string; command?: un
 type SettingsJson = { hooks?: Record<string, HookGroup[]> } & Record<string, unknown>;
 
 /** Settings with our hooks removed from every event (groups, events and `hooks` that this empties are dropped). */
-function withoutOurHooks(settings: SettingsJson, wanted: string): SettingsJson {
+function withoutOurHooks(settings: SettingsJson): SettingsJson {
   if (!settings.hooks || typeof settings.hooks !== 'object') return settings;
   const hooks: Record<string, HookGroup[]> = {};
   for (const [event, groups] of Object.entries(settings.hooks)) {
@@ -99,7 +103,7 @@ function withoutOurHooks(settings: SettingsJson, wanted: string): SettingsJson {
     }
     const kept = groups.flatMap((group) => {
       if (!Array.isArray(group?.hooks)) return [group];
-      const rest = group.hooks.filter((h) => !isOurHook(h?.command, wanted));
+      const rest = group.hooks.filter((h) => !isOurHook(h?.command));
       if (rest.length === group.hooks.length) return [group];
       return rest.length ? [{ ...group, hooks: rest }] : [];
     });
@@ -114,7 +118,7 @@ function withoutOurHooks(settings: SettingsJson, wanted: string): SettingsJson {
 function hasExactlyOurHooks(settings: SettingsJson, wanted: string): boolean {
   return HOOK_EVENTS.every((event) => {
     const commands = (settings.hooks?.[event] ?? []).flatMap((g) => (Array.isArray(g?.hooks) ? g.hooks : []).map((h) => h?.command));
-    const ours = commands.filter((c) => isOurHook(c, wanted));
+    const ours = commands.filter(isOurHook);
     return ours.length === 1 && ours[0] === wanted;
   });
 }
@@ -122,7 +126,7 @@ function hasExactlyOurHooks(settings: SettingsJson, wanted: string): boolean {
 export function mergeHooks(settings: SettingsJson, hookPath: string): SettingsJson {
   const wanted = hookCommand(hookPath);
   if (hasExactlyOurHooks(settings, wanted)) return settings;
-  const next = withoutOurHooks(settings, wanted);
+  const next = withoutOurHooks(settings);
   const hooks = { ...(next.hooks ?? {}) };
   for (const event of HOOK_EVENTS) {
     hooks[event] = [...(hooks[event] ?? []), { hooks: [{ type: 'command', command: wanted }] }];
@@ -130,8 +134,8 @@ export function mergeHooks(settings: SettingsJson, hookPath: string): SettingsJs
   return { ...next, hooks };
 }
 
-export function removeHooks(settings: SettingsJson, hookPath: string): SettingsJson {
-  return withoutOurHooks(settings, hookCommand(hookPath));
+export function removeHooks(settings: SettingsJson): SettingsJson {
+  return withoutOurHooks(settings);
 }
 
 export function addHint(markdown: string): string {
@@ -141,18 +145,20 @@ export function addHint(markdown: string): string {
   return markdown + sep + CLAUDE_MD_HINT + eol;
 }
 
+/**
+ * Remove the hint line and the blank separator line addHint put before it.
+ * Everything else, line endings included, is kept byte for byte; without a
+ * hint the input is returned unchanged.
+ */
 export function removeHint(markdown: string): string {
-  const eol = markdown.includes('\r\n') ? '\r\n' : '\n';
-  const lines = markdown.split(/\r?\n/);
+  const lines = markdown.match(/[^\n]*\n|[^\n]+$/g) ?? []; // each line with its own terminator
+  if (!lines.some((line) => line.trim() === CLAUDE_MD_HINT)) return markdown;
   const out: string[] = [];
   for (const line of lines) {
-    if (line.trim() !== CLAUDE_MD_HINT) {
-      out.push(line);
-      continue;
-    }
-    if (out.length > 0 && out.at(-1) === '') out.pop(); // the blank separator addHint put before it
+    if (line.trim() !== CLAUDE_MD_HINT) out.push(line);
+    else if (out.length > 0 && /^\r?\n$/.test(out.at(-1)!)) out.pop();
   }
-  return out.join(eol);
+  return out.join('');
 }
 
 function readText(path: string): string | undefined {
@@ -168,7 +174,7 @@ function readSettings(path: string): SettingsJson {
   } catch {
     // fall through
   }
-  throw new Error(`${path} is not a JSON object; fix it by hand and run again (nothing was changed).`);
+  throw new Error(`${path} is not a JSON object; fix it by hand and run again. Nothing was changed.`);
 }
 
 /** Install or uninstall the wiring. Returns the config dir it worked on. */
@@ -188,11 +194,16 @@ export function runWiring(options: WiringOptions): { configDir: string } {
 
   log(`${install ? 'Installing' : 'Uninstalling'} Professor Clippy wiring (Claude config dir: ${configDir})`);
 
+  // Read and validate everything before changing anything, so a bad file stops us cleanly.
   if (install && !dry) {
     for (const built of [mcpPath, hookPath]) {
-      if (!existsSync(built)) throw new Error(`${built} not found; run \`npm run build\` first.`);
+      if (!existsSync(built)) throw new Error(`${built} not found; run \`npm run build\` first. Nothing was changed.`);
     }
   }
+  const before = readSettings(settingsPath);
+  const after = install ? mergeHooks(before, hookPath) : removeHooks(before);
+  const md = readText(claudeMdPath);
+  const nextMd = install ? addHint(md ?? '') : md === undefined ? undefined : removeHint(md);
 
   // 1. MCP server, through the CLI (it owns ~/.claude.json).
   const claude = (args: string[]) => {
@@ -200,18 +211,19 @@ export function runWiring(options: WiringOptions): { configDir: string } {
     return dry ? undefined : runClaude(args, childEnv);
   };
   const removed = claude(['mcp', 'remove', '--scope', 'user', MCP_SERVER_NAME]);
-  if (removed?.error) throw new Error(`Could not run the Claude Code CLI (\`claude\`): ${removed.error.message}`);
+  if (removed?.error) {
+    throw new Error(`Could not run the Claude Code CLI (\`claude\`): ${removed.error.message}. Nothing was changed.`);
+  }
   if (removed && removed.status !== 0) log(`  (no existing "${MCP_SERVER_NAME}" MCP server to remove)`);
   if (install) {
     const added = claude(['mcp', 'add', '--scope', 'user', MCP_SERVER_NAME, '--', 'node', slashes(mcpPath)]);
     if (added && (added.error || added.status !== 0)) {
-      throw new Error(`claude mcp add failed: ${(added.stderr || added.stdout || added.error?.message || '').trim()}`);
+      const why = (added.stderr || added.stdout || added.error?.message || '').trim();
+      throw new Error(`claude mcp add failed: ${why}. settings.json and CLAUDE.md were not changed; fix this and run install again.`);
     }
   }
 
   // 2. Hooks in settings.json.
-  const before = readSettings(settingsPath);
-  const after = install ? mergeHooks(before, hookPath) : removeHooks(before, hookPath);
   if (JSON.stringify(after) === JSON.stringify(before)) {
     log(`settings.json: ${install ? 'hooks already installed' : 'no Professor Clippy hooks'}`);
   } else {
@@ -230,8 +242,6 @@ export function runWiring(options: WiringOptions): { configDir: string } {
   }
 
   // 3. CLAUDE.md hint.
-  const md = readText(claudeMdPath);
-  const nextMd = install ? addHint(md ?? '') : md === undefined ? undefined : removeHint(md);
   if (nextMd === undefined || nextMd === md) {
     log(`CLAUDE.md: ${install ? 'hint already present' : 'no hint to remove'}`);
   } else {
