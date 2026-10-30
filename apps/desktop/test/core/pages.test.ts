@@ -217,6 +217,17 @@ describe('Pages', () => {
       expect(events.at(-1)).toEqual({ event: 'page:changed', payload: pages.get(page.id) });
     });
 
+    it('an archived page cannot be popped out (no window opens), but un-popping it is harmless', () => {
+      const page = pages.create({ title: 'Old' }, YOU);
+      pages.archive(page.id);
+      events = [];
+      expect(() => pages.setPopped(page.id, true)).toThrow(ConflictError);
+      expect(() => pages.setPopped(page.id, true, { x: 0, y: 0, width: 260, height: 220, displayId: 1 })).toThrow(/Restore the page/);
+      expect(pages.get(page.id).popped).toBe(false);
+      expect(events).toEqual([]);
+      expect(pages.setPopped(page.id, false)).toMatchObject({ popped: false });
+    });
+
     it('archive un-pops the page; restore brings it back as freshly changed; remove only takes archived pages', () => {
       const page = pages.create({ title: 'Old' }, YOU);
       pages.setPopped(page.id, true);

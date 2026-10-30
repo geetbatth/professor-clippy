@@ -156,6 +156,17 @@ describe('registerIpc', () => {
     expect(backend.getSettings).not.toHaveBeenCalled();
   });
 
+  it('accepts calls from page windows it is told about, and still refuses anyone else', async () => {
+    const { win } = fakeWindow();
+    const backend = fakeBackend();
+    const pageWindow = { id: 'page window' };
+    registerIpc(backend, win as never, { allowSender: (s) => s === (pageWindow as never) });
+    await handlers.get(IpcInvoke.popPage)!({ sender: pageWindow }, 'P1', false);
+    expect(backend.popPage).toHaveBeenCalledWith('P1', false);
+    expect(() => handlers.get(IpcInvoke.getSettings)!({ sender: { id: 'some other page' } })).toThrow(/not allowed/);
+    expect(backend.getSettings).not.toHaveBeenCalled();
+  });
+
   it('emit pushes events to the window and stops after close', () => {
     const { win, contents, close } = fakeWindow();
     const ipc = registerIpc(fakeBackend(), win as never);

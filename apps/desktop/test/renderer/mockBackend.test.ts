@@ -131,12 +131,15 @@ describe('mock backend', () => {
 
   it('settings: defaults, patching and clearing', async () => {
     const b = createMockBackend();
+    const changed = vi.fn();
+    b.on('settings:changed', changed);
     expect(await b.getSettings()).toEqual({ ...DEFAULT_SETTINGS, firstRunDone: true });
     expect((await createMockBackend({ firstRun: true }).getSettings()).firstRunDone).toBe(false);
     expect(await b.setSettings({ soundEnabled: false, workerUrl: 'https://relay.example.com' })).toMatchObject({
       soundEnabled: false,
       workerUrl: 'https://relay.example.com',
     });
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ soundEnabled: false }));
     expect((await b.setSettings({ workerUrl: null })).workerUrl).toBeUndefined();
     await expect(b.setSettings({ workerUrl: 'not a url' })).rejects.toThrow();
   });
@@ -175,6 +178,7 @@ describe('mock backend', () => {
     expect((await b.listPages({ q: 'clippy' })).map((p) => p.title)).toEqual(['Scratch']);
     expect(await b.popPage(page.id, true)).toMatchObject({ popped: true });
     expect(await b.archivePage(page.id)).toMatchObject({ popped: false, archivedAt: expect.any(Number) });
+    await expect(b.popPage(page.id, true)).rejects.toThrow(/Restore the page/);
     expect((await b.listPages({ archived: true })).map((p) => p.id)).toEqual([page.id]);
     expect((await b.restorePage(page.id)).archivedAt).toBeNull();
     await expect(b.deletePage(page.id)).rejects.toThrow();

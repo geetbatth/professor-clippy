@@ -18,6 +18,11 @@ export interface PageEditorProps {
   onActive?(active: boolean): void;
   /** The page was archived from here. */
   onArchived?(): void;
+  /**
+   * In a popped-out page's window: no title field (the window's header shows it) and, under the
+   * text, only the save state; colour, keep at top and archive stay in the Pad.
+   */
+  compact?: boolean;
 }
 
 /** "Scratch (your version)": the copy kept when the editor closes on an unsettled conflict. */
@@ -32,7 +37,7 @@ function yourVersionTitle(title: string): string {
  * archive. Self-contained (it listens for the page's changes itself), so a popped-out page window
  * can show it too.
  */
-export function PageEditor({ api, page, selectTitle = false, onActive, onArchived }: PageEditorProps) {
+export function PageEditor({ api, page, selectTitle = false, onActive, onArchived, compact = false }: PageEditorProps) {
   const [current, setCurrent] = useState(page);
   const currentRef = useRef(page);
   currentRef.current = current;
@@ -126,10 +131,11 @@ export function PageEditor({ api, page, selectTitle = false, onActive, onArchive
     else if (t !== current.title) void write({ title: t });
   };
 
-  const popOut = async () => {
+  /** "📌 Pin out" puts the page on the desktop; "Un-pin" takes it back (its window closes). */
+  const togglePopped = async () => {
     try {
       await ctl.flush();
-      setCurrent(await api.popPage(page.id, true));
+      setCurrent(await api.popPage(page.id, !current.popped));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -155,33 +161,35 @@ export function PageEditor({ api, page, selectTitle = false, onActive, onArchive
   return (
     <div className="page">
       <div className="page-paper" {...(current.color && { 'data-page-color': current.color })}>
-        <input
-          ref={titleInput}
-          className="page-title"
-          type="text"
-          value={title}
-          maxLength={PAGE_TITLE_MAX}
-          aria-label="Page title"
-          onChange={(e) => setTitle(e.target.value)}
-          onFocus={() => {
-            titleFocused.current = true;
-            setFocused(true);
-          }}
-          onBlur={() => {
-            titleFocused.current = false;
-            setFocused(false);
-            commitTitle();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              textArea.current?.focus();
-            } else if (e.key === 'Escape') {
-              e.preventDefault();
-              setTitle(current.title);
-            }
-          }}
-        />
+        {!compact && (
+          <input
+            ref={titleInput}
+            className="page-title"
+            type="text"
+            value={title}
+            maxLength={PAGE_TITLE_MAX}
+            aria-label="Page title"
+            onChange={(e) => setTitle(e.target.value)}
+            onFocus={() => {
+              titleFocused.current = true;
+              setFocused(true);
+            }}
+            onBlur={() => {
+              titleFocused.current = false;
+              setFocused(false);
+              commitTitle();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                textArea.current?.focus();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setTitle(current.title);
+              }
+            }}
+          />
+        )}
         <textarea
           ref={textArea}
           className="page-text"
@@ -218,50 +226,62 @@ export function PageEditor({ api, page, selectTitle = false, onActive, onArchive
             {status}
           </span>
         )}
-        <span className="page-footer-gap" />
-        <button type="button" className="btn btn-ghost" title="Put this page on the desktop as its own sticky" onClick={() => void popOut()}>
-          📌 Pin out
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={() => void archive()}>
-          Archive
-        </button>
-      </div>
-      <div className="page-footer page-footer--small">
-        <span className="page-colors" role="radiogroup" aria-label="Paper colour">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={current.color === null}
-            className="page-color page-color--theme"
-            title="Same as the note"
-            aria-label="Same as the note"
-            onClick={() => void write({ color: null })}
-          />
-          {PAGE_COLORS.map((c) => (
+        {!compact && (
+          <>
+            <span className="page-footer-gap" />
             <button
-              key={c.id}
+              type="button"
+              className="btn btn-ghost"
+              aria-pressed={current.popped}
+              title={current.popped ? 'Take this page off the desktop (it stays in the Pad)' : 'Put this page on the desktop as its own sticky'}
+              onClick={() => void togglePopped()}
+            >
+              {current.popped ? 'Un-pin' : '📌 Pin out'}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => void archive()}>
+              Archive
+            </button>
+          </>
+        )}
+      </div>
+      {!compact && (
+        <div className="page-footer page-footer--small">
+          <span className="page-colors" role="radiogroup" aria-label="Paper colour">
+            <button
               type="button"
               role="radio"
-              aria-checked={current.color === c.id}
-              className="page-color"
-              style={{ background: c.swatch }}
-              title={c.label}
-              aria-label={c.label}
-              onClick={() => void write({ color: c.id })}
+              aria-checked={current.color === null}
+              className="page-color page-color--theme"
+              title="Same as the note"
+              aria-label="Same as the note"
+              onClick={() => void write({ color: null })}
             />
-          ))}
-        </span>
-        <span className="page-footer-gap" />
-        <button
-          type="button"
-          className={`btn btn-ghost page-keep${current.pinned ? ' page-keep--on' : ''}`}
-          aria-pressed={current.pinned}
-          title="Keep this page at the top of the Pad"
-          onClick={() => void write({ pinned: !current.pinned })}
-        >
-          {current.pinned ? '★ Kept at top' : '☆ Keep at top'}
-        </button>
-      </div>
+            {PAGE_COLORS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                role="radio"
+                aria-checked={current.color === c.id}
+                className="page-color"
+                style={{ background: c.swatch }}
+                title={c.label}
+                aria-label={c.label}
+                onClick={() => void write({ color: c.id })}
+              />
+            ))}
+          </span>
+          <span className="page-footer-gap" />
+          <button
+            type="button"
+            className={`btn btn-ghost page-keep${current.pinned ? ' page-keep--on' : ''}`}
+            aria-pressed={current.pinned}
+            title="Keep this page at the top of the Pad"
+            onClick={() => void write({ pinned: !current.pinned })}
+          >
+            {current.pinned ? '★ Kept at top' : '☆ Keep at top'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

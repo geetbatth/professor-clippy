@@ -133,9 +133,14 @@ export class Pages {
     return page.unseen ? this.#update(id, { unseen: false }) : page;
   }
 
-  /** Open the page as its own window (or not). `bounds` replaces the saved window position when given. Not a change to the page: `updatedAt` stays. */
+  /**
+   * Open the page as its own window (or not). `bounds` replaces the saved window position when given.
+   * Not a change to the page: `updatedAt` stays. An archived page is refused (ConflictError), so it
+   * never opens a window.
+   */
   setPopped(id: string, popped: boolean, bounds?: PageBounds): Page {
-    this.get(id);
+    const page = this.get(id);
+    if (popped && page.archivedAt !== null) throw new ConflictError('Restore the page before pinning it out.');
     return this.#update(id, { popped, ...(bounds && { popBounds: bounds }) });
   }
 

@@ -213,6 +213,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     },
     async setSettings(patch) {
       settings = applySettingsPatch(settings, SettingsPatch.parse(patch));
+      emit('settings:changed', { ...settings });
       return { ...settings };
     },
     async connectClaude(step) {
@@ -342,6 +343,7 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
       emit('page:deleted', { id });
     },
     async popPage(id, popped) {
+      if (popped && getPage(id).archivedAt !== null) throw new Error('Restore the page before pinning it out.');
       return setPage(id, { popped });
     },
     pushPage(input) {

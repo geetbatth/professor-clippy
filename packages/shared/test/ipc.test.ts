@@ -49,6 +49,7 @@ describe('IPC channels', () => {
       'message:updated',
       'page:changed',
       'page:deleted',
+      'settings:changed',
       'theme:system',
     ]);
     expectTypeOf<(typeof IpcEvents)[keyof typeof IpcEvents]>().toEqualTypeOf<ClippyEvent>();

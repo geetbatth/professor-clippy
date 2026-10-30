@@ -199,6 +199,7 @@ export const IpcEvents = {
   themeSystem: 'theme:system',
   pageChanged: 'page:changed',
   pageDeleted: 'page:deleted',
+  settingsChanged: 'settings:changed',
 } as const satisfies Record<string, keyof ClippyEventMap>;
 
 /** Event channel name → payload type. */
@@ -214,6 +215,8 @@ export interface ClippyEventMap {
   'page:changed': Page;
   /** A page was deleted for good (sent to every window). */
   'page:deleted': { id: string };
+  /** The settings changed, from any window, the tray or the brain (sent to every window). */
+  'settings:changed': Settings;
 }
 
 /** A push-event channel name. */

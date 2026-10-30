@@ -68,6 +68,25 @@ function primaryDisplay(): DisplayArea {
 
 const miniRect = (p: Point): Rect => ({ x: p.x, y: p.y, ...WINDOW_SIZES.mini });
 
+/** Where a window's renderer comes from (see {@link ClippyWindowOptions}). */
+export type RendererSource = Pick<ClippyWindowOptions, 'rendererUrl' | 'rendererFile' | 'query'>;
+
+/** Load the renderer into `win`: the dev server when not packaged, else the built file, with `query`. */
+export function loadRenderer(win: BrowserWindow, source: RendererSource): void {
+  const devUrl = source.rendererUrl ?? (!app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined);
+  const query = source.query ?? {};
+  if (devUrl) {
+    const url = new URL(devUrl);
+    for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
+    void win.loadURL(url.toString());
+  } else {
+    void win.loadFile(source.rendererFile ?? join(import.meta.dirname, '../renderer/index.html'), { query });
+  }
+}
+
+/** The preload script next to the main bundle. */
+export const defaultPreloadPath = (): string => join(import.meta.dirname, '../preload/index.cjs');
+
 export function createClippyWindow(opts: ClippyWindowOptions): ClippyWindow {
   // Mini Clippy's top-left as the user left it. Window bounds are always clamped from it onto a
   // visible display, but it is only rewritten (and saved) when the user drags him.
@@ -95,7 +114,7 @@ export function createClippyWindow(opts: ClippyWindowOptions): ClippyWindow {
     skipTaskbar: true,
     show: false,
     webPreferences: {
-      preload: opts.preloadPath ?? join(import.meta.dirname, '../preload/index.cjs'),
+      preload: opts.preloadPath ?? defaultPreloadPath(),
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
@@ -220,16 +239,7 @@ export function createClippyWindow(opts: ClippyWindowOptions): ClippyWindow {
     for (const [channel, listener] of listeners) ipcMain.removeListener(channel, listener);
   });
 
-  // ---- load the renderer ----
-  const devUrl = opts.rendererUrl ?? (!app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined);
-  const query = opts.query ?? {};
-  if (devUrl) {
-    const url = new URL(devUrl);
-    for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
-    void win.loadURL(url.toString());
-  } else {
-    void win.loadFile(opts.rendererFile ?? join(import.meta.dirname, '../renderer/index.html'), { query });
-  }
+  loadRenderer(win, opts);
 
   return {
     win,

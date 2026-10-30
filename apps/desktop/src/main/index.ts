@@ -6,7 +6,7 @@
 import { homedir } from 'node:os';
 import { app, BrowserWindow, globalShortcut, nativeTheme, powerMonitor } from 'electron';
 import { appDataDir, settingsPath, type ClippyEvent, type ClippyEventMap, type HotkeyStatus, type Settings } from '@clippy/shared';
-import { createBackend } from './backend';
+import { createBackend, forRenderer } from './backend';
 import { findNode, resolveMcpServerPath } from './brain/mcpConfig';
 import { resolveClaude } from './brain/runner';
 import { createClaudeWiring, resolveWiringPaths } from './claudeWiring';
@@ -15,6 +15,7 @@ import { startServices } from './startup';
 import { createTray, type ClippyTray } from './tray';
 import { createClippyWindow, type ClippyWindow } from './window/createClippyWindow';
 import { registerTellHotkey, type TellHotkey } from './window/hotkey';
+import { createPageWindows, type PageWindows } from './window/pageWindows';
 import { registerIpc, type ClippyIpc } from './window/registerIpc';
 import { forwardSystemTheme } from './window/systemTheme';
 import { WindowChannels } from './window/windowApi';
@@ -110,7 +111,9 @@ async function main(): Promise<void> {
     hideOnFullscreen: () => settings.get().hideOnFullscreen,
   });
   const win = clippy.win;
-  ipc = registerIpc(backend, win);
+  // Pad pages popped out onto the desktop: their windows follow the store (page:changed).
+  const pageWindows: PageWindows = createPageWindows({ pages: core.pages, bus, quitting: () => quitting });
+  ipc = registerIpc(backend, win, { allowSender: (sender) => pageWindows.owns(sender) });
   win.webContents.setAudioMuted(!settings.get().soundEnabled);
   // Closing the window (Alt+F4) only hides Clippy; Quit is in the tray.
   win.on('close', (e) => {
@@ -138,7 +141,10 @@ async function main(): Promise<void> {
   };
   applyTellHotkey(settings.get().tellHotkey);
 
-  // Windows switching light/dark reaches every window (the note now, popped-out pages later) at once.
+  // The pages that were out on the desktop when the app last closed come back where they were.
+  pageWindows.restoreAll();
+
+  // Windows switching light/dark reaches every window (the note and popped-out pages) at once.
   const stopSystemTheme = forwardSystemTheme(nativeTheme, () => BrowserWindow.getAllWindows());
 
   const tray: ClippyTray = createTray({
@@ -151,6 +157,9 @@ async function main(): Promise<void> {
   });
 
   settings.onChange((next, prev) => {
+    // Every window shows the new theme (and the rest) at once, wherever the change came from.
+    // (Never the encrypted Telegram token: `forRenderer` drops it, as for getSettings.)
+    broadcast('settings:changed', forRenderer(next));
     if (next.autoStart !== prev.autoStart) applyLoginItem(next);
     if (next.tellHotkey !== prev.tellHotkey) applyTellHotkey(next.tellHotkey);
     if (next.soundEnabled !== prev.soundEnabled) {
@@ -176,6 +185,7 @@ async function main(): Promise<void> {
     quitting = true;
     tellHotkey?.dispose();
     stopSystemTheme();
+    pageWindows.dispose();
     phoneGate.stop();
     watcher.stop();
     brief.stop();

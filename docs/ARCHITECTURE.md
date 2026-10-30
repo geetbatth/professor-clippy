@@ -272,7 +272,8 @@ and sends it to every `BrowserWindow`. `POST /look` (`Routes.setLook`, body `Loo
 three theme keys, at least one) saves through `ApiDeps.setLook`, which `startServices` backs with
 `SettingsStore.update`; `ClippyClient.setLook` and the brain-only MCP tool `set_look` use it, so
 "go dark" works. The renderer re-reads the settings when the brain finishes a turn
-(`brain:state` idle), since that is when `set_look` may have changed them.
+(`brain:state` idle), since that is when `set_look` may have changed them, and on
+`settings:changed`, which main sends to every window whenever the settings change.
 
 ## Pages (the Pad)
 
@@ -304,7 +305,8 @@ stores. Every change emits `page:changed` (the page) and a delete `page:deleted`
   same way): an exact title in any case (the most recently changed of several), else the only title
   that starts with it; archived pages are not searched. **Search** (`q`) is `LIKE` over title and
   body with `%`, `_` and `\` escaped.
-- **Archive.** `archive` also un-pops the page; `restore` counts as a change (`updatedAt` = now) so
+- **Archive.** `archive` also un-pops the page, and `setPopped(id, true)` on an archived page is
+  refused (`ConflictError`, "Restore the page before pinning it out."), so it never opens a window; `restore` counts as a change (`updatedAt` = now) so
   the page is not archived again at once; `remove` takes only archived pages (IPC only, no route).
   `startStaleArchiver` (`startServices`, at start and every 6 h; `Services.pageArchiver`, stopped on
   quit) archives pages that are not pinned, popped or archived and unchanged for
@@ -314,7 +316,7 @@ Routes: `GET /pages?q=&archived=true|false`, `GET /pages/:id`, `POST /pages` (`N
 /pages/:id` (`PageChangeBody`: title, body or append, colour, pinned, baseUpdatedAt; nothing else),
 `POST /pages/:id/archive` (`{ sender }`), with `ClippyClient` methods of the same names. IPC (as the
 user): `listPages`, `getPage`, `createPage`, `writePage`, `markPageSeen`, `archivePage`,
-`restorePage`, `deletePage`, `popPage(id, popped)` (only `setPopped` so far: no window opens yet).
+`restorePage`, `deletePage`, `popPage(id, popped)` (`setPopped`; the page windows follow, below).
 MCP, for every agent: `write_page` (`title`, `text`, `mode` new / append (default) / replace,
 `page_id`; append and replace write `page_id` or the page the title finds and create one if there
 is none), `read_page` (`page_id` or `title`), `list_pages` (`query`; id, title, first line, author,
@@ -345,6 +347,39 @@ its paper: `theme.css` gives `[data-page-color="<id>"]` the tokens of that light
 classic), so it keeps light paper and ink inside a dark theme. The mock starts with sample pages
 (`samplePages`: Scratch pinned, Call Dave by Clippy not opened yet, an agent's Deploy steps, one
 archived).
+
+**Pages popped out on the desktop** (`main/window/pageWindows.ts`, `createPageWindows` in
+`index.ts`). The windows follow the store: `page:changed` with `popped` and not archived opens one
+(if none is open), anything else (un-popped, archived) or `page:deleted` closes it, so "📌 Pin out"
+(which turns into "Un-pin"), the window's "×" and archiving only change the page. `restoreAll()`
+runs after the Clippy window is made and opens every popped page. Each is a frameless, transparent
+`BrowserWindow`, not always-on-top, `skipTaskbar`, min 180 × 120, loading the renderer with
+`?page=<id>` (`loadRenderer`, shared with `createClippyWindow`). Where it opens: `popBounds` through
+`clampBounds` (`main/window/pageBounds.ts`, pure: displays primary first; a window whose display is
+gone moves onto the primary work area, one less than 80 % visible is pulled in on its own display,
+the size kept unless bigger than the work area), else `defaultPageBounds(index, workArea)`
+(260 × 220, cascading 24 px down and left from the top-right). `move` / `resize` save `popBounds`
+(`setPopped(id, true, bounds)`) 500 ms after the last one. Closing a window any other way (Alt+F4)
+un-pops it like "×"; while the app quits (`before-quit`) or Windows ends the session
+(`session-end`), windows close but stay popped. Windows gives a transparent window no resizable
+border, so the renderer's corner grip sends `pageWindow:resizeStart/Move/End` and main follows the
+cursor; "—" sends `pageWindow:collapse` and main shrinks the window to the 30 px header (Windows
+keeps it at its smallest, 39 px; the rest is see-through), saving the full height meanwhile. Those
+channels act only for the page window that sent them (`window.clippyPageWindow` in the preload).
+`registerIpc(backend, win, { allowSender })` accepts backend calls from the Clippy window and from
+any page window (`pageWindows.owns`, a `WeakSet` of their web contents, so the last save on
+`beforeunload` still lands while one closes); any other sender is refused. `page:changed`,
+`page:deleted`, `theme:system` and `settings:changed` (every settings change, without the
+encrypted Telegram token) go to every window; the rest only to the Clippy window.
+
+The renderer picks the view in `main.tsx`: `?page=<id>` is `views/PageWindow.tsx`, a sticky in the
+page's colour (or the theme's paper) with a drag header (`-webkit-app-region: drag`: title, "—",
+"×") over `PageEditor` with `compact` (no title field, only the save state below the text; colour,
+keep at top and archive stay in the Pad), the same save controller, kept mounted while collapsed.
+It runs `useSettings` + `useTheme` like `App`, and `useSettings` also listens to `settings:changed`,
+so a theme picked in the note reaches every page at once. In the browser preview
+`?mock=1&page=Scratch` shows one (the mock's sample ids change every load, so there `page` may be
+a title).
 
 ## Storage
 

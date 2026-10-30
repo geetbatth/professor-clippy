@@ -52,7 +52,11 @@ that have waited less than an hour are sent; older ones stay on the desk.
   lined paper, in the note's colours or its own. If someone changed it meanwhile you get "Changed
   while you were typing" with Keep mine / Use theirs (leave without choosing and your text is kept
   as a "(your version)" copy). Archived pages sit under "Archived" at the bottom, to restore or
-  delete for good.
+  delete for good. **📌 Pin out** puts a page on the desktop as its own small sticky, in its
+  colour: drag it by its title, resize it by the corner, "—" folds it to just the title and "×"
+  puts it back in the Pad (the page stays, so there is nothing to clean up; "Un-pin" in the Pad
+  does the same). Pinned-out pages come back where you left them after a restart, moved onto your
+  screen if that monitor is gone, and they follow the theme.
 - **Colour themes**: the note can be classic yellow, mint, blush, sky or peach, or one of two dark
   ones, night and chalkboard (Clippy gets a soft rim light on those). "Follow Windows dark mode"
   switches to your chosen dark theme while Windows is dark and back again, within a second and
@@ -297,7 +301,8 @@ npm run dev:renderer -w apps/desktop   # the UI alone in a browser, on a mock ba
 ```
 
 In the browser preview, add `?mock=1` for the mock backend, `&firstrun=1` for the wizard,
-`?mode=expanded&tab=chat` (or `tab=pad`) and so on for a given view, and `?gallery=1` for the
+`?mode=expanded&tab=chat` (or `tab=pad`) and so on for a given view, `?page=Scratch` for a
+pinned-out page's window, and `?gallery=1` for the
 character sheet (`&align=pairs` overlays each pose on idle, for tuning the pose table in
 `apps/desktop/src/renderer/src/clippy/poses.ts`). To retake the README screenshots, build, then run
 `node apps/desktop/scripts/launch-electron.mjs apps/desktop/scripts/capture-gallery.mjs docs/screenshots apps/desktop/scripts/docs-shots.json`.
