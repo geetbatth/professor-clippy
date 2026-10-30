@@ -44,12 +44,28 @@ export const RelaySendResponse = z.object({
 });
 export type RelaySendResponse = z.infer<typeof RelaySendResponse>;
 
+/** True if `tz` is an IANA time zone this runtime knows (e.g. `America/Los_Angeles`). */
+export function isValidTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** `PUT /reminders/:id` body. */
 export const RelayReminderPut = z.object({
   body: z.string().min(1),
   dueAt: Timestamp,
   /** RFC 5545 RRULE for recurring reminders. */
   rrule: z.string().min(1).optional(),
+  /**
+   * IANA time zone the RRULE is evaluated in (the PC's local zone). The rule runs on
+   * floating local wall time anchored at `dueAt`'s wall time, so "09:00" stays 09:00
+   * local across DST. Omitted: UTC.
+   */
+  tz: z.string().min(1).refine(isValidTimeZone, 'Unknown IANA time zone').optional(),
 });
 export type RelayReminderPut = z.infer<typeof RelayReminderPut>;
 
@@ -70,10 +86,12 @@ export type RelayInbound = z.infer<typeof RelayInbound>;
 export const RelayReminderFired = z.object({
   type: z.literal('reminder-fired'),
   /**
-   * Reminder id (ack this). The Worker keeps at most one undelivered
-   * `reminder-fired` per reminder (the latest firing), so the id is unambiguous.
+   * Delivery id (ack this): `<reminderId>:<firedAt>`, unique per firing, so a late ack
+   * can never delete a newer firing. Every firing is kept until acked.
    */
   id: z.string(),
+  /** The reminder's id (same ULID as the desktop Reminder and `PUT /reminders/:id`). */
+  reminderId: z.string(),
   firedAt: Timestamp,
   /** WhatsApp message id of the reminder notification, if sent. */
   waId: z.string().optional(),

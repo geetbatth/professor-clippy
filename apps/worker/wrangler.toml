@@ -1,5 +1,5 @@
-# Professor Clippy WhatsApp relay. Secrets (Meta token, app secret, worker secret, ...)
-# are set with `wrangler secret put` by the relay task; none live in this file.
+# Professor Clippy WhatsApp relay. Secrets (META_TOKEN, APP_SECRET, VERIFY_TOKEN, PC_SECRET,
+# PHONE_NUMBER_ID, MY_NUMBER) are set with `wrangler secret put` (see README.md); none live here.
 name = "professor-clippy-relay"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
