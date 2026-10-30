@@ -14,6 +14,8 @@ import type { SecretBox } from '../../src/main/settings';
 import type { TgUpdate } from '../../src/main/telegram/api';
 
 export interface Call {
+  /** The bot token the call used. */
+  token: string;
   method: string;
   params: Record<string, unknown>;
   at: number;
@@ -35,6 +37,9 @@ export class FakeTelegram {
   #nextMessageId = 1;
   #waiting = new Set<{ offset: number; res: ServerResponse }>();
   #failures = new Map<string, Failure[]>();
+  #delays = new Map<string, number[]>();
+  /** Other bot tokens this server answers for (a second bot). */
+  readonly #tokens = new Set<string>();
   #me = { id: 7000001, is_bot: true, first_name: 'Professor Clippy', username: 'ProfessorClippyBot' };
 
   private constructor(token: string) {
@@ -118,6 +123,18 @@ export class FakeTelegram {
     this.#failures.set(method, list);
   }
 
+  /** Also answer for this bot token (a second bot). */
+  addToken(token: string): void {
+    this.#tokens.add(token);
+  }
+
+  /** The next call of `method` is answered only after `ms` (a send still in flight). */
+  delayNext(method: string, ms: number): void {
+    const list = this.#delays.get(method) ?? [];
+    list.push(ms);
+    this.#delays.set(method, list);
+  }
+
   /** Number of long-polls currently held open. */
   get waitingPolls(): number {
     return this.#waiting.size;
@@ -134,11 +151,13 @@ export class FakeTelegram {
       for await (const chunk of req) chunks.push(chunk as Buffer);
       if (chunks.length) params = { ...params, ...(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>) };
     }
-    if (token !== this.token) {
+    if (token !== this.token && !this.#tokens.has(token)) {
       this.wrongToken.push(method);
       return this.#reply(res, 401, { ok: false, error_code: 401, description: 'Unauthorized' });
     }
-    this.calls.push({ method, params, at: Date.now() });
+    this.calls.push({ token, method, params, at: Date.now() });
+    const delay = this.#delays.get(method)?.shift();
+    if (delay) await new Promise((r) => setTimeout(r, delay));
     const failure = this.#failures.get(method)?.shift();
     if (failure) return this.#reply(res, failure.status, failure.body);
 

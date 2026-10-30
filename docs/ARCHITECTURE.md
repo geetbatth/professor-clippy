@@ -43,10 +43,14 @@ Telegram's parts:
   a start or an error has `timeout=0`, so the status is known at once), inbound handling (pairing,
   chat-id filter, commands, button taps, reply-to answers, brain turns with "typing…"), and the
   serial send queue (retries 1 s, 5 s, 30 s, 2 min; a 429 waits `retry_after`).
-- `index.ts`: `TelegramManager` starts, restarts and stops it as the token changes (pairing
-  doesn't restart it: the chat id is read live), owns the pairing code (kv
-  `telegramPairingCode`), and backs the `telegramStatus` / `setTelegramToken` / `telegramUnpair`
-  / `telegramSendTest` IPC methods.
+- `index.ts`: `TelegramManager` starts the channel when a token appears, retargets it when the
+  (decrypted) token changes (the poll restarts with the new bot; queued sends go out with it),
+  and stops it when the token is cleared. Pairing doesn't restart it: the chat id is read live.
+  It owns the pairing code (kv `telegramPairingCode`), forgets every `tgMsgId` when the bot or
+  chat changes (kv `telegramRoute` = `<bot id>:<chat id>`), and backs the `telegramStatus` /
+  `setTelegramToken` / `telegramUnpair` / `telegramSendTest` IPC methods.
+- Every part of a message (title, sender, project, answer) is capped, and a last check
+  (`ensureFits`) runs on every send, so nothing is ever refused for being over 4096 characters.
 
 The token is encrypted at rest by `SettingsStore` through a `SecretBox` (Electron `safeStorage`
 in the app, `src/main/secrets.ts`); a plaintext `telegramBotToken` in `settings.json` is
@@ -58,6 +62,16 @@ the app was off before any channel exists, so `startServices` collects the messa
 during `startCore` and hands them to Telegram once it is subscribed, in the same synchronous
 block that subscribes the relay. `test/startup.test.ts` checks both channels see an agent's
 first note and Telegram sends the catch-up.
+
+## Away-only notes
+
+`NewMessageInput.quietIfActive` (the hook sets it on its Stop "agent finished" notes, never on
+permission requests) means "only interrupt if the user is away". `POST /messages` asks
+`isUserActive()` (from `startServices`: `powerMonitor.getSystemIdleTime()` under the
+`awayThresholdS` setting, default 180 s). Active: the note is stored as `done` straight away (in
+History, `quietIfActive: true`); the renderer only reacts to unread notes and both phone channels
+skip notes already done, so there is no pop-up, sound, quip, badge or mirror. Away: a normal
+unread note. Without an idle source every note interrupts.
 
 ## Storage
 

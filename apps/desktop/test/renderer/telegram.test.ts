@@ -18,7 +18,7 @@ describe('Telegram panel helpers', () => {
 
   it('parses a typed chat id', () => {
     expect(parseChatId(' 123456789 ')).toBe(123456789);
-    expect(parseChatId('-1001234567890')).toBe(-1001234567890);
+    expect(parseChatId('-1001234567890')).toBeUndefined(); // a group or channel: private chats only
     expect(parseChatId('12a')).toBeUndefined();
     expect(parseChatId('0')).toBeUndefined();
     expect(parseChatId('')).toBeUndefined();

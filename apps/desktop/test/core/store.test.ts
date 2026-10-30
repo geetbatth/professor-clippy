@@ -257,12 +257,12 @@ describe('Store on disk', () => {
   it('migrates once and persists data and the FTS index across reopen', () => {
     const path = join(dir, 'clippy.db');
     const first = new Store({ path });
-    expect(first.schemaVersion).toBe(3);
+    expect(first.schemaVersion).toBe(4);
     const m = first.createMessage({ kind: 'note', body: 'persist me please', sender: 's' });
     first.close();
 
     const second = new Store({ path });
-    expect(second.schemaVersion).toBe(3);
+    expect(second.schemaVersion).toBe(4);
     expect(second.getMessage(m.id)).toEqual(m);
     expect(second.listMessages({ q: 'persist' }).map((x) => x.id)).toEqual([m.id]);
     second.close();
@@ -284,7 +284,7 @@ describe('Store on disk', () => {
       PRAGMA user_version = 1;`);
     v1.close();
     const store = new Store({ path });
-    expect(store.schemaVersion).toBe(3);
+    expect(store.schemaVersion).toBe(4);
     expect(store.getMessage('01ARZ3NDEKTSV4RRFFQ69G5FAV')?.body).toBe('old');
     store.createMessage({ kind: 'reminder', body: 'new', sender: 's', reminderId: 'R' });
     expect(store.findLatestReminderMessage('R')?.body).toBe('new');
@@ -301,6 +301,18 @@ describe('Store on disk', () => {
     expect(store.updateMessage(old.id, { tgMsgId: 8 })?.tgMsgId).toBe(8);
     expect(store.updateMessage(old.id, { tgMsgId: null })).not.toHaveProperty('tgMsgId');
     expect(store.findMessageByTgMsgId(8)).toBeUndefined();
+    store.updateMessage(old.id, { tgMsgId: 9 });
+    expect(store.clearTgMsgIds()).toBe(2);
+    expect(store.findMessageByTgMsgId(7)).toBeUndefined();
+    expect(store.getMessage(m.id)).not.toHaveProperty('tgMsgId');
+    store.close();
+  });
+
+  it('stores away-only notes (version 4)', () => {
+    const store = new Store({ path: join(dir, 'quiet.db') });
+    const quiet = store.createMessage({ kind: 'note', body: 'agent finished', sender: 'claude-code', quietIfActive: true, state: 'done' });
+    expect(quiet).toMatchObject({ quietIfActive: true, state: 'done' });
+    expect(store.createMessage({ kind: 'note', body: 'normal', sender: 's' })).not.toHaveProperty('quietIfActive');
     store.close();
   });
 });

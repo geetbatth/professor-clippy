@@ -71,7 +71,7 @@ describe('Stop', () => {
     ]);
     expect(await runHook(stop({ transcript_path: path }))).toBe('posted');
     expect(posted).toEqual([
-      { body: '✅ payments agent finished\nWant me to open a PR?', sender: 'claude-code', project: 'payments' },
+      { body: '✅ payments agent finished\nWant me to open a PR?', sender: 'claude-code', project: 'payments', quietIfActive: true },
     ]);
   });
 
@@ -124,12 +124,14 @@ describe('Notification', () => {
     });
     expect(await runHook(raw)).toBe('posted');
     expect(await runHook(raw)).toBe('posted'); // no dedupe for notifications
+    // Permission prompts always interrupt: no quietIfActive (only Stop notes are away-only).
     expect(posted[0]).toEqual({
       body: '🔐 clippy: Claude needs your permission to use Bash',
       sender: 'claude-code',
       project: 'clippy',
       urgent: true,
     });
+    expect(posted[0]).not.toHaveProperty('quietIfActive');
     expect(posted).toHaveLength(2);
   });
 

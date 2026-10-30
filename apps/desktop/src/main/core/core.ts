@@ -26,6 +26,8 @@ export interface StartCoreOptions {
    * which run inside `startCore`. Default: a new Bus.
    */
   bus?: Bus;
+  /** Is the user at the PC now? Decides away-only notes (see `ApiDeps.isUserActive`). */
+  isUserActive?: () => boolean;
 }
 
 export interface Core {
@@ -58,7 +60,15 @@ export async function startCore(options: StartCoreOptions = {}): Promise<Core> {
   let api: ApiServer;
   try {
     scheduler.start();
-    api = await startApi({ store, scheduler, asks, token, version: options.version ?? 'dev', portFile: file(portPath) });
+    api = await startApi({
+      store,
+      scheduler,
+      asks,
+      token,
+      version: options.version ?? 'dev',
+      portFile: file(portPath),
+      ...(options.isUserActive && { isUserActive: options.isUserActive }),
+    });
   } catch (err) {
     scheduler.stop();
     store.close();

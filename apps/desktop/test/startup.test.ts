@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { RelaySendRequest } from '@clippy/shared';
+import type { Message, RelaySendRequest } from '@clippy/shared';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startCore, type Core } from '../src/main/core/core';
 import type { RelayTransport } from '../src/main/relay/relayClient';
@@ -99,6 +99,83 @@ describe('startServices', () => {
       await fake.close();
       guard.restore();
     }
+  });
+
+  it('files away-only notes quietly while the user is at the PC, and treats them as normal once away', async () => {
+    const guard = guardFetch();
+    const fake = await FakeTelegram.start();
+    const relaySends: RelaySendRequest[] = [];
+    const transport: RelayTransport = {
+      start() {},
+      stop() {},
+      reconnect() {},
+      async send(request) {
+        relaySends.push(request);
+        return { waId: `wamid.${relaySends.length}`, mode: 'freeform' };
+      },
+      async putReminder() {},
+      async deleteReminder() {},
+    };
+    let idle = 5; // seconds since the last input: at the PC
+    try {
+      writeFileSync(
+        join(dir, 'settings.json'),
+        JSON.stringify({ telegramBotToken: fake.token, telegramChatId: 4242, workerUrl: 'https://relay.example.workers.dev', workerSecret: 's', awayThresholdS: 180 }),
+      );
+      services = await startServices({
+        dataDir: dir,
+        settingsFile: join(dir, 'settings.json'),
+        brain: { emit: () => {} },
+        secrets: fakeSecrets,
+        telegram: { baseUrl: fake.baseUrl, log: () => {} },
+        makeTransport: () => transport,
+        relayLog: () => {},
+        idleSeconds: () => idle,
+      });
+      const { port, token } = services.core;
+      const post = async (input: object) => {
+        const res = await fetch(`http://127.0.0.1:${port}/messages`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ sender: 'claude-code', project: 'shop', ...input }),
+        });
+        return (await res.json()) as Message;
+      };
+
+      const quiet = await post({ body: '✅ shop agent finished', quietIfActive: true });
+      expect(quiet).toMatchObject({ state: 'done', quietIfActive: true });
+      expect(quiet.doneAt).toBeDefined(); // in History
+      const normal = await post({ body: 'a normal note' }); // without the flag: as always
+      expect(normal.state).toBe('unread');
+
+      idle = 600; // away for 10 minutes
+      const away = await post({ body: '✅ shop agent finished, again', quietIfActive: true });
+      expect(away).toMatchObject({ state: 'unread', quietIfActive: true });
+
+      await waitFor(() => fake.sentTexts.length === 2 && relaySends.length === 2, 3000, 'the mirrors');
+      await new Promise((r) => setTimeout(r, 50));
+      expect(fake.sentTexts.map((t) => t.split('\n')[0])).toEqual(['📝 a normal note', '📝 ✅ shop agent finished, again']);
+      expect(relaySends.map((s) => s.text.split('\n')[0])).toEqual(['📝 a normal note', '📝 ✅ shop agent finished, again']);
+      expect(services.core.store.listMessages({ state: 'unread' }).map((m) => m.id).sort()).toEqual([normal.id, away.id].sort());
+
+      // The threshold is read live from settings.
+      await services.settings.update({ awayThresholdS: 3600 });
+      expect((await post({ body: 'quiet again', quietIfActive: true })).state).toBe('done');
+    } finally {
+      await services?.telegram.stop();
+      await fake.close();
+      guard.restore();
+    }
+  });
+
+  it('without an idle source, away-only notes interrupt like any other', async () => {
+    services = await startServices({ dataDir: dir, settingsFile: join(dir, 'settings.json'), brain: { emit: () => {} } });
+    const res = await fetch(`http://127.0.0.1:${services.core.port}/messages`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${services.core.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ body: 'done', sender: 'claude-code', quietIfActive: true }),
+    });
+    expect(((await res.json()) as Message).state).toBe('unread');
   });
 
   it('wires settings changes to the relay and writes the brain files first', async () => {

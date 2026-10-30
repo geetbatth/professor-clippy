@@ -88,7 +88,7 @@ export function TelegramSetup({
     run(async () => {
       const id = parseChatId(chatId);
       if (id === undefined) {
-        setError('A chat id is a number, like 123456789.');
+        setError('Your chat id is a positive number, like 123456789 (group and channel ids can’t be paired).');
         return;
       }
       if (await update({ telegramChatId: id, telegramChatName: null })) setChatId('');

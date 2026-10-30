@@ -51,3 +51,13 @@ describe('unread stack', () => {
     expect(isArrival([], msg({ kind: 'chat' }))).toBe(false);
   });
 });
+
+describe('away-only notes', () => {
+  it('a note filed quietly (done on arrival) is no arrival: no pop-up, sound, quip or badge; one arriving unread is', () => {
+    const quiet = msg({ quietIfActive: true, state: 'done', doneAt: 1 });
+    expect(isArrival([], quiet)).toBe(false);
+    expect(applyToStack([], quiet)).toEqual([]);
+    const away = msg({ quietIfActive: true });
+    expect(isArrival([], away)).toBe(true);
+  });
+});

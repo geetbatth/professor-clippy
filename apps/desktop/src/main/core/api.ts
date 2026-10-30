@@ -45,6 +45,11 @@ export interface ApiDeps {
   token: string;
   /** Reported by `GET /health`. */
   version: string;
+  /**
+   * Is the user at the PC right now (input within the away threshold)? Decides where an
+   * away-only note (`quietIfActive`) goes. Absent: treated as away (every note interrupts).
+   */
+  isUserActive?: () => boolean;
 }
 
 export interface StartApiOptions extends ApiDeps {
@@ -84,7 +89,17 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
   // Order matters: `/asks/pending` must match before `/asks/:id`.
   const routes = compileRoutes([
     [Routes.health, (): Reply => ok({ ok: true, version: deps.version } satisfies Health)],
-    [Routes.postMessage, async ({ req }) => created(store.createMessage({ kind: 'note', ...(await body(req, NewMessageInput)) }))],
+    [
+      Routes.postMessage,
+      async ({ req }) => {
+        const input = await body(req, NewMessageInput);
+        // An away-only note while the user is at the PC goes straight into history: no pop-up,
+        // sound or badge (the renderer only reacts to unread notes), and no phone mirror (the
+        // relay and Telegram skip notes that are already done).
+        const quiet = input.quietIfActive === true && (deps.isUserActive?.() ?? false);
+        return created(store.createMessage({ kind: 'note', ...input, ...(quiet && { state: 'done' }) }));
+      },
+    ],
     [Routes.listMessages, ({ url }) => ok(store.listMessages(parse(MessageFilter, query(url, ['state', 'kind', 'q']))))],
     [Routes.markDone, ({ id }) => ok(found(store.markDone(id), 'message', id))],
     [Routes.snooze, async ({ req, id }) => ok(found(store.snooze(id, (await body(req, SnoozeBody)).until), 'message', id))],

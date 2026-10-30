@@ -24,10 +24,13 @@ export function telegramStatusLine(status: TelegramStatus): string {
   }
 }
 
-/** A typed-in chat id, or undefined if it isn't one. */
+/**
+ * A typed-in chat id, or undefined if it isn't one. Private chats only: a private chat's id is
+ * the user's id, always positive (groups and channels have negative ids).
+ */
 export function parseChatId(text: string): number | undefined {
   const t = text.trim();
-  if (!/^-?\d{1,16}$/.test(t)) return undefined;
+  if (!/^\d{1,16}$/.test(t)) return undefined;
   const n = Number(t);
-  return Number.isSafeInteger(n) && n !== 0 ? n : undefined;
+  return Number.isSafeInteger(n) && n > 0 ? n : undefined;
 }

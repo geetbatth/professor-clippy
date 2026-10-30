@@ -19,6 +19,12 @@ export type WindowPos = z.infer<typeof WindowPos>;
 const fields = {
   /** The Claude Code hook posts notes when an agent finishes / needs permission. */
   hookEnabled: z.boolean(),
+  /**
+   * The hook's agent-finished notes (`quietIfActive`) only interrupt you once the PC has had no
+   * keyboard or mouse input for this many seconds; before that they go straight to history.
+   * 0 = always interrupt.
+   */
+  awayThresholdS: z.number().int().nonnegative().max(24 * 60 * 60),
   soundEnabled: z.boolean(),
   /** Clippy may volunteer advice without being asked. */
   unsolicitedAdvice: z.boolean(),
@@ -40,12 +46,19 @@ const fields = {
    */
   telegramBotTokenEnc: z.string().min(1),
   /**
-   * The one private Telegram chat Clippy talks to (your user id). Updates from any other chat
-   * are ignored. A numeric string (hand-edited settings.json) is accepted too.
+   * The one private Telegram chat Clippy talks to (your user id, always positive: group and
+   * channel ids are negative and refused). Updates from any other chat are ignored. A numeric
+   * string (hand-edited settings.json) is accepted too.
    */
   telegramChatId: z
     .union([z.number(), z.string().regex(/^-?\d+$/).transform(Number)])
-    .pipe(z.number().int().refine(Number.isSafeInteger, 'Not a Telegram chat id')),
+    .pipe(
+      z
+        .number()
+        .int()
+        .positive('Only a private chat (a positive id) can be paired')
+        .refine(Number.isSafeInteger, 'Not a Telegram chat id'),
+    ),
   /** First name of the paired Telegram user (shown in Settings). */
   telegramChatName: z.string().min(1),
   /** The first-run wizard has been finished or skipped. */
@@ -55,6 +68,7 @@ const fields = {
 /** Full settings object with defaults applied. */
 export const Settings = z.object({
   hookEnabled: fields.hookEnabled.default(true),
+  awayThresholdS: fields.awayThresholdS.default(180),
   soundEnabled: fields.soundEnabled.default(true),
   unsolicitedAdvice: fields.unsolicitedAdvice.default(true),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.default(600),
@@ -81,6 +95,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze(Settings.parse({}));
  */
 export const SettingsPatch = z.object({
   hookEnabled: fields.hookEnabled.optional(),
+  awayThresholdS: fields.awayThresholdS.optional(),
   soundEnabled: fields.soundEnabled.optional(),
   unsolicitedAdvice: fields.unsolicitedAdvice.optional(),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.optional(),

@@ -30,6 +30,8 @@ export interface NewMessageRecord {
   options?: string[];
   role?: ChatRole;
   missed?: boolean;
+  /** Posted as away-only (see `NewMessageInput.quietIfActive`). */
+  quietIfActive?: boolean;
   waId?: string;
   /** Telegram message id of the copy in the paired chat. */
   tgMsgId?: number;
@@ -139,6 +141,10 @@ const MIGRATIONS: readonly string[] = [
   ALTER TABLE messages ADD COLUMN tg_msg_id INTEGER;
   CREATE INDEX messages_tg_msg_id ON messages (tg_msg_id) WHERE tg_msg_id IS NOT NULL;
   `,
+  // 4: away-only notes (the hook's agent-finished pings).
+  `
+  ALTER TABLE messages ADD COLUMN quiet_if_active INTEGER;
+  `,
 ];
 
 type Row = Record<string, SQLOutputValue>;
@@ -208,8 +214,8 @@ export class Store {
     const state = record.state ?? 'unread';
     this.#db
       .prepare(
-        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, done_at, wa_id, tg_msg_id, options, role, missed, reminder_id)
-         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, $state, $createdAt, $doneAt, $waId, $tgMsgId, $options, $role, $missed, $reminderId)`,
+        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, done_at, wa_id, tg_msg_id, options, role, missed, reminder_id, quiet_if_active)
+         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, $state, $createdAt, $doneAt, $waId, $tgMsgId, $options, $role, $missed, $reminderId, $quietIfActive)`,
       )
       .run({
         id,
@@ -227,6 +233,7 @@ export class Store {
         options: record.options ? JSON.stringify(record.options) : null,
         role: record.role ?? null,
         missed: record.missed === undefined ? null : record.missed ? 1 : 0,
+        quietIfActive: record.quietIfActive ? 1 : null,
         reminderId: record.reminderId ?? null,
       });
     const message = this.getMessage(id)!;
@@ -251,6 +258,15 @@ export class Store {
       .prepare('SELECT * FROM messages WHERE tg_msg_id = ? ORDER BY created_at DESC, seq DESC LIMIT 1')
       .get(tgMsgId);
     return row && toMessage(row);
+  }
+
+  /**
+   * Forget every Telegram message id (they belong to one bot and one chat). Called when the
+   * bot or the paired chat changes, so an old id can never match or edit anything there.
+   * Returns how many were cleared. Emits no events.
+   */
+  clearTgMsgIds(): number {
+    return Number(this.#db.prepare('UPDATE messages SET tg_msg_id = NULL WHERE tg_msg_id IS NOT NULL').run().changes);
   }
 
   /** The most recent message fired for reminder `reminderId` (see {@link NewMessageRecord.reminderId}). */
@@ -494,6 +510,7 @@ function toMessage(row: Row): Message {
   if (row.answered_via !== null) message.answeredVia = String(row.answered_via) as AnsweredVia;
   if (row.role !== null) message.role = String(row.role) as ChatRole;
   if (row.missed !== null) message.missed = row.missed === 1;
+  if (row.quiet_if_active === 1) message.quietIfActive = true;
   return message;
 }
 

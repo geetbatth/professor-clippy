@@ -90,6 +90,13 @@ describe('NewMessageInput', () => {
     expect(NewMessageInput.safeParse({ body: '', sender: 'a' }).success).toBe(false);
     expect(NewMessageInput.safeParse({ body: 'hi' }).success).toBe(false);
   });
+
+  it('takes an optional quietIfActive (away-only), also on the stored Message', () => {
+    expect(NewMessageInput.parse({ body: 'hi', sender: 'a', quietIfActive: true })).toEqual({ body: 'hi', sender: 'a', quietIfActive: true });
+    expect(NewMessageInput.safeParse({ body: 'hi', sender: 'a', quietIfActive: 'yes' }).success).toBe(false);
+    expect(Message.parse({ ...note, quietIfActive: true }).quietIfActive).toBe(true);
+    expect(Message.parse(note)).not.toHaveProperty('quietIfActive');
+  });
 });
 
 describe('NewReminderInput', () => {

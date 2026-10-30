@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { ClippyWindowApi, TelegramStatus } from '@clippy/shared/ipc';
 import type { Settings } from '@clippy/shared/settings';
 import type { SettingsState } from '../hooks/useSettings';
 import { ASK_WAIT_MAX_MINUTES, ASK_WAIT_MIN_MINUTES, askWaitMinutes, parseAskWait } from './askWait';
+import { AWAY_MAX_MINUTES, awayMinutes, parseAwayMinutes } from './awayThreshold';
 import { ConnectClaude } from './ConnectClaude';
 import { relayBadge, relayPatch } from './firstRun';
 import { TelegramBadge, TelegramSetup } from './TelegramSetup';
@@ -28,6 +29,8 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
   const [askWait, setAskWait] = useState('');
   const [askWaitError, setAskWaitError] = useState(false);
   const [telegram, setTelegram] = useState<TelegramStatus>();
+  const [away, setAway] = useState('');
+  const [awayError, setAwayError] = useState(false);
 
   useEffect(() => {
     setWorkerUrl(settings?.workerUrl ?? '');
@@ -35,6 +38,9 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
   useEffect(() => {
     if (settings) setAskWait(askWaitMinutes(settings.askTimeoutDefaultS));
   }, [settings?.askTimeoutDefaultS]);
+  useEffect(() => {
+    if (settings) setAway(awayMinutes(settings.awayThresholdS));
+  }, [settings?.awayThresholdS]);
 
   if (!settings) return <p className="settings-loading">Fetching my notes…</p>;
 
@@ -48,6 +54,18 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
     setAskWaitError(false);
     setAskWait(askWaitMinutes(seconds));
     if (seconds !== settings.askTimeoutDefaultS) void update({ askTimeoutDefaultS: seconds });
+  };
+
+  /** Save the away threshold on blur / Enter, only if it's valid and changed. */
+  const commitAway = () => {
+    const seconds = parseAwayMinutes(away);
+    if (seconds === undefined) {
+      setAwayError(true);
+      return;
+    }
+    setAwayError(false);
+    setAway(awayMinutes(seconds));
+    if (seconds !== settings.awayThresholdS) void update({ awayThresholdS: seconds });
   };
 
   const relaySaved = relayBadge(settings) === 'saved';
@@ -70,18 +88,52 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
   return (
     <div className="settings">
       {TOGGLES.map(({ key, label, hint }) => (
-        <label key={key} className="setting">
-          <span className="setting-text">
-            <span className="setting-label">{label}</span>
-            <span className="setting-hint">{hint}</span>
-          </span>
-          <input
-            type="checkbox"
-            className="switch"
-            checked={settings[key]}
-            onChange={(e) => void update({ [key]: e.target.checked })}
-          />
-        </label>
+        <Fragment key={key}>
+          <label className="setting">
+            <span className="setting-text">
+              <span className="setting-label">{label}</span>
+              <span className="setting-hint">{hint}</span>
+            </span>
+            <input
+              type="checkbox"
+              className="switch"
+              checked={settings[key]}
+              onChange={(e) => void update({ [key]: e.target.checked })}
+            />
+          </label>
+          {key === 'hookEnabled' && (
+            <>
+              <label className={`setting setting--sub${settings.hookEnabled ? '' : ' setting--off'}`}>
+                <span className="setting-text">
+                  <span className="setting-label">Agent-finished pings: only when I've been away for</span>
+                  <span className="setting-hint">At the PC, they go quietly into History. 0 = always. Permission requests always come through.</span>
+                </span>
+                <span className="setting-number">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    className={`field-input${awayError ? ' field-input--bad' : ''}`}
+                    value={away}
+                    disabled={!settings.hookEnabled}
+                    aria-label="Minutes away before agent-finished pings"
+                    aria-invalid={awayError}
+                    onChange={(e) => {
+                      setAway(e.target.value);
+                      setAwayError(false);
+                    }}
+                    onBlur={commitAway}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitAway();
+                      if (e.key === 'Escape') setAway(awayMinutes(settings.awayThresholdS));
+                    }}
+                  />
+                  min
+                </span>
+              </label>
+              {awayError && <p className="card-error">Whole minutes from 0 to {AWAY_MAX_MINUTES}, please.</p>}
+            </>
+          )}
+        </Fragment>
       ))}
 
       <label className="setting">

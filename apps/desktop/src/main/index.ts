@@ -65,8 +65,11 @@ async function main(): Promise<void> {
     mcp: mcpServerPath ? { serverPath: mcpServerPath, dataDir, nodePath: findNode(), execPath: process.execPath } : undefined,
     brain: { emit, cwd: homedir() },
     secrets: electronSecretBox,
-    // A fake Bot API for trying Telegram out without the real one (default api.telegram.org).
-    ...(process.env.CLIPPY_TELEGRAM_API && { telegram: { baseUrl: process.env.CLIPPY_TELEGRAM_API } }),
+    // Away-only notes (the hook's "agent finished") stay quiet while the user is at the PC.
+    idleSeconds: () => powerMonitor.getSystemIdleTime(),
+    // A fake Bot API for trying Telegram out without the real one: dev (unpackaged) builds only.
+    // The installed app always talks to https://api.telegram.org, whatever the environment says.
+    ...(!app.isPackaged && process.env.CLIPPY_TELEGRAM_API && { telegram: { baseUrl: process.env.CLIPPY_TELEGRAM_API } }),
   });
 
   const claudeWiring = createClaudeWiring({

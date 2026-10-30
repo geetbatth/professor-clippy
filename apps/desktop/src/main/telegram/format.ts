@@ -21,6 +21,14 @@ export const MISSED_NOTE = '(missed while your PC was off)';
 export const MAX_BUTTONS = 10;
 /** A long chat reply goes out as at most this many messages. */
 export const MAX_REPLY_PARTS = 4;
+/**
+ * Caps (escaped characters) for every part around the body, so that however long an agent's
+ * title, sender, project or answer is, they leave room for the body and the whole message
+ * fits in {@link TG_MAX}.
+ */
+export const TITLE_MAX = 512;
+export const NAME_MAX = 120;
+export const ANSWER_MAX = 1000;
 
 /** Escape text for Telegram's HTML parse mode (`&`, `<`, `>`; `"` too, harmlessly). */
 export function escapeHtml(text: string): string {
@@ -46,17 +54,46 @@ export function cutToEscaped(text: string, budget: number): string {
   return text.slice(0, end);
 }
 
-/** `head` + escaped `body` + `tail`, with `body` cut (ending {@link TG_MORE}) to fit in `max`. */
+/** `text` escaped, cut (ending "…") so that the escaped form is at most `budget` characters. */
+export function escapeClipped(text: string, budget: number): string {
+  const escaped = escapeHtml(text);
+  if (escaped.length <= budget) return escaped;
+  return `${escapeHtml(cutToEscaped(text, Math.max(0, budget - 1)).trimEnd())}…`;
+}
+
+/**
+ * `head` + escaped `body` + `tail`, with `body` cut (ending {@link TG_MORE}) to fit in `max`.
+ * If `head` and `tail` alone don't fit (the capped parts never get there; a guard), it falls
+ * back to the body alone, cut, without markup.
+ */
 export function fitHtml(head: string, body: string, tail: string, max = TG_MAX): string {
   const whole = head + escapeHtml(body) + tail;
   if (whole.length <= max) return whole;
-  const budget = Math.max(0, max - head.length - tail.length - TG_MORE.length);
+  const budget = max - head.length - tail.length - TG_MORE.length;
+  if (budget < 0) return escapeHtml(cutToEscaped(body, Math.max(0, max - TG_MORE.length)).trimEnd()) + TG_MORE;
   return head + escapeHtml(cutToEscaped(body, budget).trimEnd()) + TG_MORE + tail;
+}
+
+/**
+ * Last line of defence before a send: HTML at most `max` characters. Anything longer loses its
+ * tags (entities are kept whole) and is cut, ending {@link TG_MORE}, rather than being refused
+ * by Telegram with a 400 and never delivered.
+ */
+export function ensureFits(html: string, max = TG_MAX): string {
+  if (html.length <= max) return html;
+  const plain = html.replace(/<[^>]*>/g, '');
+  if (plain.length <= max) return plain;
+  let cut = plain.slice(0, max - TG_MORE.length);
+  const amp = cut.lastIndexOf('&');
+  if (amp > cut.lastIndexOf(';')) cut = cut.slice(0, amp); // don't leave half an entity
+  const last = cut.charCodeAt(cut.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut = cut.slice(0, -1); // nor half a surrogate pair
+  return cut.trimEnd() + TG_MORE;
 }
 
 /** The small italic "— sender · project" line. */
 export function footerHtml(m: Pick<Message, 'sender' | 'project'>): string {
-  return `<i>— ${escapeHtml(m.sender)}${m.project ? ` · ${escapeHtml(m.project)}` : ''}</i>`;
+  return `<i>— ${escapeClipped(m.sender, NAME_MAX)}${m.project ? ` · ${escapeClipped(m.project, NAME_MAX)}` : ''}</i>`;
 }
 
 function icon(m: Message): string {
@@ -73,7 +110,7 @@ const VIA_LABEL: Record<AnsweredVia, string> = {
 /** The line an answered ask's Telegram copy gets: "✅ Answered: …". */
 export function answeredLine(m: Pick<Message, 'answer' | 'answeredVia'>): string {
   const via = m.answeredVia ? VIA_LABEL[m.answeredVia] : '';
-  return `✅ Answered: ${escapeHtml(m.answer ?? '')}${via ? ` <i>(${via})</i>` : ''}`;
+  return `✅ Answered: ${escapeClipped(m.answer ?? '', ANSWER_MAX)}${via ? ` <i>(${via})</i>` : ''}`;
 }
 
 /**
@@ -82,7 +119,7 @@ export function answeredLine(m: Pick<Message, 'answer' | 'answeredVia'>): string
  */
 export function formatForTelegram(m: Message, options: { answered?: boolean } = {}): string {
   let head = `${m.urgent ? '🔴 ' : ''}${icon(m)} `;
-  if (m.title) head += `<b>${escapeHtml(m.title)}</b>\n`;
+  if (m.title) head += `<b>${escapeClipped(m.title, TITLE_MAX)}</b>\n`;
   let tail = `\n\n${footerHtml(m)}`;
   if (m.kind === 'reminder' && m.missed) tail += `\n<i>${MISSED_NOTE}</i>`;
   if (m.kind === 'ask') {

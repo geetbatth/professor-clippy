@@ -223,14 +223,23 @@ describe('Telegram: polling', () => {
     expect(ctx.settings.get()).not.toHaveProperty('telegramChatId');
   });
 
-  it('replaces the pairing code after too many wrong guesses', async () => {
+  it('counts wrong codes per chat: a guesser is locked out, the code never changes, others can still pair', async () => {
     ctx = await setup();
     const code = ctx.manager.pairingCode()!;
-    for (let i = 0; i < MAX_WRONG_CODES; i++) ctx.fake.text(`/start ZZZZZ${i}`, { chatId: 600 + i });
-    await waitFor(() => ctx.manager.pairingCode() !== code, 3000, 'a new code');
-    ctx.fake.text(`/start ${code}`, { chatId: ME });
-    await new Promise((r) => setTimeout(r, 100));
+    // Many strangers, a few guesses each: nothing changes.
+    for (let i = 0; i < 20; i++) ctx.fake.text(`/start ZZZZZ${i}`, { chatId: 600 + i });
+    // One chat guesses MAX_WRONG_CODES times, then sends the right code: still refused.
+    for (let i = 0; i < MAX_WRONG_CODES; i++) ctx.fake.text(`/start YYYYY${i}`, { chatId: 666 });
+    const last = ctx.fake.text(`/start ${code}`, { chatId: 666 });
+    await waitFor(() => ctx.store.getKv(`${OFFSET_KV_PREFIX}7000001`) === String(last.update_id + 1), 3000, 'all updates');
     expect(ctx.settings.get().telegramChatId).toBeUndefined();
+    expect(ctx.manager.pairingCode()).toBe(code);
+    expect(ctx.logs.some((l) => /that chat may not pair any more/.test(l))).toBe(true);
+    // The user's own chat pairs with the same code.
+    ctx.fake.text(`/start ${code}`, { chatId: ME });
+    await waitFor(() => ctx.settings.get().telegramChatId === ME, 3000, 'pairing');
+    await waitFor(() => sends().length === 1, 3000, 'the hello');
+    expect(sends().map((p) => p.chat_id)).toEqual([ME]);
   });
 
   it('a pairing set directly (chat id typed in) works without /start', async () => {
@@ -239,6 +248,34 @@ describe('Telegram: polling', () => {
     ctx.store.createMessage({ kind: 'note', body: 'hi', sender: 'agent' });
     await waitFor(() => sends().length === 1, 3000, 'the note');
     expect(lastSend().chat_id).toBe(ME);
+  });
+});
+
+describe('Telegram: the 4096-character limit holds for every part', () => {
+  it('a note with a 5000-character title (and sender) is still delivered, within the limit', async () => {
+    ctx = await setup({ chatId: ME });
+    const m = ctx.store.createMessage({ kind: 'note', title: '<'.repeat(5000), body: 'b&'.repeat(3000), sender: 's'.repeat(5000), project: 'p'.repeat(5000) });
+    await waitFor(() => ctx.store.getMessage(m.id)?.tgMsgId, 3000, 'the note');
+    const text = String(lastSend().text);
+    expect(text.length).toBeLessThanOrEqual(4096);
+    expect(text).toMatch(/^📝 <b>(&lt;)+…<\/b>\n/);
+    expect(text).toMatch(/…more on desktop\n\n<i>— s+… · p+…<\/i>$/);
+  });
+
+  it('an edited ask with a 5000-character answer, and the already-answered reply quoting it, fit', async () => {
+    ctx = await setup({ chatId: ME });
+    const ask = ctx.asks.create({ question: 'Q?'.repeat(1500), options: ['a'], sender: 'agent' });
+    const tgMsgId = await waitFor(() => ctx.store.getMessage(ask.id)?.tgMsgId, 3000, 'the ask');
+    ctx.asks.answer(ask.id, '&'.repeat(5000), 'desk');
+    await waitFor(() => ctx.fake.of('editMessageText').length === 1, 3000, 'the edit');
+    const edit = String(ctx.fake.of('editMessageText')[0]!.text);
+    expect(edit.length).toBeLessThanOrEqual(4096);
+    expect(edit).toMatch(/✅ Answered: (&amp;)+… <i>\(on the desk\)<\/i>$/);
+    ctx.fake.text('my answer', { replyTo: tgMsgId });
+    await waitFor(() => sends().length === 2, 3000, 'the already-answered reply');
+    const reply = String(lastSend().text);
+    expect(reply.length).toBeLessThanOrEqual(4096);
+    expect(reply).toMatch(/^📎 That question was already answered \(via desk\): “(&amp;)+…”\.$/);
   });
 });
 
@@ -384,6 +421,18 @@ describe('Telegram: answering asks', () => {
     expect(lastSend().text).toBe('📎 That question was already answered (via telegram): “Only after lunch”.');
   });
 
+  it('an answer that lands while the ask is still being sent still edits it', async () => {
+    ctx = await setup({ chatId: ME });
+    await waitFor(() => ctx.fake.waitingPolls === 1, 3000, 'connected');
+    ctx.fake.delayNext('sendMessage', 300);
+    const ask = ctx.asks.create({ question: 'Quick?', options: ['y'], sender: 'agent' });
+    await waitFor(() => sends().length === 1, 3000, 'the send in flight');
+    expect(ctx.store.getMessage(ask.id)?.tgMsgId).toBeUndefined();
+    ctx.asks.answer(ask.id, 'y', 'desk');
+    await waitFor(() => ctx.fake.of('editMessageText').length === 1, 3000, 'the edit');
+    expect(ctx.fake.of('editMessageText')[0]).toMatchObject({ message_id: ctx.store.getMessage(ask.id)?.tgMsgId });
+  });
+
   it('an answer on the desk edits the Telegram copy (best effort)', async () => {
     ctx = await setup({ chatId: ME });
     const { ask, tgMsgId } = await mirroredAsk(['A', 'B']);
@@ -397,6 +446,70 @@ describe('Telegram: answering asks', () => {
     await ctx.manager.channel!.idle();
     await new Promise((r) => setTimeout(r, 50));
     expect(ctx.fake.sentTexts.filter((t) => t.includes('Too late'))).toEqual([]);
+  });
+});
+
+describe('Telegram: changing bot or chat', () => {
+  const TOKEN2 = '7000002:AASecondFakeBotTokenForTests_xyz';
+
+  it('re-pairing to another chat forgets the old message ids; the same chat again keeps them', async () => {
+    ctx = await setup({ chatId: ME });
+    const ask = ctx.asks.create({ question: 'Old?', sender: 'agent' });
+    const old = await waitFor(() => ctx.store.getMessage(ask.id)?.tgMsgId, 3000, 'the ask');
+    await ctx.manager.unpair();
+    await ctx.settings.update({ telegramChatId: ME }); // the same chat again
+    expect(ctx.store.getMessage(ask.id)?.tgMsgId).toBe(old);
+    await ctx.manager.unpair();
+    await ctx.settings.update({ telegramChatId: 777 });
+    expect(ctx.store.getMessage(ask.id)?.tgMsgId).toBeUndefined();
+    // A reply in the new chat to that message id is chat, not an answer.
+    ctx.fake.text('yes', { chatId: 777, replyTo: old });
+    await waitFor(() => ctx.asked.length === 1, 3000, 'chat');
+    expect(ctx.asks.result(ask.id).status).toBe('pending');
+    expect(ctx.asked[0]![0]).toBe('yes');
+  });
+
+  it('a new token keeps queued sends (they go out with the new bot); the same token saved again changes nothing', async () => {
+    ctx = await setup({ chatId: ME });
+    ctx.fake.addToken(TOKEN2);
+    await waitFor(() => ctx.fake.waitingPolls === 1, 3000, 'connected');
+    const getMes = ctx.fake.of('getMe').length;
+    await ctx.manager.setToken(ctx.fake.token); // re-saved: new ciphertext, same token
+    await new Promise((r) => setTimeout(r, 80));
+    expect(ctx.fake.of('getMe').length).toBe(getMes);
+    expect(ctx.fake.waitingPolls).toBe(1);
+
+    // The first try is told to wait 1 s: the send sits in the queue, waiting to retry, while the token changes.
+    ctx.fake.failNext('sendMessage', 429, { parameters: { retry_after: 1 } });
+    const m = ctx.store.createMessage({ kind: 'note', body: 'carried over', sender: 'agent' });
+    await waitFor(() => sends().length === 1, 3000, 'the failed try');
+    await ctx.manager.setToken(TOKEN2);
+    await waitFor(() => ctx.store.getMessage(m.id)?.tgMsgId, 3000, 'the retried send');
+    const tries = ctx.fake.calls.filter((c) => c.method === 'sendMessage');
+    expect(tries.map((c) => c.token)).toEqual([ctx.fake.token, TOKEN2]);
+    await waitFor(() => ctx.fake.calls.some((c) => c.token === TOKEN2 && c.method === 'getUpdates'), 3000, 'polling the new bot');
+    expect(ctx.manager.status()).toMatchObject({ tokenSaved: true });
+    // Its id came from the new bot, after the switch, so it is kept.
+    expect(ctx.store.getMessage(m.id)?.tgMsgId).toBeDefined();
+  });
+
+  it('a new bot forgets message ids from the old one', async () => {
+    ctx = await setup({ chatId: ME });
+    ctx.fake.addToken(TOKEN2);
+    const m = ctx.store.createMessage({ kind: 'note', body: 'old bot', sender: 'agent' });
+    await waitFor(() => ctx.store.getMessage(m.id)?.tgMsgId, 3000, 'sent');
+    await ctx.manager.setToken(TOKEN2);
+    expect(ctx.store.getMessage(m.id)?.tgMsgId).toBeUndefined();
+  });
+
+  it('waits out a 429 retry_after from getUpdates', async () => {
+    ctx = await setup({ chatId: ME, token: false });
+    ctx.fake.failNext('getUpdates', 429, { description: 'Too Many Requests: retry after 1', parameters: { retry_after: 1 } });
+    await ctx.manager.setToken(ctx.fake.token);
+    await waitFor(() => ctx.fake.of('getUpdates').length >= 2, 4000, 'the second poll');
+    const polls = ctx.fake.calls.filter((c) => c.method === 'getUpdates').map((c) => c.at);
+    expect(polls[1]! - polls[0]!).toBeGreaterThanOrEqual(950); // not the 20 ms backoff
+    expect(ctx.logs.some((l) => /polling failed; retrying in 1 s/.test(l))).toBe(true);
   });
 });
 

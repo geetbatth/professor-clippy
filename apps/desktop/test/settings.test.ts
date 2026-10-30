@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_SETTINGS } from '@clippy/shared';
@@ -140,6 +140,37 @@ describe('SettingsStore: the Telegram token', () => {
     expect(s.hasTelegramToken).toBe(true);
     expect(s.telegramToken()).toBeUndefined();
     expect(logs.join()).toMatch(/cannot be decrypted/);
+  });
+
+  it('a failed migration never stops the app: the plaintext is used, kept, and encrypted next time', async () => {
+    // Encryption throws.
+    writeFileSync(file, JSON.stringify({ soundEnabled: false, telegramBotToken: TOKEN }));
+    const logs: string[] = [];
+    const broken = { ...secrets, encrypt: () => { throw new Error(`DPAPI said no to ${TOKEN}`); } };
+    const s = await SettingsStore.load(file, { secrets: broken, log: (m) => logs.push(m) });
+    expect(s.telegramToken()).toBe(TOKEN);
+    expect(s.get().soundEnabled).toBe(false);
+    expect(s.get()).not.toHaveProperty('telegramBotTokenEnc');
+    expect(logs.join('\n')).toMatch(/could not encrypt the Telegram bot token .*trying again next start/);
+    expect(logs.join('\n')).not.toContain('AAHfakeT');
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ telegramBotToken: TOKEN });
+
+    // Rewriting the file fails (Windows: renaming over a read-only file is EPERM, as when
+    // antivirus or OneDrive holds it).
+    chmodSync(file, 0o444);
+    try {
+      const held = await SettingsStore.load(file, { secrets, log: (m) => logs.push(m) });
+      expect(held.telegramToken()).toBe(TOKEN);
+      expect(held.get()).not.toHaveProperty('telegramBotTokenEnc');
+    } finally {
+      chmodSync(file, 0o666);
+    }
+    expect(readFileSync(file, 'utf8')).toContain(TOKEN); // untouched
+
+    // Next start, all is well: migrated.
+    const ok = await SettingsStore.load(file, { secrets, log: () => {} });
+    expect(ok.telegramToken()).toBe(TOKEN);
+    expect(readFileSync(file, 'utf8')).not.toContain(TOKEN);
   });
 
   it('without a SecretBox (tests, tools) no token can be saved', async () => {

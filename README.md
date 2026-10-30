@@ -15,6 +15,10 @@ Telegram, and you can answer, or just chat with him, from your phone.
   (ISO time, optional RRULE), `ask_user` (blocks until you answer, 10 minutes by default),
   `check_reply`, `list_reminders`, `cancel_reminder`, `list_pending_asks`, `answer_pending`.
 - **A Claude Code hook** leaves a note when an agent finishes or needs your permission.
+  "Agent finished" notes only interrupt you when you have been away from the PC (no keyboard or
+  mouse input) for a while: Settings → "Agent-finished pings: only when I've been away for N
+  min" (default 3; 0 = always). While you are at the PC they go quietly into History, with no
+  pop-up, sound or WhatsApp/Telegram message. Permission requests always come through.
 - **Clippy's own chat brain** is Claude Code running headless with your Claude Code login (no
   API key). It can read files and search the web, manage your messages and reminders, and
   answer agents' questions for you; it cannot edit files or run commands. Of the `clippy` tools
@@ -160,7 +164,11 @@ How it behaves:
   (what is unread on the desk), `/new` (a fresh chat), `/start`.
 - Clippy only talks to the paired private chat. Messages from anyone else, or from any group,
   are ignored and never answered. Until a chat is paired, only `/start <the right code>` does
-  anything (after ten wrong codes the code changes).
+  anything. A chat that sends ten wrong codes can't pair at all (until the code changes or the
+  app restarts); strangers never change your code.
+- Message ids are remembered per bot and chat: pairing a different chat or saving another bot's
+  token forgets the old ones, so a reply there can never answer or edit an old message. A new
+  token keeps the messages still waiting to be sent; they go out through the new bot.
 - Nothing listens on the network: the app polls `api.telegram.org` (a 50 s long-poll), backing off
   from 1 s to 60 s when it can't reach it. With no token saved it makes no network calls at all.
   Updates are handled once, also across restarts (the next offset is kept in the database).
@@ -217,7 +225,7 @@ Environment overrides the app honours:
 | `CLIPPY_CLAUDE_PATH` | The `claude` executable (default: PATH, then `~\.local\bin\claude.exe`, then `claude.cmd`). |
 | `CLIPPY_MCP_PATH` | The MCP server the brain and the wiring use. |
 | `CLIPPY_FORCE_LOGIN_ITEM=1` | Register the start-at-login entry in a dev build (normally only the installed app does). |
-| `CLIPPY_TELEGRAM_API` | Telegram Bot API base URL (default `https://api.telegram.org`); point it at a fake server to try Telegram without the real one. |
+| `CLIPPY_TELEGRAM_API` | Telegram Bot API base URL (default `https://api.telegram.org`); point it at a fake server to try Telegram without the real one. Dev (unpackaged) builds only: the installed app ignores it. |
 
 Running `apps/desktop/release/win-unpacked/Professor Clippy.exe` counts as the installed app, so
 with "Start with Windows" on it registers itself at login. Turn the setting off (or start it with
@@ -249,7 +257,7 @@ local API), `brain\` (the brain's MCP config) and `hook-state.json`.
 | Agents don't see the Clippy tools | Start a **new** Claude Code session. Check `claude mcp list` shows `clippy`. Re-run Connect Claude Code. Make sure `node --version` works in a new terminal (Node 24+). |
 | "Claude Code was not found" in the wizard | Install Claude Code and run `claude` once to sign in; or set `CLIPPY_CLAUDE_PATH`. |
 | An agent says Clippy isn't running | The MCP server starts the app from `%LOCALAPPDATA%\Programs\professor-clippy\`; if you installed elsewhere, set `CLIPPY_APP_PATH` for the MCP server, or start Clippy yourself. |
-| No notes when an agent finishes | Settings → Claude Code hook must be on, and the hook installed (Connect Claude Code). New sessions only. |
+| No notes when an agent finishes | Settings → Claude Code hook must be on, and the hook installed (Connect Claude Code). New sessions only. While you are at the PC they go straight to History (see "Agent-finished pings" in Settings; 0 = always pop up). |
 | Chat says Clippy can't answer / not logged in | Run `claude` in a terminal and sign in; the brain uses that login. |
 | WhatsApp shows "off" in Settings | Both the Worker URL (https) and the secret must be saved. "saved" only means they are; it doesn't prove the Worker answers, so check `https://<worker>/health` answers `{"ok":true}`. |
 | Nothing arrives on WhatsApp | The secret must equal the Worker's `PC_SECRET`; your number must be a verified recipient of the test number; outside the 24 h window the `clippy_note` template must be **Approved**. `npx wrangler tail` in `apps/worker` shows the Worker's logs. |

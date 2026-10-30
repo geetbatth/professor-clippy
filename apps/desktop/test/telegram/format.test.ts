@@ -4,7 +4,10 @@ import { redactToken, TelegramApi, TelegramApiError, TelegramNetworkError } from
 import {
   askKeyboard,
   cutToEscaped,
+  ensureFits,
+  escapeClipped,
   escapeHtml,
+  fitHtml,
   formatForTelegram,
   formatMissedReminders,
   MISSED_NOTE,
@@ -64,6 +67,41 @@ describe('formatForTelegram', () => {
     expect(out).not.toMatch(/&[a-z]*…/); // no entity cut in half
     const fits = msg({ body: 'x'.repeat(TG_MAX - '📝 \n\n<i>— agent</i>'.length) });
     expect(formatForTelegram(fits)).not.toContain(TG_MORE);
+  });
+});
+
+describe('every part is capped', () => {
+  const huge = '<&>"'.repeat(1500); // 6000 characters, 25500 escaped
+
+  it('escapeClipped cuts by escaped length, ending with an ellipsis', () => {
+    expect(escapeClipped('a&b', 10)).toBe('a&amp;b');
+    expect(escapeClipped('a&b&c', 7)).toBe('a&amp;…'); // 6 escaped characters + the ellipsis
+    expect(escapeClipped('a&b&c', 6)).toBe('a…'); // "&amp;" would not fit whole
+    expect(escapeClipped(huge, 100).length).toBeLessThanOrEqual(100);
+  });
+
+  it('stays within 4096 whatever the title, sender, project, body and answer', () => {
+    for (const kind of ['note', 'reminder', 'ask'] as const) {
+      const m = msg({ kind, title: huge, body: huge, sender: huge, project: huge, urgent: true, missed: true, options: ['x'], answer: huge, answeredVia: 'whatsapp' });
+      expect(formatForTelegram(m).length).toBeLessThanOrEqual(TG_MAX);
+      expect(formatForTelegram(m, { answered: true }).length).toBeLessThanOrEqual(TG_MAX);
+    }
+    const many = Array.from({ length: 3 }, () => msg({ kind: 'reminder', missed: true, body: huge, sender: huge, project: huge }));
+    expect(formatMissedReminders(many).length).toBeLessThanOrEqual(TG_MAX);
+  });
+
+  it('fitHtml falls back to the bare body when the fixed parts alone are too long', () => {
+    const out = fitHtml('<b>'.padEnd(5000, 'h') + '</b>', 'the body', '', 100);
+    expect(out).toBe(`the body${TG_MORE}`); // the title and footer were dropped: say so
+    expect(fitHtml('x'.repeat(200), 'b'.repeat(500), '', 100)).toBe(`${'b'.repeat(100 - TG_MORE.length)}${TG_MORE}`);
+  });
+
+  it('ensureFits leaves short HTML alone, else drops the tags and cuts without breaking an entity', () => {
+    expect(ensureFits('<b>hi</b>')).toBe('<b>hi</b>');
+    expect(ensureFits('<b>' + 'a'.repeat(4094) + '</b>')).toBe('a'.repeat(4094));
+    const cut = ensureFits('&amp;'.repeat(2000));
+    expect(cut.length).toBeLessThanOrEqual(TG_MAX);
+    expect(cut).toMatch(/^(&amp;)+…more on desktop$/);
   });
 });
 

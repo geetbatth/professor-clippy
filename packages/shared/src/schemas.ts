@@ -65,6 +65,11 @@ export const Message = z.object({
   role: ChatRole.optional(),
   /** For `kind: 'reminder'`: the reminder fired while the PC was off. */
   missed: z.boolean().optional(),
+  /**
+   * Posted as away-only (the hook's "agent finished" notes). If the user was at the PC when it
+   * arrived, it was stored straight into history, silently, and not mirrored.
+   */
+  quietIfActive: z.boolean().optional(),
 });
 export type Message = z.infer<typeof Message>;
 
@@ -93,6 +98,12 @@ export const NewMessageInput = z.object({
   sender: z.string().min(1),
   project: z.string().optional(),
   urgent: z.boolean().optional(),
+  /**
+   * Only interrupt the user if they are away: when the PC has had input within the app's
+   * `awayThresholdS`, the note goes straight into history (no pop-up, sound or phone mirror).
+   * Optional; older apps ignore it.
+   */
+  quietIfActive: z.boolean().optional(),
 });
 export type NewMessageInput = z.infer<typeof NewMessageInput>;
 

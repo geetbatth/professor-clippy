@@ -155,7 +155,9 @@ async function stopNote(input: Record<string, any>, project: string): Promise<Ne
         ? await lastAssistantText(input.transcript_path)
         : undefined;
   const line = text ? lastLine(text) : undefined;
-  return { body: `✅ ${project} agent finished${line ? `\n${line}` : ''}`, sender: HOOK_SENDER, project };
+  // Away-only: you are usually at the PC reading the reply already, so the app files it quietly
+  // unless you have been away (its `awayThresholdS` setting). Older apps ignore the flag.
+  return { body: `✅ ${project} agent finished${line ? `\n${line}` : ''}`, sender: HOOK_SENDER, project, quietIfActive: true };
 }
 
 /**

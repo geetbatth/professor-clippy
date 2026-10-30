@@ -14,7 +14,8 @@
  *
  * Inbound (only the paired private chat; any other chat, groups included, is ignored and
  * never answered):
- * - Before pairing, the first private `/start <code>` with the right code pairs that chat.
+ * - Before pairing, the first private `/start <code>` with the right code pairs that chat (a chat
+ *   that sends MAX_WRONG_CODES wrong ones may not pair; the code never changes because of it).
  * - A tap on an ask's button answers it (`answeredVia: 'telegram'`); so does a text that uses
  *   Telegram's reply on an ask.
  * - `/start`, `/help`, `/notes` (unread notes) and `/new` (fresh brain session) are commands.
@@ -33,13 +34,18 @@ import {
   isAbortError,
   redactToken,
   TelegramApiError,
+  type EditMessageTextParams,
+  type SendMessageParams,
   type TelegramApi,
   type TgCallbackQuery,
   type TgMessage,
   type TgUpdate,
 } from './api';
 import {
+  ANSWER_MAX,
   askKeyboard,
+  ensureFits,
+  escapeClipped,
   escapeHtml,
   formatForTelegram,
   formatMissedReminders,
@@ -94,8 +100,6 @@ export interface TelegramDeps {
   pairingCode(): string | undefined;
   /** Record a pairing (persists `telegramChatId`). */
   pair(chat: { id: number; firstName?: string }): Promise<void>;
-  /** Someone sent `/start` with a wrong code. */
-  onWrongCode?(): void;
   pollTimeoutS?: number;
   backoffMinMs?: number;
   backoffMaxMs?: number;
@@ -103,6 +107,14 @@ export interface TelegramDeps {
   typingIntervalMs?: number;
   log?: (message: string, err?: unknown) => void;
 }
+
+/**
+ * Wrong `/start` codes one chat may send. After that the chat can't pair at all (until the
+ * code changes or the app restarts); the code itself is never changed by a stranger.
+ */
+export const MAX_WRONG_CODES = 10;
+/** Chats whose wrong codes are counted at once (a flood of chats can't grow memory without end). */
+const WRONG_CODE_CHATS_MAX = 1000;
 
 /** Reconnect delay before attempt `attempt` (0-based): `min` doubling, capped at `max`. */
 export function backoffDelay(attempt: number, min = BACKOFF_MIN_MS, max = BACKOFF_MAX_MS): number {
@@ -120,6 +132,12 @@ export function describeError(err: unknown): string {
 
 export class Telegram {
   readonly #d: TelegramDeps;
+  /** The bot this channel talks to; `retarget()` swaps it without losing queued sends. */
+  #api: TelegramApi;
+  /** The next poll may long-poll (the last call worked); false after start, an error or a new bot. */
+  #healthy = false;
+  /** Wrong pairing codes per chat id (see {@link MAX_WRONG_CODES}). */
+  readonly #wrongCodes = new Map<number, number>();
   readonly #unsubscribe: (() => void)[] = [];
   /** Aborted by `stop()`: ends the long-poll, waits and sends in flight. */
   readonly #stop = new AbortController();
@@ -137,6 +155,25 @@ export class Telegram {
 
   constructor(deps: TelegramDeps) {
     this.#d = deps;
+    this.#api = deps.api;
+  }
+
+  /** The bot's id (the part of the token before the colon). */
+  get botId(): string {
+    return this.#api.botId;
+  }
+
+  /**
+   * Talk to another bot (the token changed) without dropping anything: the long-poll restarts
+   * with the new bot (its own offset), and queued or retrying sends go out with the new token.
+   */
+  retarget(api: TelegramApi): void {
+    this.#api = api;
+    this.#botUsername = undefined;
+    this.#healthy = false;
+    this.#wrongCodes.clear();
+    this.#status = { state: 'connecting' };
+    this.#pollCtl.abort();
   }
 
   get status(): TelegramStatusSnapshot {
@@ -153,9 +190,9 @@ export class Telegram {
     const { bus } = this.#d;
     this.#unsubscribe.push(
       bus.on('message:new', (m) => this.#onNew(m)),
-      bus.on('ask:answered', ({ message }) => {
-        if (message.tgMsgId !== undefined) this.#editAnswered(message.id);
-      }),
+      // No tgMsgId check here: an answer that lands while the ask's send is still in flight must
+      // still edit it. The edit job runs after that send in the queue and re-reads the message.
+      bus.on('ask:answered', ({ message }) => this.#editAnswered(message.id)),
     );
     this.#loop = this.#pollLoop();
   }
@@ -195,7 +232,7 @@ export class Telegram {
       await this.#enqueue(
         'send test',
         async (signal) => {
-          await this.#d.api.sendMessage(
+          await this.#sendMessage(
             { chat_id: chatId, text: '📎 <b>Test from Professor Clippy.</b> Telegram works: notes, reminders and questions will arrive here.', parse_mode: 'HTML' },
             signal,
           );
@@ -216,10 +253,9 @@ export class Telegram {
    * than after a long-poll's 50 s; the rest are long-polls.
    */
   async #pollLoop(): Promise<void> {
-    const { api } = this.#d;
     let attempt = 0;
-    let healthy = false;
     while (this.#running) {
+      const api = this.#api; // retarget() may swap it; this round sticks to one bot
       this.#pollCtl = new AbortController();
       const poke = this.#pollCtl.signal;
       const signal = AbortSignal.any([poke, this.#stop.signal]);
@@ -229,15 +265,16 @@ export class Telegram {
           this.#botUsername = me.username ?? '';
         }
         const updates = await api.getUpdates(
-          { offset: this.#offset(), timeoutS: healthy ? (this.#d.pollTimeoutS ?? POLL_TIMEOUT_S) : 0, allowedUpdates: ALLOWED_UPDATES },
+          { offset: this.#offset(api), timeoutS: this.#healthy ? (this.#d.pollTimeoutS ?? POLL_TIMEOUT_S) : 0, allowedUpdates: ALLOWED_UPDATES },
           signal,
         );
+        if (api !== this.#api) continue; // retargeted meanwhile: these belong to the old bot
         attempt = 0;
-        healthy = true;
+        this.#healthy = true;
         this.#setStatus({ state: 'connected' });
         for (const update of updates) {
           if (!this.#running) return;
-          await this.#handleUpdate(update);
+          await this.#handleUpdate(update, api);
         }
       } catch (err) {
         if (!this.#running) return;
@@ -245,11 +282,14 @@ export class Telegram {
           attempt = 0;
           continue;
         }
-        healthy = false;
+        this.#healthy = false;
         const error = describeError(err);
         this.#setStatus({ state: 'error', error });
-        const delay = backoffDelay(attempt++, this.#d.backoffMinMs, this.#d.backoffMaxMs);
-        this.#log(`telegram: polling failed; retrying in ${Math.round(delay / 1000)} s: ${error}`);
+        // A 429 (from getUpdates or getMe too) says how long to wait: never poll sooner.
+        const retryAfterMs =
+          err instanceof TelegramApiError && err.retryAfterS !== undefined ? Math.min(err.retryAfterS, MAX_RETRY_AFTER_S) * 1000 : 0;
+        const delay = Math.max(backoffDelay(attempt++, this.#d.backoffMinMs, this.#d.backoffMaxMs), retryAfterMs);
+        this.#log(`telegram: polling failed; retrying in ${Math.round(delay / 100) / 10} s: ${error}`);
         await sleep(delay, AbortSignal.any([poke, this.#stop.signal]));
         if (poke.aborted) attempt = 0;
       }
@@ -260,23 +300,15 @@ export class Telegram {
     this.#status = { ...status, ...(this.#botUsername && { botUsername: this.#botUsername }) };
   }
 
-  get #offsetKey(): string {
-    return OFFSET_KV_PREFIX + this.#d.api.botId;
-  }
-
-  get #seenKey(): string {
-    return SEEN_KV_PREFIX + this.#d.api.botId;
-  }
-
-  #offset(): number | undefined {
-    const raw = this.#d.store.getKv(this.#offsetKey);
+  #offset(api: TelegramApi): number | undefined {
+    const raw = this.#d.store.getKv(OFFSET_KV_PREFIX + api.botId);
     const n = raw === undefined ? NaN : Number(raw);
     return Number.isSafeInteger(n) ? n : undefined;
   }
 
-  #seen(): number[] {
+  #seen(api: TelegramApi): number[] {
     try {
-      const raw = JSON.parse(this.#d.store.getKv(this.#seenKey) ?? '[]');
+      const raw = JSON.parse(this.#d.store.getKv(SEEN_KV_PREFIX + api.botId) ?? '[]');
       return Array.isArray(raw) ? raw.filter((x): x is number => typeof x === 'number') : [];
     } catch {
       return [];
@@ -284,8 +316,8 @@ export class Telegram {
   }
 
   /** Handle one update at most once, then move the offset past it (even if handling threw). */
-  async #handleUpdate(update: TgUpdate): Promise<void> {
-    const seen = this.#seen();
+  async #handleUpdate(update: TgUpdate, api: TelegramApi): Promise<void> {
+    const seen = this.#seen(api);
     if (!seen.includes(update.update_id)) {
       try {
         if (update.message) await this.#onMessage(update.message);
@@ -293,10 +325,10 @@ export class Telegram {
       } catch (err) {
         this.#log(`telegram: update ${update.update_id} failed`, err);
       }
-      this.#d.store.setKv(this.#seenKey, JSON.stringify([...seen, update.update_id].slice(-SEEN_KEEP)));
+      this.#d.store.setKv(SEEN_KV_PREFIX + api.botId, JSON.stringify([...seen, update.update_id].slice(-SEEN_KEEP)));
     }
     const next = update.update_id + 1;
-    if ((this.#offset() ?? 0) < next) this.#d.store.setKv(this.#offsetKey, String(next));
+    if ((this.#offset(api) ?? 0) < next) this.#d.store.setKv(OFFSET_KV_PREFIX + api.botId, String(next));
   }
 
   // ---- inbound --------------------------------------------------------------
@@ -329,7 +361,7 @@ export class Telegram {
         if (!(err instanceof ConflictError)) throw err;
         const current = store.getMessage(quoted.id);
         const via = current?.answeredVia ? ` (via ${current.answeredVia})` : '';
-        this.#sendHtml(chatId, `📎 That question was already answered${escapeHtml(via)}: “${escapeHtml(current?.answer ?? '')}”.`);
+        this.#sendHtml(chatId, `📎 That question was already answered${escapeHtml(via)}: “${escapeClipped(current?.answer ?? '', ANSWER_MAX)}”.`);
       }
       return;
     }
@@ -355,11 +387,18 @@ export class Telegram {
     const match = /^\/start(?:@\w+)?\s+(\S+)\s*$/i.exec(msg.text?.trim() ?? '');
     const code = this.#d.pairingCode();
     if (!match || !code) return; // not pairing: ignored, never answered
+    const chatId = msg.chat.id;
+    const wrong = this.#wrongCodes.get(chatId) ?? 0;
+    if (wrong >= MAX_WRONG_CODES) return; // this chat guessed too often: it can't pair now
     if (match[1]!.toUpperCase() !== code.toUpperCase()) {
-      this.#d.onWrongCode?.();
-      this.#log('telegram: a /start with a wrong pairing code was ignored');
+      if (!this.#wrongCodes.has(chatId) && this.#wrongCodes.size >= WRONG_CODE_CHATS_MAX) {
+        this.#wrongCodes.delete(this.#wrongCodes.keys().next().value!);
+      }
+      this.#wrongCodes.set(chatId, wrong + 1);
+      this.#log(`telegram: a /start with a wrong pairing code was ignored${wrong + 1 >= MAX_WRONG_CODES ? '; that chat may not pair any more' : ''}`);
       return;
     }
+    this.#wrongCodes.clear();
     const firstName = msg.from?.first_name ?? msg.chat.first_name;
     await this.#d.pair({ id: msg.chat.id, ...(firstName !== undefined && { firstName }) });
     this.#log(`telegram: paired with chat ${msg.chat.id}`);
@@ -381,7 +420,7 @@ export class Telegram {
         this.#sendHtml(chatId, '🧹 New chat started. I have forgotten everything we said (professionally).');
         return;
       default:
-        this.#sendHtml(chatId, `I don’t know ${escapeHtml(command)}.\n\n${HELP_TEXT}`);
+        this.#sendHtml(chatId, `I don’t know ${escapeClipped(command, 64)}.\n\n${HELP_TEXT}`);
     }
   }
 
@@ -392,7 +431,7 @@ export class Telegram {
     const lines = unread.slice(0, UNREAD_LIST_MAX).map((m) => {
       const text = (m.title ?? m.body).replace(/\s+/g, ' ').trim();
       const short = text.length > 80 ? `${text.slice(0, 79)}…` : text;
-      return `${m.urgent ? '🔴 ' : ''}${icon(m)} ${escapeHtml(short)} <i>— ${escapeHtml(m.sender)}</i>`;
+      return `${m.urgent ? '🔴 ' : ''}${icon(m)} ${escapeHtml(short)} <i>— ${escapeClipped(m.sender, 40)}</i>`;
     });
     const more = unread.length > UNREAD_LIST_MAX ? `\n…and ${unread.length - UNREAD_LIST_MAX} more on desktop` : '';
     return `<b>${unread.length} unread</b>\n${lines.join('\n')}${more}`;
@@ -423,7 +462,7 @@ export class Telegram {
 
   /** Acknowledge a button tap (best effort, not queued: Telegram wants it within seconds). */
   #answerCallback(id: string, text: string): void {
-    this.#d.api
+    this.#api
       .answerCallbackQuery({ callback_query_id: id, text: text.slice(0, 190) }, this.#stop.signal)
       .catch((err) => this.#running && this.#log('telegram: answerCallbackQuery failed', err));
   }
@@ -431,7 +470,7 @@ export class Telegram {
   /** "typing…" in the chat until the returned function is called. */
   #startTyping(chatId: number): () => void {
     const tick = () => {
-      this.#d.api.sendChatAction({ chat_id: chatId, action: 'typing' }, this.#stop.signal).catch(() => {});
+      this.#api.sendChatAction({ chat_id: chatId, action: 'typing' }, this.#stop.signal).catch(() => {});
     };
     tick();
     const timer = setInterval(tick, this.#d.typingIntervalMs ?? TYPING_INTERVAL_MS);
@@ -464,7 +503,7 @@ export class Telegram {
       if (chatId === undefined || !m || m.tgMsgId !== undefined) return;
       if (m.kind === 'ask' ? m.answer !== undefined : m.state === 'done') return;
       const keyboard = m.kind === 'ask' ? askKeyboard(m) : undefined;
-      const sent = await this.#d.api.sendMessage(
+      const sent = await this.#sendMessage(
         {
           chat_id: chatId,
           text: formatForTelegram(m),
@@ -491,7 +530,7 @@ export class Telegram {
           .map((id) => this.#d.store.getMessage(id))
           .filter((m): m is Message => m !== undefined && m.tgMsgId === undefined && m.state !== 'done');
         if (!ms.length) return;
-        const sent = await this.#d.api.sendMessage(
+        const sent = await this.#sendMessage(
           { chat_id: chatId, text: formatMissedReminders(ms), parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
           signal,
         );
@@ -507,7 +546,7 @@ export class Telegram {
       const m = this.#d.store.getMessage(askId);
       if (chatId === undefined || m?.tgMsgId === undefined || m.answer === undefined) return;
       try {
-        await this.#d.api.editMessageText(
+        await this.#editMessage(
           {
             chat_id: chatId,
             message_id: m.tgMsgId,
@@ -530,7 +569,7 @@ export class Telegram {
   #sendReply(chatId: number, text: string, replyTo?: Message): void {
     splitForTelegram(text).forEach((html, i) => {
       this.#post('send chat reply', async (signal) => {
-        const sent = await this.#d.api.sendMessage({ chat_id: chatId, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true } }, signal);
+        const sent = await this.#sendMessage({ chat_id: chatId, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true } }, signal);
         if (i === 0 && replyTo && this.#d.store.getMessage(replyTo.id)?.tgMsgId === undefined) {
           this.#d.store.updateMessage(replyTo.id, { tgMsgId: sent.message_id });
         }
@@ -540,8 +579,17 @@ export class Telegram {
 
   #sendHtml(chatId: number, html: string): void {
     this.#post('send', async (signal) => {
-      await this.#d.api.sendMessage({ chat_id: chatId, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true } }, signal);
+      await this.#sendMessage({ chat_id: chatId, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true } }, signal);
     });
+  }
+
+  /** `sendMessage`, with the text made to fit (see {@link ensureFits}) whatever went into it. */
+  #sendMessage(params: SendMessageParams, signal: AbortSignal): Promise<TgMessage> {
+    return this.#api.sendMessage({ ...params, text: ensureFits(params.text) }, signal);
+  }
+
+  #editMessage(params: EditMessageTextParams, signal: AbortSignal): Promise<TgMessage | true> {
+    return this.#api.editMessageText({ ...params, text: ensureFits(params.text) }, signal);
   }
 
   /** {@link enqueue} for fire-and-forget sends (a final failure is logged, not thrown). */

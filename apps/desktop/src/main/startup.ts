@@ -40,6 +40,12 @@ export interface StartServicesOptions {
   relayLog?: RelayManagerOptions['log'];
   /** Encrypts the Telegram bot token at rest (Electron `safeStorage` in the app). */
   secrets?: SecretBox;
+  /**
+   * Seconds since the last keyboard or mouse input (Electron `powerMonitor.getSystemIdleTime`).
+   * With it, away-only notes are quiet while that is under the `awayThresholdS` setting.
+   * Without it, every note interrupts.
+   */
+  idleSeconds?: () => number;
   /** Telegram test seams (fake Bot API server, short timings). */
   telegram?: Omit<TelegramManagerOptions, 'store' | 'bus' | 'asks' | 'brain' | 'settings'>;
 }
@@ -62,9 +68,11 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
   const stopCollecting = bus.on('message:new', (m) => early.push(m));
   let core: Core;
   try {
+    const idleSeconds = options.idleSeconds;
     core = await (options.startCore ?? defaultStartCore)({
       dataDir: options.dataDir,
       bus,
+      ...(idleSeconds && { isUserActive: () => idleSeconds() < settings.get().awayThresholdS }),
       ...(options.version !== undefined && { version: options.version }),
     });
   } finally {

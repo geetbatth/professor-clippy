@@ -146,15 +146,29 @@ export class SettingsStore {
     return this.#commit(Settings.parse({ ...this.#current, telegramBotTokenEnc }));
   }
 
+  /**
+   * Never fatal: if encrypting or rewriting the file fails (say antivirus or OneDrive holds
+   * settings.json: EPERM), the plaintext is used from memory and stays in the file, so the
+   * next load tries again. The app must start either way.
+   */
   async #migratePlainToken(plain: string): Promise<void> {
     if (!this.#secrets?.available()) {
       this.#plainToken = plain;
       this.#log('settings.json has a plaintext telegramBotToken and this PC cannot encrypt it; using it as it is');
       return;
     }
-    const next = Settings.parse({ ...this.#current, telegramBotTokenEnc: this.#secrets.encrypt(plain) });
-    this.#current = next;
-    await this.#write(next); // the plaintext is gone from the file once this resolves
+    const prev = this.#current;
+    try {
+      const next = Settings.parse({ ...prev, telegramBotTokenEnc: this.#secrets.encrypt(plain) });
+      this.#current = next;
+      await this.#write(next); // the plaintext is gone from the file once this resolves
+    } catch (err) {
+      this.#current = prev;
+      this.#plainToken = plain;
+      const why = (err instanceof Error ? err.message : String(err)).split(plain).join('<token>');
+      this.#log(`could not encrypt the Telegram bot token in settings.json (${why}); using it as it is and trying again next start`);
+      return;
+    }
     this.#log('encrypted the Telegram bot token from settings.json (telegramBotToken → telegramBotTokenEnc)');
   }
 

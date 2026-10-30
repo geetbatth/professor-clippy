@@ -5,6 +5,7 @@ describe('Settings', () => {
   it('fills every default from an empty object', () => {
     expect(Settings.parse({})).toEqual({
       hookEnabled: true,
+      awayThresholdS: 180,
       soundEnabled: true,
       unsolicitedAdvice: true,
       askTimeoutDefaultS: 600,
@@ -29,6 +30,13 @@ describe('Settings', () => {
   it('rejects invalid values', () => {
     expect(Settings.safeParse({ askTimeoutDefaultS: 0 }).success).toBe(false);
     expect(Settings.safeParse({ workerUrl: 'not a url' }).success).toBe(false);
+    expect(Settings.safeParse({ awayThresholdS: -1 }).success).toBe(false);
+    expect(Settings.safeParse({ awayThresholdS: 1.5 }).success).toBe(false);
+  });
+
+  it('accepts an away threshold of 0 (always interrupt) and patches it', () => {
+    expect(Settings.parse({ awayThresholdS: 0 }).awayThresholdS).toBe(0);
+    expect(SettingsPatch.parse({ awayThresholdS: 600 })).toEqual({ awayThresholdS: 600 });
   });
 });
 
@@ -42,6 +50,13 @@ describe('Settings: Telegram', () => {
     expect(Settings.parse({ telegramChatId: '987654321' }).telegramChatId).toBe(987654321);
     expect(Settings.safeParse({ telegramChatId: 1.5 }).success).toBe(false);
     expect(Settings.safeParse({ telegramChatId: 'abc' }).success).toBe(false);
+  });
+
+  it('refuses group and channel chat ids (zero or negative): private chats only', () => {
+    expect(Settings.safeParse({ telegramChatId: -1001234567890 }).success).toBe(false);
+    expect(Settings.safeParse({ telegramChatId: '-42' }).success).toBe(false);
+    expect(Settings.safeParse({ telegramChatId: 0 }).success).toBe(false);
+    expect(SettingsPatch.safeParse({ telegramChatId: -5 }).success).toBe(false);
   });
 
   it('never carries a plaintext token, and the token is not patchable', () => {
