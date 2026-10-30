@@ -91,8 +91,12 @@ Nothing mirrors to the phone on `message:new`. `PhoneGate` (`main/phoneGate.ts`)
 instead. Away (or the `phoneWhen` setting is `always`): at once. At the PC: the id is held, and a
 `tickMs` (30 s) timer re-reads held messages from the store; once the user is away the ones still
 unread are mirrored, once. Dismissed or answered ones are dropped, a
-snoozed one stays held until it wakes. A held ask still unanswered `askEscalateMs` (10 min) after it was
-created goes anyway on the next tick, even at the PC; notes and reminders never escalate. `isUserAway` is built in `startServices`: idle time at or
+snoozed one stays held until it wakes. Each held id records when it started waiting (when held; reset when it wakes from a snooze).
+Going away flushes only notes and reminders that have waited at most `FLUSH_MAX_AGE_MS` (60 min); older ones are
+dropped from the hold and stay on the desk. A held ask still unanswered `askEscalateMs()` after it started
+waiting goes anyway on the next tick, even at the PC; `startServices` wires it to half of `askTimeoutDefaultS`
+(5 min by default, read each tick so a settings change applies), so a question escalates before `ask_user` gives up.
+Notes and reminders never escalate. `isUserAway` is built in `startServices`: idle time at or
 over `awayThresholdS` (0 = always away); without an idle source, always away. Telegram's startup
 replay of missed reminders skips the gate, and WhatsApp reminders still come from the Worker.
 `test/phoneGate.test.ts` covers the rules; relay/Telegram tests use `test/alwaysMirror.ts`.
@@ -161,8 +165,10 @@ capped at an hour and re-armed (like the reminder scheduler); kv `briefLastDate`
 at most one brief a day, `briefLastAt` starts the next overnight window. A start or wake sends a
 missed brief if it is due today, not yet sent, and now is before 12:00 local or within 2 h after
 the brief time (so a late brief time still works); otherwise the day is skipped. `reschedule()`
-(a settings change) only arms the new time and never sends on the spot; a later wake from sleep
-may, if the catch-up rule allows. Unread notes from `clippy` / `clippy-brain` are not counted
+(a settings change) only re-arms the timer for the new time and never sends on the spot; if today's
+brief is unsent and still inside the catch-up window, the next timer tick (at most an hour away) or a
+wake from sleep may send it. "Waiting on you" counts only asks that are unanswered and not done
+(one dismissed on the desk is not waiting). Unread notes from `clippy` / `clippy-brain` are not counted
 either, so yesterday's unread brief cannot stop a "Clear day" line.
 
 ## Storage

@@ -189,7 +189,7 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
               <label className="setting">
                 <span className="setting-text">
                   <span className="setting-label">Send to my phone</span>
-                  <span className="setting-hint">Notes wait until you are away; a question left unanswered for 10 minutes goes anyway. WhatsApp reminders always go out on time.</span>
+                  <span className="setting-hint">Notes wait until you are away; a question left waiting goes anyway after half the time agents wait for your answer (5 minutes by default). WhatsApp reminders always go out on time.</span>
                 </span>
                 <select
                   className="field-input setting-select"

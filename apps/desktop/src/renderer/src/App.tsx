@@ -120,9 +120,10 @@ export function App({ runtime }: { runtime: Runtime }) {
   );
   const stack = useUnread(api, onNewMessage);
   const unread = stack.messages.length;
+  const loud = loudCount(stack.messages, popUpFor.current);
 
   // Only loud notes make him read, nag (tap, boing) or wake; quiet ones are just the badge.
-  const mood = useClippyMood({ unread: loudCount(stack.messages, popUpFor.current), thinking: chat.thinking, expanded: mode === 'expanded' });
+  const mood = useClippyMood({ unread: loud, thinking: chat.thinking, expanded: mode === 'expanded' });
   moodRef.current = mood;
 
   // Antics come with sound effects.
@@ -151,7 +152,8 @@ export function App({ runtime }: { runtime: Runtime }) {
     moodRef.current?.message(false);
     open();
   });
-  useAutoCollapse(mode === 'expanded' && unread === 0 && !chat.thinking && !firstRun, lastActivity, AUTO_COLLAPSE_MS, () => {
+  // Quiet notes (the badge only) do not keep the note open; loud ones do.
+  useAutoCollapse(mode === 'expanded' && loud === 0 && !chat.thinking && !firstRun, lastActivity, AUTO_COLLAPSE_MS, () => {
     // Mid-sentence in the Tell Clippy box: not now, and a fresh idle period once they're done.
     if (tellActive.current) lastActivity.current = Date.now();
     else setMode('mini');

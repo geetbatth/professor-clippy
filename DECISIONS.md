@@ -51,7 +51,7 @@ Grilled in chat (T3 Code question forms).
 Agreed in chat: Clippy should show things only when they need you, and "chat" is really telling Clippy to do things.
 
 1. Two levels of loud: questions, permission requests, due reminders, urgent notes and Clippy's own notes (nudges, the morning brief) pop up with a wiggle and sound; "agent finished" and plain notes only raise the unread badge, and never nag. Settings → "Pop up for" can switch back to everything.
-2. Phone only when away: notes and questions stay on the desktop while you're at the PC and go to the phone once you've been idle past the away threshold (default 3 minutes). A question still unanswered after 10 minutes goes to the phone anyway. Settings → "Send to my phone" can switch back to always. WhatsApp reminders are still sent on time by the Worker.
+2. Phone only when away: notes and questions stay on the desktop while you're at the PC and go to the phone once you've been idle past the away threshold (default 3 minutes). A question still unanswered after half the time `ask_user` waits (5 minutes by default) goes to the phone anyway. Settings → "Send to my phone" can switch back to always. WhatsApp reminders are still sent on time by the Worker.
 3. Advice quips are off by default, and switched off once for existing installs.
 4. A "Tell Clippy…" box sits under the notes, and a global hotkey (default Ctrl+Alt+Space, changeable or off in Settings) opens it from anywhere. The Chat tab is now the "Clippy" tab.
 5. Standing orders: tell Clippy "if an agent asks about X, say Y" and he answers matching questions for you. Managed by telling Clippy or in Settings.

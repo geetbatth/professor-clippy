@@ -62,6 +62,18 @@ describe('composeBrief', () => {
     expect(long).toContain(`(${'q'.repeat(39)}…)`);
   });
 
+  it('does not count a question that was dismissed or answered', () => {
+    const body = compose({
+      pendingAsks: [
+        message({ kind: 'ask', body: 'open' }),
+        message({ kind: 'ask', body: 'dismissed', state: 'done' }),
+        message({ kind: 'ask', body: 'answered', answer: 'yes', state: 'done' }),
+      ],
+    }).body;
+    expect(body).toContain('Waiting on you: 1 question (open)');
+    expect(compose({ pendingAsks: [message({ kind: 'ask', state: 'done' })] }).body).toBe('Clear day: no reminders, nothing waiting on you.');
+  });
+
   it('counts the unread notes, leaving questions to their own line', () => {
     const body = compose({
       unread: [message({}), message({}), message({ kind: 'reminder' }), message({ kind: 'ask' })],
@@ -315,6 +327,16 @@ describe('BriefScheduler', () => {
     expect(sent).toHaveLength(2);
     expect(sent[1]!.body).toContain('Overnight:\n• payments: 1 note');
     expect(sent[1]!.body).not.toContain('professor-clippy: agent finished');
+  });
+
+  it('leaves a question dismissed on the desk out of "Waiting on you"', () => {
+    clock.advanceTo(at(FRIDAY, 7));
+    const ask = store.createMessage({ kind: 'ask', body: 'Ship it?', sender: 'claude-code' });
+    store.createMessage({ kind: 'ask', body: 'Which branch?', sender: 'claude-code' });
+    store.markDone(ask.id);
+    scheduler.start();
+    clock.advanceTo(at(FRIDAY, 9));
+    expect(sent[0]!.body).toContain('Waiting on you: 1 question (Which branch?)');
   });
 
   it('is a single clear-day line on an empty desk', () => {

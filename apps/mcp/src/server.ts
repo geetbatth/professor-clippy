@@ -414,7 +414,8 @@ export function createClippyServer(options: ClippyServerOptions = {}): McpServer
           'Set a watch: when an AI agent working in a project finishes (or, with event any, sends the user anything), Professor Clippy ' +
           'posts the nudge to the user as a note. It fires once. Use this when the user says something like when the payments agent finishes, ' +
           'remind me to deploy. The project is matched as a case-insensitive part of the agents project folder names; ' +
-          'look the name up with recent_activity if unsure, and leave it out to watch every project.',
+          'look the name up with recent_activity if unsure, and leave it out to watch every project. ' +
+          'A finished watch only fires while the Claude Code hook is switched on in Settings; tell the user if it is off.',
         inputSchema: {
           project: NewWatchInput.shape.project.describe('Project folder name, or part of it. Omit to watch any project.'),
           event: NewWatchInput.shape.event.describe('finished (default): the agent finished its turn. any: any note or question from it.'),

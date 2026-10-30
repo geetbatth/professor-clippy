@@ -93,16 +93,58 @@ describe('PhoneGate', () => {
     expect(mirrored).toEqual([]);
   });
 
-  it('escalates a held ask unanswered for 10 minutes to the phone even while the user is active', () => {
+  it('escalates a held ask unanswered for 5 minutes (the default) to the phone even while the user is active', () => {
     const ask = asks.create({ question: 'Ship it?', sender: 'agent' });
-    clock.advance(9 * 60_000);
+    clock.advance(4 * 60_000);
     expect(mirrored).toEqual([]);
     expect(gate.heldIds).toEqual([ask.id]);
-    clock.advance(60_000 + TICK); // past 10 minutes, next tick
+    clock.advance(60_000 + TICK); // past 5 minutes, next tick
     expect(mirrored.map((x) => x.id)).toEqual([ask.id]);
     expect(gate.heldIds).toEqual([]);
     clock.advance(TICK * 5); // once only
     expect(mirrored).toHaveLength(1);
+  });
+
+  it('reads the escalation delay fresh, so a settings change applies to asks already waiting', () => {
+    let delay = 20 * 60_000;
+    gate.stop();
+    gate = new PhoneGate({ bus, store, clock, isUserAway: () => away, mode: () => mode, askEscalateMs: () => delay });
+    gate.start();
+    const ask = asks.create({ question: 'Ship it?', sender: 'agent' });
+    clock.advance(10 * 60_000);
+    expect(mirrored).toEqual([]);
+    delay = 5 * 60_000;
+    clock.advance(TICK);
+    expect(mirrored.map((x) => x.id)).toEqual([ask.id]);
+  });
+
+  it('counts a snoozed ask\'s wait from when it wakes, not from when it was created', () => {
+    const ask = asks.create({ question: 'Ship it?', sender: 'agent' });
+    store.snooze(ask.id, T0 + 30 * 60_000);
+    clock.advance(30 * 60_000); // asleep: nothing, however long
+    expect(mirrored).toEqual([]);
+    store.updateMessage(ask.id, { state: 'unread', snoozedUntil: null }); // the scheduler's wake-up
+    clock.advance(TICK * 2); // user still active; far older than 5 minutes since creation
+    expect(mirrored).toEqual([]);
+    expect(gate.heldIds).toEqual([ask.id]);
+    clock.advance(5 * 60_000); // 5 minutes since waking
+    expect(mirrored.map((x) => x.id)).toEqual([ask.id]);
+  });
+
+  it('does not flush a note that has waited more than an hour when the user goes away, but does one held 10 minutes', () => {
+    const stale = note('stale');
+    clock.advance(110 * 60_000);
+    const fresh = note('fresh');
+    const staleAsk = asks.create({ question: 'Still there?', sender: 'agent' });
+    clock.advance(10 * 60_000);
+    // The ask escalated at the PC after 5 minutes; the notes are still held.
+    expect(mirrored.map((x) => x.id)).toEqual([staleAsk.id]);
+    mirrored.length = 0;
+    away = true;
+    clock.advance(TICK);
+    expect(mirrored.map((x) => x.id)).toEqual([fresh.id]);
+    expect(gate.heldIds).toEqual([]); // the stale one is dropped from the hold, not kept for later
+    expect(store.getMessage(stale.id)!.state).toBe('unread'); // and stays on the desk
   });
 
   it('does not escalate an ask that was answered, or one that is snoozed', () => {

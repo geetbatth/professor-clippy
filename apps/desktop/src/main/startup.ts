@@ -127,6 +127,8 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
     store: core.store,
     isUserAway,
     mode: () => settings.get().phoneWhen,
+    // A question goes to the phone after half the time ask_user waits for an answer.
+    askEscalateMs: () => settings.get().askTimeoutDefaultS * 500,
   });
   phoneGate.start();
   // Nudges from watches are ordinary notes from Clippy, so they reach the gate like any other.

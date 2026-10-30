@@ -102,7 +102,8 @@ function reminderLines(now: number, reminders: Reminder[]): string[] {
 /** The brief's title and body. With nothing to report the body is a single "clear day" line. */
 export function composeBrief(i: BriefInput): { title: string; body: string } {
   const reminders = reminderLines(i.now, i.reminders);
-  const asks = i.pendingAsks;
+  // A question dismissed on the desk (done, never answered) is no longer waiting on anyone.
+  const asks = i.pendingAsks.filter((m) => m.answer === undefined && m.state !== 'done');
   // Unanswered questions have their own line; the rest of the unread pile is counted once.
   const unread = i.unread.filter((m) => m.kind !== 'ask' && m.kind !== 'chat' && !isClippysOwn(m)).length;
   const activity = activityLines(i.activity);

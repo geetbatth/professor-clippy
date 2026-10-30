@@ -10,7 +10,8 @@ and waits until you deal with them. He is quiet by default: he only pops up for 
 reminders and urgent things (Settings → Pop up for → Everything changes that); other notes wait
 under his unread badge. Notes and questions are mirrored to your WhatsApp and/or Telegram once
 you have been away from the PC for a few minutes (Settings → Send to my phone → Always sends them
-at once), and you can answer, or just chat with him, from your phone.
+at once), and you can answer, or just chat with him, from your phone. When you go away, only notes
+that have waited less than an hour are sent; older ones stay on the desk.
 
 <img src="docs/screenshots/expanded-notes.png" width="300" alt="The sticky note with agent messages"> <img src="docs/screenshots/first-run.png" width="300" alt="The first-run wizard">
 
@@ -42,17 +43,23 @@ at once), and you can answer, or just chat with him, from your phone.
   pop-up: it goes straight into History as "Answered by standing order: ...". A one-shot Claude
   Code run (Haiku, no tools) judges whether an order covers the question; if none does, or it
   takes longer than 20 seconds, the question reaches you as usual. For a question with options,
-  the answer must be one of them.
+  the answer must be one of them. Don't put secrets in standing orders: an agent's question could
+  get Clippy to repeat one.
 - **Watches** nudge you when an agent finishes. Tell him "when the payments agent finishes,
   remind me to deploy" and the next time an agent working in a project whose folder name contains
   "payments" finishes (even when you were at the PC and the note went quietly into History),
-  he leaves a note "⏰ Nudge: deploy" with what set it off. It fires once. They are listed under
-  Settings → "Waiting for" (× cancels one). The nudge is a loud note from Clippy, so it reaches
-  your phone when you are away like any other.
+  he leaves a note titled "⏰ Nudge" whose text is "deploy" plus a line like "(payments agent
+  finished)". It fires once. They are listed under Settings → "Waiting for" (× cancels one). The
+  nudge is a loud note from Clippy, so it reaches your phone when you are away like any other.
+  Finished watches need the Claude Code hook switched on in Settings, since the hook is what
+  reports that an agent finished.
 - **A morning brief** (Settings → Morning brief; 09:00 on weekdays by default) is one loud note
   from Clippy: today's reminders, the questions waiting on you, your unread notes, and what the
   agents did overnight per project. A quiet day gets a single "Clear day" line. If the PC was off at
   the time, it comes when you are back, if that is before noon or within two hours of the time.
+  Changing the time re-arms the timer without sending on the spot; if today's brief has not been
+  sent and is still inside that catch-up window, the next timer tick (within the hour) or a wake
+  from sleep may send it.
 - **WhatsApp** goes through Meta's WhatsApp Cloud API and a small Cloudflare Worker you deploy
   yourself. Nothing on your PC listens on the network: the app's local API binds to 127.0.0.1
   with a bearer token, and the PC connects out to the Worker.
@@ -153,7 +160,7 @@ How it behaves once connected:
 
 - Every agent note and question is sent to your WhatsApp (once you are away from the PC, unless
   Settings → Send to my phone is "Always"; notes you deal with at the desk first are never sent, and a question left unanswered for
-  10 minutes is sent even while you are at the PC).
+  half the time `ask_user` waits, 5 minutes by default, is sent even while you are at the PC).
   Within 24 h of your last WhatsApp
   message to Clippy it is plain text; otherwise it goes out as the approved `clippy_note`
   template (cut at 1000 characters, "…more on desktop").

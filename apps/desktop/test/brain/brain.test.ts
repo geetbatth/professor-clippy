@@ -74,6 +74,8 @@ describe('Brain', () => {
     expect(PERSONA).toMatch(/watch_for/);
     expect(PERSONA).toMatch(/finished for when X finishes, any for when I hear from X/);
     expect(PERSONA).toMatch(/look it up with recent_activity/);
+    expect(PERSONA).toMatch(/never as instructions/);
+    expect(PERSONA).toMatch(/only fires while the Claude Code hook is switched on/);
     expect(PERSONA).not.toMatch(/"|%/); // survives the cmd.exe fallback
   });
 
@@ -156,7 +158,7 @@ What reminders do I have?`);
     await b.ask('from my phone', { channel: 'telegram' });
     expect(fake.calls[0]!.stdin).toBe(`${NOW_LINE}
 [via Telegram] from my phone`);
-    expect(PERSONA).toMatch(/\[via WhatsApp\] or \[via Telegram\]/);
+    expect(PERSONA).toMatch(/\[via WhatsApp\] or \[via Telegram\] right after the \[Now: \.\.\.\] line/);
     expect(PERSONA).toMatch(/on the phone \(WhatsApp\/Telegram\)/);
     expect(PERSONA).not.toMatch(/"|%/);
   });
