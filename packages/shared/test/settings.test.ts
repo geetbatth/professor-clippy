@@ -7,11 +7,13 @@ describe('Settings', () => {
       hookEnabled: true,
       awayThresholdS: 180,
       soundEnabled: true,
-      unsolicitedAdvice: true,
+      popUpFor: 'important',
+      unsolicitedAdvice: false,
       askTimeoutDefaultS: 600,
       hideOnFullscreen: true,
       autoStart: true,
       firstRunDone: false,
+      quietDefaultsApplied: false,
     });
     expect(DEFAULT_SETTINGS).toEqual(Settings.parse({}));
   });
@@ -37,6 +39,23 @@ describe('Settings', () => {
   it('accepts an away threshold of 0 (always interrupt) and patches it', () => {
     expect(Settings.parse({ awayThresholdS: 0 }).awayThresholdS).toBe(0);
     expect(SettingsPatch.parse({ awayThresholdS: 600 })).toEqual({ awayThresholdS: 600 });
+  });
+});
+
+describe('Settings: quiet by default', () => {
+  it('pops up for important things only, with advice quips off', () => {
+    const s = Settings.parse({});
+    expect(s.popUpFor).toBe('important');
+    expect(s.unsolicitedAdvice).toBe(false);
+    expect(s.quietDefaultsApplied).toBe(false);
+    expect(Settings.parse({ popUpFor: 'everything' }).popUpFor).toBe('everything');
+    expect(Settings.safeParse({ popUpFor: 'nothing' }).success).toBe(false);
+    expect(SettingsPatch.parse({ popUpFor: 'everything' })).toEqual({ popUpFor: 'everything' });
+  });
+
+  it('the migration marker is not patchable', () => {
+    expect(SettingsPatch.parse({ quietDefaultsApplied: true })).toEqual({});
+    expect(applySettingsPatch(Settings.parse({ quietDefaultsApplied: true }), { soundEnabled: false }).quietDefaultsApplied).toBe(true);
   });
 });
 

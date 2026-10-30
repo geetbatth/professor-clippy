@@ -36,6 +36,11 @@
   width: 92px;
   font-size: 12px;
 }
+.setting-select {
+  flex: none;
+  width: 150px;
+  font-size: 12px;
+}
 .setting-number input {
   width: 56px;
   text-align: right;

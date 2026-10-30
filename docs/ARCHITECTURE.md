@@ -63,6 +63,16 @@ during `startCore` and hands them to Telegram once it is subscribed, in the same
 block that subscribes the relay. `test/startup.test.ts` checks both channels see an agent's
 first note and Telegram sends the catch-up.
 
+## Quiet by default
+
+`alertLevel(message, popUpFor)` (renderer, `note/alertLevel.ts`) decides how a new message
+announces itself. Loud (ding, quip, wiggle, note opens) for questions, reminders, urgent notes
+(permission requests) and `sender: "clippy"` notes; quiet (just the unread badge and the stack)
+for a plain agent note, unless the `popUpFor` setting is `everything`. `unsolicitedAdvice` now
+defaults to off, and `SettingsStore.load` runs a one-time migration that switches it off for
+existing files and sets `quietDefaultsApplied` (never patchable), after which the user's own
+toggle wins.
+
 ## Away-only notes
 
 `NewMessageInput.quietIfActive` (the hook sets it on its Stop "agent finished" notes, never on

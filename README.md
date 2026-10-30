@@ -6,7 +6,9 @@ A Windows desktop sticky note with a robot professor standing on it: Professor C
 steel canister stencilled "PROF. CLIPPY", with a paperclip head in mismatched goggles and a
 mortarboard, robot arms and caster wheels. Your AI agents (Claude Code and
 any other MCP client on this PC) leave him notes, reminders and questions; he pops up, wiggles,
-and waits until you deal with them. Every note and question is mirrored to your WhatsApp and/or
+and waits until you deal with them. He is quiet by default: he only pops up for questions,
+reminders and urgent things (Settings → Pop up for → Everything changes that); other notes wait
+under his unread badge. Every note and question is mirrored to your WhatsApp and/or
 Telegram, and you can answer, or just chat with him, from your phone.
 
 <img src="docs/screenshots/expanded-notes.png" width="300" alt="The sticky note with agent messages"> <img src="docs/screenshots/first-run.png" width="300" alt="The first-run wizard">
@@ -71,7 +73,7 @@ npm run package
 - On first start the note opens on a **first-run wizard**:
   1. WhatsApp: paste your Worker URL and relay secret, or **Skip WhatsApp for now**.
   2. Telegram (optional): paste your bot token and pair, or **Skip Telegram for now**.
-  3. Sounds, unsolicited advice and start with Windows.
+  3. Sounds, unsolicited advice (off by default) and start with Windows.
   4. **Connect Claude Code**: shows exactly what would change (a dry run) and installs only when
      you click **Looks good, install**. You can skip this and do it later from Settings.
 - Uninstall from Windows Settings → Apps. To clean Claude Code up too, run

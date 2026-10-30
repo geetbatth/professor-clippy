@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message } from '@clippy/shared/schemas';
+import type { Settings } from '@clippy/shared/settings';
 import type { WindowMode } from '../../main/window/windowApi';
 import { TrackingClippy } from './clippy/TrackingClippy';
 import { useClippyMood, type ClippyMood } from './clippy/useClippyMood';
@@ -10,6 +11,7 @@ import { useClickThrough } from './hooks/useClickThrough';
 import { useSettings } from './hooks/useSettings';
 import { useUnread } from './hooks/useUnread';
 import { useWindowDrag } from './hooks/useWindowDrag';
+import { alertLevel } from './note/alertLevel';
 import { ChatTab } from './note/ChatTab';
 import { FirstRunWizard } from './note/FirstRunWizard';
 import { HistoryTab } from './note/HistoryTab';
@@ -46,6 +48,8 @@ export function App({ runtime }: { runtime: Runtime }) {
   }, [tab, refreshSettings]);
   const soundOn = useRef(true);
   soundOn.current = settings?.soundEnabled ?? true;
+  const popUpFor = useRef<Settings['popUpFor']>('important');
+  popUpFor.current = settings?.popUpFor ?? 'important';
   const sounds = useMemo(() => createSoundBoard(() => soundOn.current), []);
   const chat = useChat(api);
 
@@ -86,6 +90,8 @@ export function App({ runtime }: { runtime: Runtime }) {
 
   const onNewMessage = useCallback(
     (m: Message) => {
+      // Quiet arrivals only show up as the unread badge and in the stack.
+      if (alertLevel(m, popUpFor.current) === 'quiet') return;
       moodRef.current?.message(m.urgent);
       sounds.play('ding');
       setQuip((last) => quipForMessage(m, new Date(), Math.random, last));

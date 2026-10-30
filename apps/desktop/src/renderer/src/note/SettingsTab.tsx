@@ -101,6 +101,23 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
               onChange={(e) => void update({ [key]: e.target.checked })}
             />
           </label>
+          {key === 'soundEnabled' && (
+            <label className="setting">
+              <span className="setting-text">
+                <span className="setting-label">Pop up for</span>
+                <span className="setting-hint">Anything else waits quietly under my unread badge.</span>
+              </span>
+              <select
+                className="field-input setting-select"
+                value={settings.popUpFor}
+                aria-label="What makes me pop up"
+                onChange={(e) => void update({ popUpFor: e.target.value as Settings['popUpFor'] })}
+              >
+                <option value="important">Questions, reminders &amp; urgent</option>
+                <option value="everything">Everything</option>
+              </select>
+            </label>
+          )}
           {key === 'hookEnabled' && (
             <>
               <label className={`setting setting--sub${settings.hookEnabled ? '' : ' setting--off'}`}>

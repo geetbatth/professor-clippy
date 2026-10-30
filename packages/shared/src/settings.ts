@@ -26,6 +26,12 @@ const fields = {
    */
   awayThresholdS: z.number().int().nonnegative().max(24 * 60 * 60),
   soundEnabled: z.boolean(),
+  /**
+   * What makes Clippy pop up (ding, quip, wiggle, open the note): 'important' = questions,
+   * reminders, urgent notes and Clippy's own notes; 'everything' = every new note too.
+   * Quiet arrivals still land in the stack with the unread badge.
+   */
+  popUpFor: z.enum(['important', 'everything']),
   /** Clippy may volunteer advice without being asked. */
   unsolicitedAdvice: z.boolean(),
   /** Default `ask_user` wait, seconds. */
@@ -63,6 +69,11 @@ const fields = {
   telegramChatName: z.string().min(1),
   /** The first-run wizard has been finished or skipped. */
   firstRunDone: z.boolean(),
+  /**
+   * Internal marker: the one-time "quiet by default" migration (advice quips off) has run.
+   * Set by main on load and never patchable, so after it the user's own advice toggle wins.
+   */
+  quietDefaultsApplied: z.boolean(),
 };
 
 /** Full settings object with defaults applied. */
@@ -70,7 +81,8 @@ export const Settings = z.object({
   hookEnabled: fields.hookEnabled.default(true),
   awayThresholdS: fields.awayThresholdS.default(180),
   soundEnabled: fields.soundEnabled.default(true),
-  unsolicitedAdvice: fields.unsolicitedAdvice.default(true),
+  popUpFor: fields.popUpFor.default('important'),
+  unsolicitedAdvice: fields.unsolicitedAdvice.default(false),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.default(600),
   hideOnFullscreen: fields.hideOnFullscreen.default(true),
   autoStart: fields.autoStart.default(true),
@@ -81,6 +93,7 @@ export const Settings = z.object({
   telegramChatId: fields.telegramChatId.optional(),
   telegramChatName: fields.telegramChatName.optional(),
   firstRunDone: fields.firstRunDone.default(false),
+  quietDefaultsApplied: fields.quietDefaultsApplied.default(false),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -91,12 +104,14 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze(Settings.parse({}));
  * Partial update for `setSettings(patch)`. Omitted keys are left unchanged
  * (no defaults are applied). For the optional keys `workerUrl`, `workerSecret`,
  * `windowPos`, `telegramChatId` and `telegramChatName`, `null` clears the stored value.
- * The Telegram token is not patchable (main encrypts it: `setTelegramToken`).
+ * The Telegram token is not patchable (main encrypts it: `setTelegramToken`), nor is
+ * `quietDefaultsApplied`.
  */
 export const SettingsPatch = z.object({
   hookEnabled: fields.hookEnabled.optional(),
   awayThresholdS: fields.awayThresholdS.optional(),
   soundEnabled: fields.soundEnabled.optional(),
+  popUpFor: fields.popUpFor.optional(),
   unsolicitedAdvice: fields.unsolicitedAdvice.optional(),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.optional(),
   hideOnFullscreen: fields.hideOnFullscreen.optional(),
