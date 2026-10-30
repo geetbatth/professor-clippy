@@ -192,4 +192,27 @@ describe('registerIpc', () => {
     ipc.emit('brain:state', 'idle');
     expect(contents.send).toHaveBeenCalledTimes(1);
   });
+
+  it('with disposeOnClose off, a page window can still save after the main window closed (quitting), until dispose()', async () => {
+    const { win, contents, close } = fakeWindow();
+    const backend = fakeBackend();
+    const pageWindow = { id: 'page window' };
+    const ipc = registerIpc(backend, win as never, { allowSender: (s) => s === (pageWindow as never), disposeOnClose: false });
+    close();
+    contents.isDestroyed.mockReturnValue(true);
+    // The page window's last save (beforeunload) arrives after the main window has gone.
+    await expect(handlers.get(IpcInvoke.writePage)!({ sender: pageWindow }, 'P1', { body: 'last words', baseUpdatedAt: 5 })).resolves.toEqual({
+      ok: true,
+      page: {},
+    });
+    expect(backend.writePage).toHaveBeenCalledWith('P1', { body: 'last words', baseUpdatedAt: 5 });
+    await handlers.get(IpcInvoke.createPage)!({ sender: pageWindow }, { title: 'Scratch (your version)', body: 'mine' });
+    expect(backend.createPage).toHaveBeenCalledOnce();
+    // Nothing is pushed to the closed window meanwhile.
+    ipc.emit('brain:state', 'idle');
+    expect(contents.send).not.toHaveBeenCalled();
+    ipc.dispose();
+    expect(handlers.size).toBe(0);
+    ipc.dispose(); // twice is fine
+  });
 });

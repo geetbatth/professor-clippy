@@ -427,7 +427,9 @@ keeps it at its smallest, 39 px; the rest is see-through), saving the full heigh
 channels act only for the page window that sent them (`window.clippyPageWindow` in the preload).
 `registerIpc(backend, win, { allowSender })` accepts backend calls from the Clippy window and from
 any page window (`pageWindows.owns`, a `WeakSet` of their web contents, so the last save on
-`beforeunload` still lands while one closes); any other sender is refused. `page:changed`,
+`beforeunload` still lands while one closes); any other sender is refused. `index.ts` passes
+`disposeOnClose: false`, so the handlers outlive the Clippy window (on quit all windows close at
+once) and are removed in `will-quit` only after `core.stop()`. `page:changed`,
 `page:deleted`, `theme:system` and `settings:changed` (every settings change, without the
 encrypted Telegram token) go to every window; the rest only to the Clippy window.
 

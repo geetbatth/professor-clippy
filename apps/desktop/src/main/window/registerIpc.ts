@@ -58,13 +58,19 @@ const argSchemas: { [K in keyof ClippyBackend]: z.ZodType<Parameters<ClippyBacke
 export interface ClippyIpc {
   /** Push an event to the window's renderer (no-op once the window is gone). */
   emit<E extends ClippyEvent>(event: E, payload: ClippyEventMap[E]): void;
-  /** Remove all handlers (also done automatically when the window closes). */
+  /** Remove all handlers (also done when the window closes, unless `disposeOnClose` is off). */
   dispose(): void;
 }
 
 export interface RegisterIpcOptions {
   /** Other web contents allowed to call the backend (a popped-out page's window). */
   allowSender?: (sender: WebContents) => boolean;
+  /**
+   * Remove the handlers when the window closes (default true). Off when page windows may still
+   * call after it: on quit every window closes at once, and a page window's last save
+   * (`beforeunload`) must still land, so main disposes once the app has stopped instead.
+   */
+  disposeOnClose?: boolean;
 }
 
 export function registerIpc(backend: ClippyBackend, win: BrowserWindow, opts: RegisterIpcOptions = {}): ClippyIpc {
@@ -87,7 +93,7 @@ export function registerIpc(backend: ClippyBackend, win: BrowserWindow, opts: Re
     disposed = true;
     for (const method of methods) ipcMain.removeHandler(IpcInvoke[method]);
   };
-  win.once('closed', dispose);
+  if (opts.disposeOnClose !== false) win.once('closed', dispose);
 
   return {
     emit(event, payload) {

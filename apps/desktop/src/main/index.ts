@@ -130,7 +130,10 @@ async function main(): Promise<void> {
   const win = clippy.win;
   // Pad pages popped out onto the desktop: their windows follow the store (page:changed).
   const pageWindows: PageWindows = createPageWindows({ pages: core.pages, bus, quitting: () => quitting });
-  ipc = registerIpc(backend, win, { allowSender: (sender) => pageWindows.owns(sender) });
+  // Kept past the note's window closing: on quit every window closes at once, and a page window's
+  // last save (or its "(your version)" copy) must still reach the store. Removed once stopped.
+  const rendererIpc = registerIpc(backend, win, { allowSender: (sender) => pageWindows.owns(sender), disposeOnClose: false });
+  ipc = rendererIpc;
   win.webContents.setAudioMuted(!settings.get().soundEnabled);
   // Closing the window (Alt+F4) only hides Clippy; Quit is in the tray.
   win.on('close', (e) => {
@@ -195,6 +198,8 @@ async function main(): Promise<void> {
   });
 
   // Orderly shutdown: stop the relay, Telegram and the brain, then the core (API, scheduler, database).
+  // `will-quit` comes after every window has closed, so their last saves were sent before it, and the
+  // core still takes them until it stops; only then are the IPC handlers removed.
   let stopped = false;
   app.on('will-quit', (e) => {
     if (stopped) return;
@@ -217,6 +222,7 @@ async function main(): Promise<void> {
       .then(() => core.stop())
       .catch((err) => console.error('[clippy] core stop failed:', err))
       .finally(() => {
+        rendererIpc.dispose();
         stopped = true;
         app.quit();
       });
