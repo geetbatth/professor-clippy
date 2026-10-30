@@ -97,6 +97,18 @@ over `awayThresholdS` (0 = always away); without an idle source, always away. Te
 replay of missed reminders skips the gate, and WhatsApp reminders still come from the Worker.
 `test/phoneGate.test.ts` covers the rules; relay/Telegram tests use `test/alwaysMirror.ts`.
 
+## Tell Clippy
+
+`TellBox` (renderer, `note/TellBox.tsx`) sends through the same `useChat` as the Clippy tab, so
+both share one brain session; its reply is the first Clippy chat line created after the send
+(`tellReply`). The global hotkey is the `tellHotkey` setting (an Electron accelerator, `''` =
+off): `registerTellHotkey` (`main/window/hotkey.ts`) wraps `globalShortcut` and turns a malformed
+or taken accelerator into `ok: false` plus a message, which `ClippyBackend.hotkeyStatus` hands to
+Settings. `main/index.ts` re-registers it when the setting changes. On press, main shows and
+focuses the window (the only place Clippy takes focus; he is otherwise `showInactive`), expands
+it and sends `window:tell`; the renderer switches to Notes and focuses the box. `window:blur`
+gives focus back on Escape. Auto-collapse is held off while the box has focus or text.
+
 ## Storage
 
 **Driver: Node's built-in `node:sqlite` (`DatabaseSync`).** No native module, so there is no `better-sqlite3` and no `@electron/rebuild` step.

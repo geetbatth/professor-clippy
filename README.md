@@ -22,6 +22,11 @@ at once), and you can answer, or just chat with him, from your phone.
   mouse input) for a while: Settings → "I count as away after N
   min" (default 3; 0 = always). While you are at the PC they go quietly into History, with no
   pop-up, sound or WhatsApp/Telegram message. Permission requests always come through.
+- **Tell Clippy** is a one-line box under the notes (and a global hotkey, default
+  **Ctrl+Alt+Space**, Settings → "Tell Clippy hotkey"; empty = off). Press it from any app, type
+  "remind me at 3 to call Dave" and Enter; his reply shows under the box (× clears it). Escape
+  tucks him away again. It is the same conversation as the **Clippy** tab. If the hotkey is
+  taken by another app, Settings says so.
 - **Clippy's own chat brain** is Claude Code running headless with your Claude Code login (no
   API key). It can read files and search the web, manage your messages and reminders, and
   answer agents' questions for you; it cannot edit files or run commands. Of the `clippy` tools

@@ -137,6 +137,7 @@ export function createClippyWindow(opts: ClippyWindowOptions): ClippyWindow {
     [WindowChannels.mode]: (m) => {
       if (isWindowMode(m) && m !== mode) applyMode(m);
     },
+    [WindowChannels.blur]: () => win.blur(),
     [WindowChannels.ignoreMouse]: (ignore) => {
       if (ignore === true) win.setIgnoreMouseEvents(true, { forward: true });
       else if (ignore === false) win.setIgnoreMouseEvents(false);

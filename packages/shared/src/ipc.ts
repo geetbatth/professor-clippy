@@ -71,6 +71,15 @@ export interface TelegramTestResult {
   error?: string;
 }
 
+/** State of the "Tell Clippy" global hotkey, for the Settings status line. */
+export interface HotkeyStatus {
+  /** The accelerator in use (`''` = no hotkey). */
+  accelerator: string;
+  /** False if it couldn't be registered (malformed, or another app has it); `error` says so. */
+  ok: boolean;
+  error?: string;
+}
+
 /** Request/response API the renderer calls (all async, via `ipcRenderer.invoke`). */
 export interface ClippyBackend {
   /** Messages matching a filter (e.g. `{ state: 'unread' }` for the sticky-note stack). */
@@ -106,6 +115,8 @@ export interface ClippyBackend {
   telegramUnpair(): Promise<TelegramStatus>;
   /** Send a test message to the paired chat. */
   telegramSendTest(): Promise<TelegramTestResult>;
+  /** Whether the "Tell Clippy" global hotkey registered. */
+  hotkeyStatus(): Promise<HotkeyStatus>;
 }
 
 /** `ipcMain.handle` / `ipcRenderer.invoke` channel for each backend method. */
@@ -124,6 +135,7 @@ export const IpcInvoke = {
   setTelegramToken: 'clippy:setTelegramToken',
   telegramUnpair: 'clippy:telegramUnpair',
   telegramSendTest: 'clippy:telegramSendTest',
+  hotkeyStatus: 'clippy:hotkeyStatus',
 } as const satisfies { [K in keyof ClippyBackend]: `clippy:${K}` };
 
 /** Push-event channels (main → renderer via `webContents.send`). */

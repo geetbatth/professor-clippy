@@ -44,6 +44,7 @@ function fakeBackend(): ClippyBackend {
     setTelegramToken: vi.fn(async () => ({ tokenSaved: true, state: 'connecting' as const })),
     telegramUnpair: vi.fn(async () => ({ tokenSaved: true, state: 'connected' as const })),
     telegramSendTest: vi.fn(async () => ({ ok: true })),
+    hotkeyStatus: vi.fn(async () => ({ accelerator: 'Alt+T', ok: true })),
   };
 }
 
@@ -74,6 +75,7 @@ describe('registerIpc', () => {
     expect(backend.setTelegramToken).toHaveBeenLastCalledWith(null);
     await handlers.get(IpcInvoke.telegramSendTest)!(e);
     expect(backend.telegramSendTest).toHaveBeenCalledOnce();
+    await expect(handlers.get(IpcInvoke.hotkeyStatus)!(e)).resolves.toEqual({ accelerator: 'Alt+T', ok: true });
   });
 
   it('rejects bad arguments before they reach the backend', () => {
@@ -88,6 +90,7 @@ describe('registerIpc', () => {
     expect(() => handlers.get(IpcInvoke.sendChat)!(e, '')).toThrow();
     expect(() => handlers.get(IpcInvoke.connectClaude)!(e, 'uninstall')).toThrow();
     expect(() => handlers.get(IpcInvoke.setTelegramToken)!(e, 42)).toThrow();
+    expect(() => handlers.get(IpcInvoke.hotkeyStatus)!(e, 'extra')).toThrow();
     expect(backend.snooze).not.toHaveBeenCalled();
     expect(backend.markDone).not.toHaveBeenCalled();
   });

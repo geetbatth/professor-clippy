@@ -35,6 +35,7 @@ const h = vi.hoisted(() => {
     isDestroyed = () => false;
     isVisible = () => true;
     hide = vi.fn();
+    blur = vi.fn();
     showInactive = vi.fn();
     once = (event: string, cb: () => void) => this.handlers.set(event, cb);
     on = (event: string, cb: () => void) => this.handlers.set(event, cb);
@@ -99,6 +100,14 @@ describe('createClippyWindow', () => {
     expect(win.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true });
     send(WindowChannels.ignoreMouse, 'yes');
     expect(win.setIgnoreMouseEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it('blur hands keyboard focus back, only for this window', () => {
+    const { win, send } = setup();
+    h.state.listeners.get(WindowChannels.blur)!({ sender: {} });
+    expect(win.blur).not.toHaveBeenCalled();
+    send(WindowChannels.blur);
+    expect(win.blur).toHaveBeenCalledOnce();
   });
 
   it('mode switches sizes with top-right corners aligned, and ignores bad modes', () => {
@@ -203,7 +212,7 @@ describe('createClippyWindow', () => {
 
   it('removes its IPC listeners when the window closes', () => {
     const { win } = setup();
-    expect(h.state.listeners.size).toBe(Object.keys(WindowChannels).length - 2); // not the main->renderer ones
+    expect(h.state.listeners.size).toBe(Object.keys(WindowChannels).length - 3); // not the main->renderer ones
     win.handlers.get('closed')!();
     expect(h.state.listeners.size).toBe(0);
   });

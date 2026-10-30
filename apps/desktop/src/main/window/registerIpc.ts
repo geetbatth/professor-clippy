@@ -30,6 +30,7 @@ const argSchemas: { [K in keyof ClippyBackend]: z.ZodType<Parameters<ClippyBacke
   setTelegramToken: z.tuple([z.string().max(200).nullable()]),
   telegramUnpair: z.tuple([]),
   telegramSendTest: z.tuple([]),
+  hotkeyStatus: z.tuple([]),
 };
 
 export interface ClippyIpc {

@@ -7,6 +7,7 @@ describe('IPC channels', () => {
       'answerAsk',
       'connectClaude',
       'getSettings',
+      'hotkeyStatus',
       'listMessages',
       'markDone',
       'newChat',

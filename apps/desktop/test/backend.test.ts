@@ -51,7 +51,7 @@ describe('createBackend', () => {
       sendTest: async () => ({ ok: false, error: 'not paired' }),
     };
     settings = await SettingsStore.load(join(dir, 'settings.json'));
-    backend = createBackend({ store, asks, brain, settings, claudeWiring, telegram });
+    backend = createBackend({ store, asks, brain, settings, claudeWiring, telegram, hotkey: () => ({ accelerator: 'Alt+T', ok: false, error: 'taken' }) });
   });
   afterEach(() => {
     store.close();
@@ -100,11 +100,15 @@ describe('createBackend', () => {
     const secrets = { available: () => true, encrypt: (s: string) => `enc(${s})`, decrypt: (s: string) => s.slice(4, -1) };
     const withToken = await SettingsStore.load(join(dir, 'settings.json'), { secrets });
     await withToken.setTelegramToken('123456:AAHfakefakefakefakefakefake');
-    const b = createBackend({ store, asks, brain: { ask: async () => ({}), newChat: () => {} }, settings: withToken, claudeWiring: { connect: async () => ({ ok: true, log: [], warnings: [] }) }, telegram: { status: () => ({ tokenSaved: true, state: 'off' }), setToken: async () => ({ tokenSaved: true, state: 'off' }), unpair: async () => ({ tokenSaved: true, state: 'off' }), sendTest: async () => ({ ok: true }) } });
+    const b = createBackend({ store, asks, brain: { ask: async () => ({}), newChat: () => {} }, settings: withToken, claudeWiring: { connect: async () => ({ ok: true, log: [], warnings: [] }) }, hotkey: () => ({ accelerator: '', ok: true }), telegram: { status: () => ({ tokenSaved: true, state: 'off' }), setToken: async () => ({ tokenSaved: true, state: 'off' }), unpair: async () => ({ tokenSaved: true, state: 'off' }), sendTest: async () => ({ ok: true }) } });
     expect(withToken.get().telegramBotTokenEnc).toBeDefined();
     expect(await b.getSettings()).not.toHaveProperty('telegramBotTokenEnc');
     expect(await b.setSettings({ telegramChatId: 42 })).toMatchObject({ telegramChatId: 42 });
     expect(await b.setSettings({ soundEnabled: false })).not.toHaveProperty('telegramBotTokenEnc');
+  });
+
+  it('reports the Tell Clippy hotkey status', async () => {
+    expect(await backend.hotkeyStatus()).toEqual({ accelerator: 'Alt+T', ok: false, error: 'taken' });
   });
 
   it('forwards the Telegram controls', async () => {

@@ -27,6 +27,13 @@ describe('mock backend', () => {
     expect((await b.listMessages({ state: 'done', kind: 'ask' }))[0]?.answer).toBe('17');
   });
 
+  it('reports the hotkey from the current setting', async () => {
+    const b = createMockBackend();
+    expect(await b.hotkeyStatus()).toEqual({ accelerator: 'Control+Alt+Space', ok: true });
+    await b.setSettings({ tellHotkey: '' });
+    expect(await b.hotkeyStatus()).toEqual({ accelerator: '', ok: true });
+  });
+
   it('lists newest first', async () => {
     const unread = await createMockBackend().listMessages({ state: 'unread' });
     const times = unread.map((m) => m.createdAt);

@@ -11,6 +11,7 @@ describe('Settings', () => {
       phoneWhen: 'away',
       unsolicitedAdvice: false,
       askTimeoutDefaultS: 600,
+      tellHotkey: 'Control+Alt+Space',
       hideOnFullscreen: true,
       autoStart: true,
       firstRunDone: false,
@@ -49,6 +50,15 @@ describe('Settings: phoneWhen', () => {
     expect(Settings.parse({ phoneWhen: 'always' }).phoneWhen).toBe('always');
     expect(Settings.safeParse({ phoneWhen: 'never' }).success).toBe(false);
     expect(SettingsPatch.parse({ phoneWhen: 'always' })).toEqual({ phoneWhen: 'always' });
+  });
+});
+
+describe('Settings: tellHotkey', () => {
+  it('defaults to Control+Alt+Space, may be empty (off), is capped at 60 chars and patchable', () => {
+    expect(Settings.parse({}).tellHotkey).toBe('Control+Alt+Space');
+    expect(Settings.parse({ tellHotkey: '' }).tellHotkey).toBe('');
+    expect(Settings.safeParse({ tellHotkey: 'x'.repeat(61) }).success).toBe(false);
+    expect(SettingsPatch.parse({ tellHotkey: 'Alt+T' })).toEqual({ tellHotkey: 'Alt+T' });
   });
 });
 

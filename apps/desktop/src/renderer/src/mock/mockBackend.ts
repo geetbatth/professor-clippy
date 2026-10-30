@@ -200,6 +200,9 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
       if (settings.telegramChatId === undefined) return { ok: false, error: 'No chat is paired yet: send /start with the code to your bot first.' };
       return { ok: true };
     },
+    async hotkeyStatus() {
+      return { accelerator: settings.tellHotkey, ok: true };
+    },
     telegramStart(code, chat = { id: 123456789, firstName: 'You' }) {
       if (!telegramToken || settings.telegramChatId !== undefined || code.toUpperCase() !== pairingCode) return false;
       settings = { ...settings, telegramChatId: chat.id, telegramChatName: chat.firstName };

@@ -69,4 +69,18 @@ describe('preload', () => {
     listener({}, { x: 1, y: 2 });
     expect(cb).toHaveBeenCalledWith({ x: 1, y: 2 });
   });
+
+  it('exposes the Tell Clippy channels: tell (main to page) and blur (page to main)', () => {
+    const tell = vi.fn();
+    const off = shell.onTell(tell);
+    const [channel, listener] = ipcRenderer.on.mock.calls.at(-1) as [string, (...a: unknown[]) => void];
+    expect(channel).toBe(WindowChannels.tell);
+    listener({ sender: 'secret' });
+    expect(tell).toHaveBeenCalledOnce();
+    off();
+    expect(ipcRenderer.removeListener).toHaveBeenCalledWith(WindowChannels.tell, listener);
+    ipcRenderer.send.mockClear();
+    shell.blur();
+    expect(ipcRenderer.send).toHaveBeenCalledWith(WindowChannels.blur);
+  });
 });

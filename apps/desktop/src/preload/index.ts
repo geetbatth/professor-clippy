@@ -56,6 +56,8 @@ const shell: ClippyWindowShell = {
   dragEnd: () => ipcRenderer.send(WindowChannels.dragEnd),
   onCursor: (cb: (point: CursorPoint) => void) => subscribe(WindowChannels.cursor, cb),
   onModeChanged: (cb: (mode: WindowMode) => void) => subscribe(WindowChannels.modeChanged, cb),
+  onTell: (cb: () => void) => subscribe<void>(WindowChannels.tell, () => cb()),
+  blur: () => ipcRenderer.send(WindowChannels.blur),
 };
 
 contextBridge.exposeInMainWorld('clippy', api);

@@ -18,6 +18,7 @@ import { HistoryTab } from './note/HistoryTab';
 import { NotesTab } from './note/NotesTab';
 import { SettingsTab } from './note/SettingsTab';
 import { StickyNote, type Tab } from './note/StickyNote';
+import { TellBox } from './note/TellBox';
 import { pickQuip, quipForMessage } from './quips/pickQuip';
 import type { Runtime } from './runtime';
 import { createSoundBoard } from './sound/sounds';
@@ -38,6 +39,10 @@ export function App({ runtime }: { runtime: Runtime }) {
   const [tab, setTab] = useState<Tab>(TABS.find((t) => t === params.get('tab')) ?? 'notes');
   const [quip, setQuip] = useState<string>();
   const [wiggle, setWiggle] = useState(0);
+  /** The hotkey asked for the Tell Clippy box; cleared once it has taken focus. */
+  const [wantTellFocus, setWantTellFocus] = useState(false);
+  /** The Tell Clippy box has focus or text: the note must not tuck itself away. */
+  const tellActive = useRef(false);
 
   const settingsState = useSettings(api);
   const { settings } = settingsState;
@@ -72,6 +77,18 @@ export function App({ runtime }: { runtime: Runtime }) {
   );
   useEffect(() => shell.setMode(modeRef.current), [shell]);
   useEffect(() => shell.onModeChanged(setModeState), [shell]);
+  useEffect(
+    () =>
+      shell.onTell(() => {
+        setTab('notes');
+        setWantTellFocus(true);
+      }),
+    [shell],
+  );
+  const tellFocused = useCallback(() => setWantTellFocus(false), []);
+  const setTellActive = useCallback((active: boolean) => {
+    tellActive.current = active;
+  }, []);
   useEffect(() => {
     if (firstRun) setMode('expanded');
   }, [firstRun, setMode]);
@@ -134,7 +151,11 @@ export function App({ runtime }: { runtime: Runtime }) {
     moodRef.current?.message(false);
     open();
   });
-  useAutoCollapse(mode === 'expanded' && unread === 0 && !chat.thinking && !firstRun, lastActivity, AUTO_COLLAPSE_MS, () => setMode('mini'));
+  useAutoCollapse(mode === 'expanded' && unread === 0 && !chat.thinking && !firstRun, lastActivity, AUTO_COLLAPSE_MS, () => {
+    // Mid-sentence in the Tell Clippy box: not now, and a fresh idle period once they're done.
+    if (tellActive.current) lastActivity.current = Date.now();
+    else setMode('mini');
+  });
 
   const dismissQuip = useCallback(() => setQuip(undefined), []);
 
@@ -171,7 +192,21 @@ export function App({ runtime }: { runtime: Runtime }) {
               <FirstRunWizard api={api} state={settingsState} />
             ) : (
               <>
-                {tab === 'notes' && <NotesTab stack={stack} />}
+                {tab === 'notes' && (
+                  <NotesTab
+                    stack={stack}
+                    footer={
+                      <TellBox
+                        chat={chat}
+                        shell={shell}
+                        wantFocus={wantTellFocus}
+                        onFocused={tellFocused}
+                        onActive={setTellActive}
+                        onCollapse={() => setMode('mini')}
+                      />
+                    }
+                  />
+                )}
                 {tab === 'chat' && <ChatTab chat={chat} />}
                 {tab === 'history' && <HistoryTab api={api} />}
                 {tab === 'settings' && <SettingsTab api={api} state={settingsState} />}

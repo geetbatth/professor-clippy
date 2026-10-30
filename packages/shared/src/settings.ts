@@ -42,6 +42,11 @@ const fields = {
   unsolicitedAdvice: z.boolean(),
   /** Default `ask_user` wait, seconds. */
   askTimeoutDefaultS: z.number().int().positive(),
+  /**
+   * Global shortcut (an Electron accelerator, e.g. `Control+Alt+Space`) that opens the "Tell
+   * Clippy" box from anywhere. Empty = no shortcut.
+   */
+  tellHotkey: z.string().max(60),
   /** Hide mini Clippy while a fullscreen app is focused. */
   hideOnFullscreen: z.boolean(),
   /** Launch at Windows login. */
@@ -91,6 +96,7 @@ export const Settings = z.object({
   phoneWhen: fields.phoneWhen.default('away'),
   unsolicitedAdvice: fields.unsolicitedAdvice.default(false),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.default(600),
+  tellHotkey: fields.tellHotkey.default('Control+Alt+Space'),
   hideOnFullscreen: fields.hideOnFullscreen.default(true),
   autoStart: fields.autoStart.default(true),
   workerUrl: fields.workerUrl.optional(),
@@ -122,6 +128,7 @@ export const SettingsPatch = z.object({
   phoneWhen: fields.phoneWhen.optional(),
   unsolicitedAdvice: fields.unsolicitedAdvice.optional(),
   askTimeoutDefaultS: fields.askTimeoutDefaultS.optional(),
+  tellHotkey: fields.tellHotkey.optional(),
   hideOnFullscreen: fields.hideOnFullscreen.optional(),
   autoStart: fields.autoStart.optional(),
   workerUrl: fields.workerUrl.nullable().optional(),

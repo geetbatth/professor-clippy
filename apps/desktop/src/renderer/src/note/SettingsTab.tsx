@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import type { ClippyWindowApi, TelegramStatus } from '@clippy/shared/ipc';
+import type { ClippyWindowApi, HotkeyStatus, TelegramStatus } from '@clippy/shared/ipc';
 import type { Settings } from '@clippy/shared/settings';
 import type { SettingsState } from '../hooks/useSettings';
 import { ASK_WAIT_MAX_MINUTES, ASK_WAIT_MIN_MINUTES, askWaitMinutes, parseAskWait } from './askWait';
@@ -31,6 +31,8 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
   const [telegram, setTelegram] = useState<TelegramStatus>();
   const [away, setAway] = useState('');
   const [awayError, setAwayError] = useState(false);
+  const [hotkey, setHotkey] = useState('');
+  const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyStatus>();
 
   useEffect(() => {
     setWorkerUrl(settings?.workerUrl ?? '');
@@ -41,6 +43,13 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
   useEffect(() => {
     if (settings) setAway(awayMinutes(settings.awayThresholdS));
   }, [settings?.awayThresholdS]);
+
+  // Main registers the shortcut when the setting changes; ask how that went.
+  useEffect(() => {
+    if (!settings) return;
+    setHotkey(settings.tellHotkey);
+    void api.hotkeyStatus().then(setHotkeyStatus, () => {});
+  }, [api, settings?.tellHotkey]);
 
   if (!settings) return <p className="settings-loading">Fetching my notes…</p>;
 
@@ -66,6 +75,13 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
     setAwayError(false);
     setAway(awayMinutes(seconds));
     if (seconds !== settings.awayThresholdS) void update({ awayThresholdS: seconds });
+  };
+
+  /** Save the hotkey on blur / Enter if it changed. Anything goes in: main reports a bad one. */
+  const commitHotkey = () => {
+    const accelerator = hotkey.trim();
+    setHotkey(accelerator);
+    if (accelerator !== settings.tellHotkey) void update({ tellHotkey: accelerator });
   };
 
   const relaySaved = relayBadge(settings) === 'saved';
@@ -166,6 +182,30 @@ export function SettingsTab({ api, state }: { api: ClippyWindowApi; state: Setti
           )}
         </Fragment>
       ))}
+
+      <label className="setting">
+        <span className="setting-text">
+          <span className="setting-label">Tell Clippy hotkey</span>
+          <span className="setting-hint">Press it anywhere to type him an instruction. Empty = no hotkey.</span>
+        </span>
+        <input
+          type="text"
+          className={`field-input setting-select${hotkeyStatus && !hotkeyStatus.ok ? ' field-input--bad' : ''}`}
+          value={hotkey}
+          maxLength={60}
+          placeholder="Control+Alt+Space"
+          aria-label="Tell Clippy hotkey"
+          aria-invalid={hotkeyStatus ? !hotkeyStatus.ok : false}
+          onChange={(e) => setHotkey(e.target.value)}
+          onBlur={commitHotkey}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitHotkey();
+            if (e.key === 'Escape') setHotkey(settings.tellHotkey);
+          }}
+        />
+      </label>
+      {hotkeyStatus && !hotkeyStatus.ok && <p className="card-error">{hotkeyStatus.error}</p>}
+      {hotkeyStatus?.ok && hotkeyStatus.accelerator && <p className="setting-hint">Ready: press {hotkeyStatus.accelerator} from anywhere.</p>}
 
       <label className="setting">
         <span className="setting-text">
