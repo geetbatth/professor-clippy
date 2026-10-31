@@ -1,6 +1,7 @@
 {
   "name": "professor-clippy",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Professor Clippy: a desktop sticky-note assistant that AI agents message via MCP, mirrored to WhatsApp.",
   "workspaces": [
