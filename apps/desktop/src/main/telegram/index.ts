@@ -36,7 +36,7 @@ export function newPairingCode(): string {
 }
 
 export interface TelegramManagerOptions
-  extends Pick<TelegramDeps, 'store' | 'bus' | 'asks' | 'brain' | 'pollTimeoutS' | 'backoffMinMs' | 'backoffMaxMs' | 'retryDelaysMs' | 'typingIntervalMs' | 'log'> {
+  extends Pick<TelegramDeps, 'store' | 'bus' | 'asks' | 'brain' | 'pollTimeoutS' | 'backoffMinMs' | 'backoffMaxMs' | 'retryDelaysMs' | 'typingIntervalMs' | 'log' | 'voice'> {
   settings: SettingsStore;
   /** Bot API base URL (tests point it at a fake server). */
   baseUrl?: string;

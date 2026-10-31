@@ -77,6 +77,17 @@ const fields = {
    * `hookEnabled` (the hook asks). At the PC, Claude Code's own prompt shows as usual.
    */
   phoneApprovals: z.boolean(),
+  /**
+   * Voice notes: talk to Clippy at the desk (mic button, hold the Tell hotkey), send him voice
+   * notes from the phone, and hear his replies (the desk's speaker button; a voice note back on
+   * the phone when you sent one). Speech runs on this PC; the models download on first use.
+   */
+  voiceEnabled: z.boolean(),
+  /**
+   * Clippy's chat replies on the phone come as a voice note (text as its caption): only when you
+   * sent him a voice note (`voice-notes`), or to everything you send (`always`).
+   */
+  voiceReplies: z.enum(['voice-notes', 'always']),
   /** Base URL of the Cloudflare relay Worker (WhatsApp mirroring off when unset). */
   workerUrl: z.url(),
   /** Bearer secret for the relay Worker. */
@@ -134,6 +145,8 @@ export const Settings = z.object({
   autoStart: fields.autoStart.default(true),
   allowPowerActions: fields.allowPowerActions.default(false),
   phoneApprovals: fields.phoneApprovals.default(false),
+  voiceEnabled: fields.voiceEnabled.default(true),
+  voiceReplies: fields.voiceReplies.default('voice-notes'),
   workerUrl: fields.workerUrl.optional(),
   workerSecret: fields.workerSecret.optional(),
   windowPos: fields.windowPos.optional(),
@@ -175,6 +188,8 @@ export const SettingsPatch = z.object({
   autoStart: fields.autoStart.optional(),
   allowPowerActions: fields.allowPowerActions.optional(),
   phoneApprovals: fields.phoneApprovals.optional(),
+  voiceEnabled: fields.voiceEnabled.optional(),
+  voiceReplies: fields.voiceReplies.optional(),
   workerUrl: fields.workerUrl.nullable().optional(),
   workerSecret: fields.workerSecret.nullable().optional(),
   windowPos: fields.windowPos.nullable().optional(),

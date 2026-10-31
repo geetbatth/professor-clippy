@@ -3,6 +3,8 @@
  * the brain and the settings store.
  */
 import { PAGE_USER_AUTHOR, type ClippyBackend, type HotkeyStatus, type Page, type Settings, type TelegramStatus, type TelegramTestResult } from '@clippy/shared';
+import { DESK_SPEAK_MAX_CHARS } from './voice/speech';
+import type { Voice } from './voice/voice';
 import type { Asks } from './core/asks';
 import { ConflictError, NotFoundError } from './core/errors';
 import type { Pages } from './core/pages';
@@ -29,6 +31,8 @@ export interface BackendDeps {
   systemDark: () => boolean;
   /** The welcome's Getting started list and tips. */
   onboarding: Pick<Onboarding, 'state' | 'mark' | 'dismiss' | 'tipShown' | 'restartWelcome'>;
+  /** Speech on this PC: the desk mic and the speaker button. */
+  voice: Pick<Voice, 'status' | 'download' | 'transcribePcm' | 'speak'>;
 }
 
 /** What Settings needs from the Telegram channel. */
@@ -45,7 +49,7 @@ export function forRenderer(settings: Settings): Settings {
   return rest;
 }
 
-export function createBackend({ store, asks, pages, brain, settings, claudeWiring, telegram, hotkey, systemDark, onboarding }: BackendDeps): ClippyBackend {
+export function createBackend({ store, asks, pages, brain, settings, claudeWiring, telegram, hotkey, systemDark, onboarding, voice }: BackendDeps): ClippyBackend {
   const found = <T>(value: T | undefined, id: string): T => {
     if (value === undefined) throw new NotFoundError(`No message ${id}`);
     return value;
@@ -102,6 +106,21 @@ export function createBackend({ store, asks, pages, brain, settings, claudeWirin
     },
     async hotkeyStatus() {
       return hotkey();
+    },
+    async voiceStatus() {
+      return voice.status();
+    },
+    async voiceDownload() {
+      voice.download().catch(() => {}); // progress and errors arrive as voice:status
+      return voice.status();
+    },
+    async voiceTranscribe(pcm, sampleRate) {
+      return voice.transcribePcm(pcm, sampleRate);
+    },
+    async voiceSpeak(text) {
+      const spoken = await voice.speak(text, 'wav', DESK_SPEAK_MAX_CHARS);
+      if (!spoken) throw new Error('There is nothing in that to read aloud.');
+      return spoken.audio;
     },
     async listOrders() {
       return store.listActiveOrders();

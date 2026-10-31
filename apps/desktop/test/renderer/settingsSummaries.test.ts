@@ -72,6 +72,14 @@ describe('sectionSummary', () => {
     expect(sectionSummary('look', ctx({ theme: 'mint', followSystemDark: true }))).toBe('Mint · follows Windows');
   });
 
+  it('voice: off, or how far the models are', () => {
+    expect(sectionSummary('voice', ctx({ voiceEnabled: false }))).toBe('Off');
+    expect(sectionSummary('voice', ctx({}, { voice: { enabled: true, state: 'missing', downloadMb: 558 } }))).toBe('On · not downloaded yet');
+    expect(sectionSummary('voice', ctx({}, { voice: { enabled: true, state: 'downloading', progress: 0.421, downloadMb: 558 } }))).toBe('Downloading 42%');
+    expect(sectionSummary('voice', ctx({}, { voice: { enabled: true, state: 'ready', downloadMb: 558 } }))).toBe('On · Heart voice');
+    expect(sectionSummary('voice', ctx({ voiceReplies: 'always' }, { voice: { enabled: true, state: 'ready', downloadMb: 558 } }))).toBe('On · every phone reply spoken');
+  });
+
   it('pc: the hotkey and starting with Windows', () => {
     expect(sectionSummary('pc', ctx({ tellHotkey: 'Control+Alt+Space', autoStart: true }))).toBe('Ctrl+Alt+Space · starts with Windows');
     expect(sectionSummary('pc', ctx({ tellHotkey: '', autoStart: true }))).toBe('No hotkey · starts with Windows');

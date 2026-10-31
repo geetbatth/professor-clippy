@@ -4,7 +4,7 @@
  * tray icon.
  */
 import { homedir } from 'node:os';
-import { app, BrowserWindow, globalShortcut, nativeTheme, powerMonitor } from 'electron';
+import { app, BrowserWindow, globalShortcut, nativeTheme, powerMonitor, utilityProcess } from 'electron';
 import { appDataDir, resolveTheme, settingsPath, type ClippyEvent, type ClippyEventMap, type HotkeyStatus, type Settings } from '@clippy/shared';
 import { createBackend, forRenderer } from './backend';
 import { findNode, resolveMcpServerPath } from './brain/mcpConfig';
@@ -22,6 +22,7 @@ import { WindowChannels } from './window/windowApi';
 import { createWindowsExecutor } from './power/executor';
 import { electronSecretBox } from './secrets';
 import { runInstallInUtilityProcess } from './wiringProcess';
+import { VoiceEngine } from './voice/voiceProcess';
 
 let clippy: ClippyWindow | undefined;
 let quitting = false;
@@ -71,7 +72,9 @@ async function main(): Promise<void> {
   if (!mcpServerPath) console.warn('[clippy] MCP server not built (apps/mcp/dist/index.js); the brain runs without clippy tools');
   // Settings, core, brain, relay and Telegram; both channels are subscribed before any API
   // request is handled.
-  const { core, settings, brain, phoneGate, watcher, onboarding, brief, pageArchiver, relay, telegram } = await startServices({
+  // Speech runs in a utility process that ends a minute after its last job (its memory with it).
+  const voiceEngine = new VoiceEngine({ fork: (path) => utilityProcess.fork(path, [], { serviceName: 'Professor Clippy voice' }) });
+  const { core, settings, brain, phoneGate, watcher, onboarding, brief, pageArchiver, relay, telegram, voice } = await startServices({
     dataDir,
     settingsFile: settingsPath(),
     version: app.getVersion(),
@@ -83,6 +86,11 @@ async function main(): Promise<void> {
     idleSeconds: () => powerMonitor.getSystemIdleTime(),
     // Restarting an app or the PC, once the user has confirmed it (and only with the setting on).
     powerExecutor: createWindowsExecutor(),
+    voice: {
+      engine: voiceEngine,
+      onStatus: (status) => broadcast('voice:status', status),
+      log: (line) => console.info(`[clippy] ${line}`),
+    },
     // A fake Bot API for trying Telegram out without the real one: dev (unpackaged) builds only.
     // The installed app always talks to https://api.telegram.org, whatever the environment says.
     ...(!app.isPackaged && process.env.CLIPPY_TELEGRAM_API && { telegram: { baseUrl: process.env.CLIPPY_TELEGRAM_API } }),
@@ -119,6 +127,7 @@ async function main(): Promise<void> {
     hotkey: () => tellStatus,
     systemDark: () => nativeTheme.shouldUseDarkColors,
     onboarding,
+    voice,
   });
   clippy = createClippyWindow({
     loadPos: () => settings.get().windowPos,
@@ -223,6 +232,7 @@ async function main(): Promise<void> {
     // Aborts the long-poll in flight; never wait long for an update being handled.
     const telegramStopped = Promise.race([telegram.stop(), new Promise((r) => setTimeout(r, 2000))]);
     brain.dispose();
+    voiceEngine.stop();
     tray.destroy();
     void telegramStopped
       .then(() => core.stop())

@@ -32,6 +32,11 @@ const argSchemas: { [K in keyof ClippyBackend]: z.ZodType<Parameters<ClippyBacke
   telegramUnpair: z.tuple([]),
   telegramSendTest: z.tuple([]),
   hotkeyStatus: z.tuple([]),
+  voiceStatus: z.tuple([]),
+  voiceDownload: z.tuple([]),
+  // At most five minutes of 16 kHz audio.
+  voiceTranscribe: z.tuple([z.instanceof(Float32Array).refine((a) => a.length <= 16_000 * 300, 'recording too long'), z.literal(16_000)]),
+  voiceSpeak: z.tuple([z.string().min(1).max(20_000)]),
   listOrders: z.tuple([]),
   addOrder: z.tuple([NewStandingOrderInput.shape.text]),
   cancelOrder: z.tuple([id]),

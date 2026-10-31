@@ -25,6 +25,7 @@ import { SECTIONS } from './note/settings/SettingsMenu';
 import type { SettingsSection } from './note/settings/summaries';
 import { StickyNote, type Tab } from './note/StickyNote';
 import { TellBox } from './note/TellBox';
+import { VoiceProvider } from './voice/VoiceContext';
 import { TIP_SHOW_MS } from './note/welcome/tips';
 import { pickQuip, quipForMessage } from './quips/pickQuip';
 import type { Runtime } from './runtime';
@@ -54,6 +55,8 @@ export function App({ runtime }: { runtime: Runtime }) {
   const [wiggle, setWiggle] = useState(0);
   /** The hotkey asked for the Tell Clippy box; cleared once it has taken focus. */
   const [wantTellFocus, setWantTellFocus] = useState(false);
+  /** Hotkey presses (repeats included while it is held): holding it records a voice line. */
+  const [tellPresses, setTellPresses] = useState(0);
   /** The Tell Clippy box has focus or text: the note must not tuck itself away. */
   const tellActive = useRef(false);
   /** A Pad page has focus (or an unsettled conflict): the same rule as the Tell box. */
@@ -103,6 +106,7 @@ export function App({ runtime }: { runtime: Runtime }) {
       shell.onTell(() => {
         setTab('notes');
         setWantTellFocus(true);
+        setTellPresses((n) => n + 1);
       }),
     [shell],
   );
@@ -280,6 +284,7 @@ export function App({ runtime }: { runtime: Runtime }) {
                         shell={shell}
                         wantFocus={wantTellFocus}
                         onFocused={tellFocused}
+                        tellPresses={tellPresses}
                         onActive={setTellActive}
                         onCollapse={() => setMode('mini')}
                         onSend={told}
@@ -299,5 +304,6 @@ export function App({ runtime }: { runtime: Runtime }) {
       />
     );
 
-  return runtime.browser ? <BrowserFrame mode={mode}>{view}</BrowserFrame> : view;
+  const withVoice = <VoiceProvider api={api}>{view}</VoiceProvider>;
+  return runtime.browser ? <BrowserFrame mode={mode}>{withVoice}</BrowserFrame> : withVoice;
 }

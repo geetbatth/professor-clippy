@@ -27,6 +27,10 @@ const TOGGLES = {
   autoStart: { label: 'Start with Windows', hint: 'Clippy turns up for work when you do.' },
   allowPowerActions: { label: 'Let Clippy restart apps and the PC', hint: 'Clippy still asks you to tap Restart first.' },
   followSystemDark: { label: 'Follow Windows dark mode', hint: "The dark paper while Windows is dark, and back again when it isn't." },
+  voiceEnabled: {
+    label: 'Voice',
+    hint: 'Talk to me with the mic (or hold the Tell hotkey), send me voice notes from your phone, and hear my replies. All on this PC.',
+  },
   showTips: { label: 'Show tips', hint: 'Now and then I point out something about the app you have overlooked.' },
 } satisfies Partial<Record<Toggle, { label: string; hint: string }>>;
 

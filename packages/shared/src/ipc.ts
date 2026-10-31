@@ -85,6 +85,25 @@ export interface TelegramTestResult {
   error?: string;
 }
 
+/**
+ * The speech models' state: `missing` until they are downloaded (first use, or Settings →
+ * Voice), `downloading` with `progress` (0 to 1), `ready`, or `error` (the download failed).
+ */
+export type VoiceModelState = 'missing' | 'downloading' | 'ready' | 'error';
+
+/** What Settings and the mic button need to know about voice. */
+export interface VoiceStatus {
+  /** The `voiceEnabled` setting. */
+  enabled: boolean;
+  state: VoiceModelState;
+  /** Download progress, 0 to 1, while `downloading`. */
+  progress?: number;
+  /** Why the download failed, when `error`. */
+  error?: string;
+  /** Size of the one-time download, in MB. */
+  downloadMb: number;
+}
+
 /** State of the "Tell Clippy" global hotkey, for the Settings status line. */
 export interface HotkeyStatus {
   /** The accelerator in use (`''` = no hotkey). */
@@ -137,6 +156,17 @@ export interface ClippyBackend {
   telegramSendTest(): Promise<TelegramTestResult>;
   /** Whether the "Tell Clippy" global hotkey registered. */
   hotkeyStatus(): Promise<HotkeyStatus>;
+  /** The speech models' state. Changes arrive as `voice:status`. */
+  voiceStatus(): Promise<VoiceStatus>;
+  /** Start downloading the speech models (no-op if they are ready or downloading). */
+  voiceDownload(): Promise<VoiceStatus>;
+  /**
+   * What was said in a recording from the desk mic (mono, -1..1, 16 kHz). Rejects when voice is
+   * off or the models aren't downloaded yet (which starts the download).
+   */
+  voiceTranscribe(pcm: Float32Array, sampleRate: number): Promise<string>;
+  /** `text` read aloud in Clippy's voice, as a WAV file (for the speaker button). */
+  voiceSpeak(text: string): Promise<Uint8Array>;
   /** Active standing orders, oldest first. */
   listOrders(): Promise<StandingOrder[]>;
   /** Add a standing order (1 to 500 characters). */
@@ -195,6 +225,10 @@ export const IpcInvoke = {
   telegramUnpair: 'clippy:telegramUnpair',
   telegramSendTest: 'clippy:telegramSendTest',
   hotkeyStatus: 'clippy:hotkeyStatus',
+  voiceStatus: 'clippy:voiceStatus',
+  voiceDownload: 'clippy:voiceDownload',
+  voiceTranscribe: 'clippy:voiceTranscribe',
+  voiceSpeak: 'clippy:voiceSpeak',
   listOrders: 'clippy:listOrders',
   addOrder: 'clippy:addOrder',
   cancelOrder: 'clippy:cancelOrder',
@@ -230,6 +264,7 @@ export const IpcEvents = {
   pageDeleted: 'page:deleted',
   settingsChanged: 'settings:changed',
   onboardingChanged: 'onboarding:changed',
+  voiceStatus: 'voice:status',
 } as const satisfies Record<string, keyof ClippyEventMap>;
 
 /** Event channel name → payload type. */
@@ -249,6 +284,8 @@ export interface ClippyEventMap {
   'settings:changed': Settings;
   /** A Getting started item was ticked, the list dismissed or a tip recorded. */
   'onboarding:changed': OnboardingState;
+  /** The speech models' download started, moved on, finished or failed, or voice was turned on or off. */
+  'voice:status': VoiceStatus;
 }
 
 /** A push-event channel name. */

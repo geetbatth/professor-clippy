@@ -10,6 +10,7 @@ import type { SectionProps } from './settings/controls';
 import { LookSection } from './settings/LookSection';
 import { PcSection } from './settings/PcSection';
 import { PhoneSection } from './settings/PhoneSection';
+import { VoiceSection } from './settings/VoiceSection';
 import { SECTIONS, SettingsMenu } from './settings/SettingsMenu';
 import type { SettingsSection } from './settings/summaries';
 import './SettingsTab.css';
@@ -61,6 +62,7 @@ export function SettingsTab({
           {section === 'rules' && <RulesSection api={api} />}
           {section === 'look' && <LookSection {...props} />}
           {section === 'pc' && <PcSection {...props} />}
+          {section === 'voice' && <VoiceSection {...props} />}
         </div>
       )}
       {error && <p className="card-error">Couldn't save that: {error}</p>}

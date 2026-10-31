@@ -74,6 +74,7 @@ describe('createBackend', () => {
       hotkey: () => ({ accelerator: 'Alt+T', ok: false, error: 'taken' }),
       systemDark: () => dark,
       onboarding,
+      voice: { status: () => ({ enabled: true, state: 'missing' as const, downloadMb: 558 }), download: async () => {}, transcribePcm: async () => 'hello', speak: async (text: string) => (text.trim() ? { audio: new Uint8Array([1, 2, 3]), seconds: 1 } : undefined) },
     });
   });
   afterEach(() => {
@@ -123,7 +124,7 @@ describe('createBackend', () => {
     const secrets = { available: () => true, encrypt: (s: string) => `enc(${s})`, decrypt: (s: string) => s.slice(4, -1) };
     const withToken = await SettingsStore.load(join(dir, 'settings.json'), { secrets });
     await withToken.setTelegramToken('123456:AAHfakefakefakefakefakefake');
-    const b = createBackend({ store, asks, pages, brain: { ask: async () => ({}), newChat: () => {} }, settings: withToken, claudeWiring: { connect: async () => ({ ok: true, log: [], warnings: [] }) }, hotkey: () => ({ accelerator: '', ok: true }), systemDark: () => false, onboarding, telegram: { status: () => ({ tokenSaved: true, state: 'off' }), setToken: async () => ({ tokenSaved: true, state: 'off' }), unpair: async () => ({ tokenSaved: true, state: 'off' }), sendTest: async () => ({ ok: true }) } });
+    const b = createBackend({ store, asks, pages, brain: { ask: async () => ({}), newChat: () => {} }, settings: withToken, claudeWiring: { connect: async () => ({ ok: true, log: [], warnings: [] }) }, hotkey: () => ({ accelerator: '', ok: true }), systemDark: () => false, onboarding, voice: { status: () => ({ enabled: true, state: 'missing' as const, downloadMb: 558 }), download: async () => {}, transcribePcm: async () => 'hello', speak: async () => ({ audio: new Uint8Array([1, 2, 3]), seconds: 1 }) }, telegram: { status: () => ({ tokenSaved: true, state: 'off' }), setToken: async () => ({ tokenSaved: true, state: 'off' }), unpair: async () => ({ tokenSaved: true, state: 'off' }), sendTest: async () => ({ ok: true }) } });
     expect(withToken.get().telegramBotTokenEnc).toBeDefined();
     expect(await b.getSettings()).not.toHaveProperty('telegramBotTokenEnc');
     expect(await b.setSettings({ telegramChatId: 42 })).toMatchObject({ telegramChatId: 42 });

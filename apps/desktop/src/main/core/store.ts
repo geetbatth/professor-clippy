@@ -50,6 +50,8 @@ export interface NewMessageRecord {
   orderId?: string;
   /** What a hook note is about (see `NewMessageInput.event`). */
   event?: AgentEvent;
+  /** Read aloud on the phone (see `NewMessageInput.voice`). */
+  voice?: boolean;
   /** Initial state; default `'unread'` (chat lines are stored straight into history as `'done'`). */
   state?: MessageState;
   /** For `kind: 'reminder'`: the Reminder that produced it (internal link, not part of the shared Message). */
@@ -205,6 +207,10 @@ const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX pages_list ON pages (archived_at, pinned, updated_at);
   `,
+  // 8: notes to be read aloud (a voice note on the phone).
+  `
+  ALTER TABLE messages ADD COLUMN voice INTEGER;
+  `,
 ];
 
 type Row = Record<string, SQLOutputValue>;
@@ -274,8 +280,8 @@ export class Store {
     const state = record.state ?? 'unread';
     this.#db
       .prepare(
-        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, done_at, wa_id, tg_msg_id, options, answer, answered_via, role, missed, reminder_id, quiet_if_active, order_id, event)
-         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, $state, $createdAt, $doneAt, $waId, $tgMsgId, $options, $answer, $answeredVia, $role, $missed, $reminderId, $quietIfActive, $orderId, $event)`,
+        `INSERT INTO messages (id, kind, body, title, sender, project, urgent, state, created_at, done_at, wa_id, tg_msg_id, options, answer, answered_via, role, missed, reminder_id, quiet_if_active, order_id, event, voice)
+         VALUES ($id, $kind, $body, $title, $sender, $project, $urgent, $state, $createdAt, $doneAt, $waId, $tgMsgId, $options, $answer, $answeredVia, $role, $missed, $reminderId, $quietIfActive, $orderId, $event, $voice)`,
       )
       .run({
         id,
@@ -299,6 +305,7 @@ export class Store {
         reminderId: record.reminderId ?? null,
         orderId: record.orderId ?? null,
         event: record.event ?? null,
+        voice: record.voice ? 1 : null,
       });
     const message = this.getMessage(id)!;
     this.#emit('message:new', message);
@@ -736,6 +743,7 @@ function toMessage(row: Row): Message {
   if (row.quiet_if_active === 1) message.quietIfActive = true;
   if (row.order_id !== null && row.order_id !== undefined) message.orderId = String(row.order_id);
   if (row.event !== null && row.event !== undefined) message.event = String(row.event) as AgentEvent;
+  if (row.voice === 1) message.voice = true;
   return message;
 }
 

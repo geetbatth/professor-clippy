@@ -89,6 +89,8 @@ export const Message = z.object({
   orderId: z.string().optional(),
   /** For a note from the hook: what happened (what a watch listens for). For an ask: a phone approval. */
   event: AgentEvent.optional(),
+  /** A note to be read aloud: it reaches the phone as a voice note (with its text). */
+  voice: z.boolean().optional(),
 });
 export type Message = z.infer<typeof Message>;
 
@@ -125,6 +127,11 @@ export const NewMessageInput = z.object({
   quietIfActive: z.boolean().optional(),
   /** What the note is about (the hook sets it); lets watches tell "agent finished" from the rest. Optional; older apps ignore it. */
   event: NoteEvent.optional(),
+  /**
+   * Read the note aloud: on the phone it arrives as a voice note in Clippy's voice (with the
+   * text as its caption). Optional; older apps ignore it.
+   */
+  voice: z.boolean().optional(),
 });
 export type NewMessageInput = z.infer<typeof NewMessageInput>;
 

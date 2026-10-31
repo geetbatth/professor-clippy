@@ -1,12 +1,12 @@
 /** Settings menu: its sections, and the one-line summary under each row (pure, so it is unit-tested). */
-import type { TelegramStatus } from '@clippy/shared/ipc';
+import type { TelegramStatus, VoiceStatus } from '@clippy/shared/ipc';
 import type { Settings } from '@clippy/shared/settings';
 import { THEMES } from '@clippy/shared/theme';
 import { askWaitMinutes } from '../askWait';
 import { awayMinutes } from '../awayThreshold';
 import { relayBadge } from '../firstRun';
 
-export type SettingsSection = 'history' | 'alerts' | 'phone' | 'brief' | 'claude' | 'rules' | 'look' | 'pc';
+export type SettingsSection = 'history' | 'alerts' | 'phone' | 'brief' | 'claude' | 'rules' | 'look' | 'pc' | 'voice';
 
 /** History shows this many of the latest notes when its search box is empty. */
 export const HISTORY_RECENT_LIMIT = 50;
@@ -22,6 +22,8 @@ export interface SummaryContext {
   historyCount?: number;
   /** The Tell Clippy hotkey registered (false: malformed, or another app has it). */
   hotkeyOk?: boolean;
+  /** The speech models' state; undefined until asked. */
+  voice?: VoiceStatus;
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -68,6 +70,21 @@ export function sectionSummary(section: SettingsSection, ctx: SummaryContext): s
     case 'look': {
       const label = THEMES.find((t) => t.id === s.theme)?.label ?? s.theme;
       return s.followSystemDark ? `${label} · follows Windows` : label;
+    }
+    case 'voice': {
+      if (!s.voiceEnabled) return 'Off';
+      switch (ctx.voice?.state) {
+        case 'ready':
+          return s.voiceReplies === 'always' ? 'On · every phone reply spoken' : 'On · Heart voice';
+        case 'downloading':
+          return `Downloading ${Math.round((ctx.voice.progress ?? 0) * 100)}%`;
+        case 'error':
+          return 'Download failed';
+        case 'missing':
+          return 'On · not downloaded yet';
+        default:
+          return 'On';
+      }
     }
     case 'pc': {
       const hotkey = s.tellHotkey ? `${hotkeyLabel(s.tellHotkey)}${ctx.hotkeyOk === false ? ' (not working)' : ''}` : 'No hotkey';

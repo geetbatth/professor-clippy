@@ -10,7 +10,7 @@ import { Store } from '../../src/main/core/store';
 import { SettingsStore } from '../../src/main/settings';
 import { MAX_WRONG_CODES, PAIRING_KV_KEY, TelegramManager } from '../../src/main/telegram';
 import { MISSED_NOTE } from '../../src/main/telegram/format';
-import { OFFSET_KV_PREFIX } from '../../src/main/telegram/telegram';
+import { OFFSET_KV_PREFIX, SPOKEN_REPLY_HINT, VOICE_NOTE_HINT, type TelegramVoice } from '../../src/main/telegram/telegram';
 import { PowerActions } from '../../src/main/power/actions';
 import { alwaysMirror } from '../alwaysMirror';
 import { actions as fakeActions, CHROME_PATH, fakeExecutor } from '../power/fakeExecutor';
@@ -39,7 +39,7 @@ let ctx: Ctx;
 const cleanups: (() => Promise<void> | void)[] = [];
 
 async function setup(
-  options: { token?: boolean; chatId?: number; brain?: (text: string, store: Store) => BrainReply | Promise<BrainReply> } = {},
+  options: { token?: boolean; chatId?: number; brain?: (text: string, store: Store) => BrainReply | Promise<BrainReply>; voice?: TelegramVoice } = {},
 ): Promise<Ctx> {
   const fake = await FakeTelegram.start();
   const dir = mkdtempSync(join(tmpdir(), 'clippy-telegram-'));
@@ -76,6 +76,7 @@ async function setup(
       retryDelaysMs: [20, 40],
       typingIntervalMs: 30,
       log: (line) => logs.push(line),
+      ...(options.voice && { voice: options.voice }),
     });
     settings.onChange(() => m.apply());
     m.apply();
@@ -725,7 +726,7 @@ describe('Telegram: chat', () => {
     expect(notes).toBe('<b>2 unread</b>\n❓ Merge &lt;the&gt; PR? <i>— agent</i>\n🔴 📝 Deploy done <i>— ci</i>');
     expect(fresh).toMatch(/New chat started/);
     expect(ctx.newChats).toBe(1);
-    expect(textOnly).toMatch(/only read text/);
+    expect(textOnly).toMatch(/only read text and listen to voice notes/);
     expect(unknown).toMatch(/^I don’t know \/frobnicate\./);
     expect(ctx.asked).toEqual([]);
   });
@@ -738,5 +739,140 @@ describe('Telegram: chat', () => {
     expect(await ctx.manager.sendTest()).toEqual({ ok: false, error: 'Telegram sendMessage failed (400): Bad Request: chat not found' });
     await ctx.manager.unpair();
     expect(await ctx.manager.sendTest()).toMatchObject({ ok: false, error: expect.stringMatching(/No chat is paired/) });
+  });
+});
+
+describe('Telegram: voice notes', () => {
+  const OGG = new Uint8Array([79, 103, 103, 83, 1, 2, 3]);
+  const SPOKEN = new Uint8Array([9, 9, 9]);
+  const reply = (body: string) => (_text: string, store: Store): BrainReply => ({
+    message: store.createMessage({ kind: 'chat', role: 'clippy', sender: 'clippy', body, state: 'done' }),
+  });
+  function fakeVoice(heard: string | Error = 'remind me at three to call Dave', enabled = true, always = false) {
+    const said: string[] = [];
+    const heardBytes: Uint8Array[] = [];
+    const voice: TelegramVoice = {
+      enabled: () => enabled,
+      alwaysReply: () => always,
+      transcribe: async (ogg) => {
+        heardBytes.push(ogg);
+        if (heard instanceof Error) throw heard;
+        return heard;
+      },
+      speak: async (text) => {
+        said.push(text);
+        return text.length > 50 ? undefined : { audio: SPOKEN, seconds: 2.2 };
+      },
+    };
+    return { voice, said, heardBytes };
+  }
+  const voiceSends = () => ctx.fake.of('sendVoice');
+
+  it('transcribes a voice note, asks the brain with the voice hint, and answers with a voice note captioned with the text', async () => {
+    const v = fakeVoice();
+    ctx = await setup({ chatId: ME, brain: reply('Done: 3 pm, call Dave.'), voice: v.voice });
+    ctx.fake.voice(OGG);
+    await waitFor(() => voiceSends().length === 1, 3000, 'the voice reply');
+    expect(v.heardBytes).toEqual([OGG]);
+    expect(ctx.asked).toEqual([[`${VOICE_NOTE_HINT}\nremind me at three to call Dave`, { channel: 'telegram' }]]);
+    expect(v.said).toEqual(['Done: 3 pm, call Dave.']);
+    const sent = voiceSends()[0]!;
+    expect(sent).toMatchObject({ chat_id: String(ME), caption: 'Done: 3 pm, call Dave.', parse_mode: 'HTML', duration: '3' });
+    expect((sent.voice as { bytes: Uint8Array }).bytes).toEqual(SPOKEN);
+    expect(sends()).toEqual([]);
+    // The desk's chat log shows it was spoken.
+    expect(ctx.store.listMessages({ kind: 'chat' }).map((m) => m.body)).toContain('🎙 remind me at three to call Dave');
+  });
+
+  it('a reply too long to speak goes as text only', async () => {
+    const v = fakeVoice();
+    ctx = await setup({ chatId: ME, brain: reply('A very long answer that goes on and on well past fifty characters.'), voice: v.voice });
+    ctx.fake.voice(OGG);
+    await waitFor(() => sends().length === 1, 3000, 'the text reply');
+    expect(voiceSends()).toEqual([]);
+    expect(String(lastSend().text)).toMatch(/^A very long answer/);
+  });
+
+  it('a typed message still gets a typed reply', async () => {
+    const v = fakeVoice();
+    ctx = await setup({ chatId: ME, brain: reply('Hello.'), voice: v.voice });
+    ctx.fake.text('hi');
+    await waitFor(() => sends().length === 1, 3000, 'the reply');
+    expect(voiceSends()).toEqual([]);
+    expect(v.said).toEqual([]);
+  });
+
+  it('with voiceReplies always, a typed message gets a voice reply too (and the brain is told)', async () => {
+    const v = fakeVoice('', true, true);
+    ctx = await setup({ chatId: ME, brain: reply('Hello there.'), voice: v.voice });
+    ctx.fake.text('hi');
+    await waitFor(() => voiceSends().length === 1, 3000, 'the voice reply');
+    expect(ctx.asked).toEqual([[`${SPOKEN_REPLY_HINT}
+hi`, { channel: 'telegram' }]]);
+    expect(voiceSends()[0]).toMatchObject({ caption: 'Hello there.' });
+    expect(sends()).toEqual([]);
+  });
+
+  it('with voiceReplies always but voice off, replies stay text and the brain gets no hint', async () => {
+    const v = fakeVoice('', false, true);
+    ctx = await setup({ chatId: ME, brain: reply('Hello there.'), voice: v.voice });
+    ctx.fake.text('hi');
+    await waitFor(() => sends().length === 1, 3000, 'the text reply');
+    expect(ctx.asked).toEqual([['hi', { channel: 'telegram' }]]);
+    expect(voiceSends()).toEqual([]);
+  });
+
+  it('a spoken option answers the waiting question, like typing it', async () => {
+    const v = fakeVoice('Yes.');
+    ctx = await setup({ chatId: ME, voice: v.voice });
+    const ask = ctx.asks.create({ question: 'Deploy?', sender: 'agent', options: ['Yes', 'No'] });
+    await waitFor(() => ctx.store.getMessage(ask.id)?.tgMsgId !== undefined, 3000, 'the ask mirrored');
+    ctx.fake.voice(OGG);
+    await waitFor(() => ctx.store.getMessage(ask.id)?.answer, 3000, 'the answer');
+    expect(ctx.store.getMessage(ask.id)).toMatchObject({ answer: 'Yes', answeredVia: 'telegram' });
+    expect(ctx.asked).toEqual([]);
+  });
+
+  it('says why when it cannot listen: voice off, models still downloading, nothing heard, no voice at all', async () => {
+    ctx = await setup({ chatId: ME, voice: fakeVoice('', false).voice });
+    ctx.fake.voice(OGG);
+    await waitFor(() => sends().length === 1, 3000, 'voice off');
+    expect(String(lastSend().text)).toMatch(/Voice notes are turned off/);
+    await ctx.manager.stop();
+
+    ctx = await setup({ chatId: ME, voice: fakeVoice(new Error('Clippy is still downloading his voice models.')).voice });
+    ctx.fake.voice(OGG);
+    await waitFor(() => sends().length === 1, 3000, 'downloading');
+    expect(String(lastSend().text)).toMatch(/couldn’t listen to that voice note\. Clippy is still downloading/);
+
+    ctx = await setup({ chatId: ME, voice: fakeVoice('   ').voice });
+    ctx.fake.voice(OGG);
+    await waitFor(() => sends().length === 1, 3000, 'nothing heard');
+    expect(String(lastSend().text)).toMatch(/couldn’t make out any words/);
+
+    ctx = await setup({ chatId: ME });
+    ctx.fake.voice(OGG);
+    await waitFor(() => sends().length === 1, 3000, 'no voice');
+    expect(String(lastSend().text)).toMatch(/turned off/);
+    expect(ctx.asked).toEqual([]);
+  });
+
+  it('a note left with voice reaches the phone as a voice note captioned with the note', async () => {
+    const v = fakeVoice();
+    ctx = await setup({ chatId: ME, voice: v.voice });
+    const note = ctx.store.createMessage({ kind: 'note', title: 'Hi', body: 'Build is green.', sender: 'claude-code', voice: true });
+    await waitFor(() => voiceSends().length === 1, 3000, 'the voice note');
+    expect(v.said).toEqual(['Hi. Build is green.']);
+    expect(String(voiceSends()[0]!.caption)).toMatch(/Build is green\./);
+    expect(ctx.store.getMessage(note.id)?.tgMsgId).toBeDefined();
+    expect(sends()).toEqual([]);
+  });
+
+  it('a voice note too long to speak is mirrored as ordinary text', async () => {
+    const v = fakeVoice();
+    ctx = await setup({ chatId: ME, voice: v.voice });
+    ctx.store.createMessage({ kind: 'note', body: 'x'.repeat(80), sender: 'claude-code', voice: true });
+    await waitFor(() => sends().length === 1, 3000, 'the text');
+    expect(voiceSends()).toEqual([]);
   });
 });

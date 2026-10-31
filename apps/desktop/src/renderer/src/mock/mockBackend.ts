@@ -301,6 +301,19 @@ export function createMockBackend(opts: MockOptions = {}): MockBackend {
     async hotkeyStatus() {
       return { accelerator: settings.tellHotkey, ok: true };
     },
+    // The browser preview has no speech models: voice shows as downloadable, and never gets there.
+    async voiceStatus() {
+      return { enabled: settings.voiceEnabled, state: 'missing' as const, downloadMb: 558 };
+    },
+    async voiceDownload() {
+      return { enabled: settings.voiceEnabled, state: 'missing' as const, downloadMb: 558 };
+    },
+    async voiceTranscribe() {
+      throw new Error('Voice needs the desktop app.');
+    },
+    async voiceSpeak() {
+      throw new Error('Voice needs the desktop app.');
+    },
     async listOrders() {
       return [...orders.values()].filter((o) => o.active).map((o) => ({ ...o }));
     },

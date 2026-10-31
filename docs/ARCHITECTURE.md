@@ -126,6 +126,43 @@ focuses the window (the only place Clippy takes focus; he is otherwise `showInac
 it and sends `window:tell`; the renderer switches to Notes and focuses the box. `window:blur`
 gives focus back on Escape. Auto-collapse is held off while the box has focus or text.
 
+## Voice
+
+Speech runs on the PC, in `main/voice/`:
+
+- `models.ts`: Whisper base.en (int8) and Kokoro v1.0, sherpa-onnx's packaging from its GitHub
+  releases, downloaded on first use into `<data dir>/voice/<model>/` and unpacked with Windows'
+  own `tar.exe` (only the files used). `ready.json`, written last, is what counts as installed.
+- `voiceChild.ts` (utility process, `out/main/voiceChild.js`): loads the models on first use
+  (`sherpa-onnx-node` 1.13, the last line that still phonemizes unknown words with espeak-ng;
+  2.x skips them) and runs one job at a time: transcribe (Ogg Opus or 16 kHz PCM; recordings
+  over 28 s are cut at their quietest moment, `splitForWhisper`) or speak (Ogg Opus or WAV,
+  speaker 3 = `af_heart`). TTS asks for `enableExternalBuffer: false`: Electron's V8 memory
+  cage refuses buffers allocated outside it.
+- `voiceProcess.ts`: `VoiceEngine` forks the child on demand, queues jobs, gives up on one after
+  3 minutes, and kills the child after 60 s idle, which is what frees its memory.
+- `voice.ts`: `Voice`, the status (`missing` / `downloading` / `ready` / `error`, pushed as
+  `voice:status`), and the calls the channels use. Use before the models are here throws
+  `VoiceNotReadyError` and starts the download.
+- `ogg.ts` (pure) muxes and demuxes Ogg Opus; `audio.ts` encodes and decodes it with libopus
+  (`@evan/opus`), 24 kbit/s voice, 20 ms frames.
+- `speech.ts` (pure): `speakableText` (markdown, links and emoji out), the length limits (phone
+  700, desk 4000 characters), `cleanTranscript`.
+
+Telegram: a `voice` (or `audio`) message is fetched (`getFile` + the file URL), transcribed and
+handled as that text would be (reply-to answers, button answers, else a brain turn with
+`VOICE_NOTE_HINT` so the reply reads well aloud). The brain's reply goes back by `sendVoice`
+(multipart) with the text as caption; too long to say, or the voice failed, it is sent as text.
+A note with `voice: true` (`NewMessageInput.voice`, column `voice`, schema version 8) is spoken
+before it enters the send queue and mirrored as a voice note.
+
+Desk: `VoiceProvider` (renderer) holds the status and one shared player. `SpeakButton` asks
+`voiceSpeak` for a WAV. The Tell box records with `getUserMedia` into a 16 kHz `AudioContext`
+(a ScriptProcessor: the CSP allows no worklet module) and sends the samples to `voiceTranscribe`;
+the transcript is sent like typed text. Holding the hotkey: every press bumps `tellPresses`; if no
+`keyup` arrives within `HOLD_MS` (300 ms) it records until one does. A tap still just focuses
+the box. Packaging unpacks `sherpa-onnx-*` and `@evan/opus` from the asar (native files).
+
 ## Standing orders
 
 A standing order (`StandingOrder`, table `standing_orders`, schema version 5; routes `GET/POST

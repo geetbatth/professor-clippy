@@ -39,6 +39,10 @@ describe('IPC channels', () => {
       'telegramSendTest',
       'telegramStatus',
       'telegramUnpair',
+      'voiceDownload',
+      'voiceSpeak',
+      'voiceStatus',
+      'voiceTranscribe',
       'writePage',
     ]);
     expectTypeOf<keyof typeof IpcInvoke>().toEqualTypeOf<keyof ClippyBackend>();
@@ -57,6 +61,7 @@ describe('IPC channels', () => {
       'page:deleted',
       'settings:changed',
       'theme:system',
+      'voice:status',
     ]);
     expectTypeOf<(typeof IpcEvents)[keyof typeof IpcEvents]>().toEqualTypeOf<ClippyEvent>();
   });

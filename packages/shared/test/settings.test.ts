@@ -19,6 +19,8 @@ describe('Settings', () => {
       autoStart: true,
       allowPowerActions: false,
       phoneApprovals: false,
+      voiceEnabled: true,
+      voiceReplies: 'voice-notes',
       theme: 'classic',
       followSystemDark: false,
       darkTheme: 'night',

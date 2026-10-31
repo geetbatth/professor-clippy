@@ -32,6 +32,7 @@ export const SECTION_GROUPS: readonly { label?: string; sections: readonly Secti
     label: 'This PC',
     sections: [
       { id: 'look', icon: '🎨', title: 'Look' },
+      { id: 'voice', icon: '🎙️', title: 'Voice' },
       { id: 'pc', icon: '🖥️', title: 'Windows & hotkeys' },
     ],
   },
@@ -57,6 +58,7 @@ function useCounts(api: ClippyWindowApi): Counts {
     // The same list History shows (dealt-with notes, chat left out).
     void api.listMessages({ state: 'done' }).then((list) => set({ historyCount: list.filter((m) => m.kind !== 'chat').length }), ignore);
     void api.hotkeyStatus().then((h) => set({ hotkeyOk: h.ok }), ignore);
+    void api.voiceStatus().then((voice) => set({ voice }), ignore);
     return () => {
       live = false;
     };
