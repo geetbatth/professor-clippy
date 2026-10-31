@@ -451,3 +451,7 @@ local API), `brain\` (the brain's MCP config) and `hook-state.json`.
 - **Checked by hand, not by the automated tests:** hiding behind a real fullscreen app (a game,
   a video, a slideshow) and dragging mini Clippy with a real mouse, including a new message
   arriving mid-drag.
+
+## License
+
+[MIT](LICENSE).
