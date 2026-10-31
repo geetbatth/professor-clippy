@@ -91,8 +91,32 @@ export interface TelegramStatusSnapshot {
   botUsername?: string;
 }
 
+/** Clippy's ears and voice, as the channel uses them (`Voice` in the app). */
+export interface TelegramVoice {
+  enabled(): boolean;
+  /** Speak every chat reply, not only replies to voice notes (the `voiceReplies` setting). */
+  alwaysReply(): boolean;
+  /** What was said in an Ogg Opus voice note; rejects with a message fit for the user. */
+  transcribe(ogg: Uint8Array): Promise<string>;
+  /** `text` as a voice note, or undefined when it is too long or has nothing to say aloud. */
+  speak(text: string): Promise<{ audio: Uint8Array; seconds: number } | undefined>;
+}
+
+/** Telegram's caption limit (characters, after entities are parsed). */
+export const CAPTION_MAX = 1024;
+
+/** Told to the brain with a transcribed voice note, so its reply reads well aloud. */
+export const VOICE_NOTE_HINT =
+  '(Sent as a voice note and transcribed; your reply is read aloud to them as a voice note, so keep it short and plain: no lists, tables, links or emoji.)';
+
+/** Told to the brain with typed text when every reply is spoken (`voiceReplies: 'always'`). */
+export const SPOKEN_REPLY_HINT =
+  '(Your reply is read aloud to them as a voice note, so keep it short and plain: no lists, tables, links or emoji.)';
+
 export interface TelegramDeps {
   store: Store;
+  /** Voice notes in and out; without it a voice message gets "I can only read text". */
+  voice?: TelegramVoice;
   bus: Bus;
   asks: Asks;
   brain: { ask(text: string, opts?: { channel?: Channel }): Promise<BrainReply>; newChat(): void };
@@ -349,12 +373,47 @@ export class Telegram {
     if (!this.#fromPaired(msg.chat)) return; // a stranger: ignored, never answered
     const chatId = msg.chat.id;
     const text = msg.text?.trim();
+    const audio = msg.voice ?? msg.audio;
+    if (!text && audio) return this.#onVoice(chatId, msg, audio.file_id);
     if (!text) {
-      this.#sendHtml(chatId, '📎 I can only read text, I’m afraid.');
+      this.#sendHtml(chatId, '📎 I can only read text and listen to voice notes, I’m afraid.');
       return;
     }
     if (text.startsWith('/')) return this.#command(chatId, text);
+    return this.#onText(chatId, msg, text, false);
+  }
 
+  /** A voice note: transcribed on this PC, then handled exactly like the same words typed. */
+  async #onVoice(chatId: number, msg: TgMessage, fileId: string): Promise<void> {
+    const voice = this.#d.voice;
+    if (!voice?.enabled()) {
+      this.#sendHtml(chatId, '📎 Voice notes are turned off on the PC (Settings → Voice). Send me text instead.');
+      return;
+    }
+    const stopTyping = this.#startTyping(chatId);
+    let text: string;
+    try {
+      const file = await this.#api.getFile(fileId, this.#stop.signal);
+      if (!file.file_path) throw new Error('Telegram did not give the voice note’s file.');
+      text = (await voice.transcribe(await this.#api.downloadFile(file.file_path, this.#stop.signal))).trim();
+    } catch (err) {
+      stopTyping();
+      if (!this.#running) return;
+      this.#log('telegram: voice note not transcribed', err);
+      const why = err instanceof TelegramApiError || !(err instanceof Error) ? 'I couldn’t fetch it from Telegram.' : err.message;
+      this.#sendHtml(chatId, `📎 I couldn’t listen to that voice note. ${escapeClipped(why, 300)}`);
+      return;
+    }
+    stopTyping();
+    if (!text) {
+      this.#sendHtml(chatId, '📎 I couldn’t make out any words in that voice note. Try again, a little closer to the mic?');
+      return;
+    }
+    return this.#onText(chatId, msg, text, true);
+  }
+
+  /** Typed text, or what a voice note said (`spoken`): an answer, or chat for the brain. */
+  async #onText(chatId: number, msg: TgMessage, text: string, spoken: boolean): Promise<void> {
     const { store, asks } = this.#d;
     const replyTo = msg.reply_to_message?.message_id;
     const quoted = replyTo === undefined ? undefined : store.findMessageByTgMsgId(replyTo);
@@ -382,14 +441,19 @@ export class Telegram {
     }
 
     // Anything else is chat for the brain (one shared session with the desk and WhatsApp).
-    store.createMessage({ kind: 'chat', role: 'user', sender: 'user', body: text, state: 'done' });
-    const prompt = quoted ? `(Replying to your earlier message: “${quoted.body}”)\n${text}` : text;
+    store.createMessage({ kind: 'chat', role: 'user', sender: 'user', body: spoken ? `🎙 ${text}` : text, state: 'done' });
+    // A voice note is answered aloud; so is everything when the user wants every reply spoken.
+    const voice = this.#d.voice;
+    const aloud = spoken || (voice?.enabled() === true && voice.alwaysReply());
+    const said = spoken ? `${VOICE_NOTE_HINT}\n${text}` : aloud ? `${SPOKEN_REPLY_HINT}\n${text}` : text;
+    const prompt = quoted ? `(Replying to your earlier message: “${quoted.body}”)\n${said}` : said;
     const stopTyping = this.#startTyping(chatId);
     void this.#d.brain.ask(prompt, { channel: 'telegram' }).then(
-      (reply) => {
-        stopTyping();
-        if (reply.message) this.#sendReply(chatId, reply.message.body, reply.message);
+      async (reply) => {
+        if (reply.message && aloud) await this.#sendSpokenReply(chatId, reply.message.body, reply.message);
+        else if (reply.message) this.#sendReply(chatId, reply.message.body, reply.message);
         else this.#sendReply(chatId, `📎 ${reply.error ?? 'Clippy could not answer just now.'}`);
+        stopTyping();
       },
       (err) => {
         stopTyping();
@@ -503,20 +567,50 @@ export class Telegram {
     if (!this.#running) return;
     // Same rule as WhatsApp (notes and asks), plus fired reminders: no Worker sends them here.
     // Desk chat is not mirrored; replies to Telegram chat are sent from #onMessage.
-    if (m.kind === 'note' || m.kind === 'ask') this.#mirror(m.id);
+    if (m.kind === 'note' && m.voice && this.#d.voice?.enabled()) void this.#mirrorSpoken(m);
+    else if (m.kind === 'note' || m.kind === 'ask') this.#mirror(m.id);
     else if (m.kind === 'reminder') {
       if (m.missed) this.#collectMissed(m.id);
       else this.#mirror(m.id);
     }
   }
 
-  #mirror(messageId: string): void {
+  /**
+   * A note to be read aloud: spoken first (outside the send queue, it takes seconds), then sent
+   * as a voice note with the note as its caption. Too long to say, or the voice failed: as text.
+   */
+  async #mirrorSpoken(m: Message): Promise<void> {
+    let spoken: { audio: Uint8Array; seconds: number } | undefined;
+    try {
+      spoken = await this.#d.voice?.speak([m.title, m.body].filter(Boolean).join('. '));
+    } catch (err) {
+      this.#log(`telegram: note ${m.id} not spoken; sending text`, err);
+    }
+    this.#mirror(m.id, spoken);
+  }
+
+  #mirror(messageId: string, spoken?: { audio: Uint8Array; seconds: number }): void {
+    let textSent = false; // a retry after the voice note failed must not send the text twice
     this.#post(`send ${messageId}`, async (signal) => {
       const chatId = this.#d.chatId();
       const m = this.#d.store.getMessage(messageId);
       // Still worth sending? (Paired, not sent yet, not dealt with in the meantime.)
       if (chatId === undefined || !m || m.tgMsgId !== undefined) return;
       if (m.kind === 'ask' ? m.answer !== undefined : m.state === 'done') return;
+      if (spoken) {
+        const html = formatForTelegram(m);
+        const fits = html.replace(/<[^>]+>/g, '').length <= CAPTION_MAX;
+        if (!fits && !textSent) {
+          await this.#sendMessage({ chat_id: chatId, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true } }, signal);
+          textSent = true;
+        }
+        const sent = await this.#api.sendVoice(
+          { chat_id: chatId, voice: spoken.audio, duration: Math.ceil(spoken.seconds), ...(fits && { caption: html, parse_mode: 'HTML' }) },
+          signal,
+        );
+        this.#d.store.updateMessage(m.id, { tgMsgId: sent.message_id });
+        return;
+      }
       const keyboard = m.kind === 'ask' ? askKeyboard(m) : undefined;
       const sent = await this.#sendMessage(
         {
@@ -592,6 +686,32 @@ export class Telegram {
     });
   }
 
+  /**
+   * A reply to a voice note: a voice note back, with the text as its caption (or as a message
+   * before it when it is too long for one). Too long to speak, or the voice failed: text only.
+   */
+  async #sendSpokenReply(chatId: number, text: string, replyTo: Message): Promise<void> {
+    let spoken: { audio: Uint8Array; seconds: number } | undefined;
+    try {
+      spoken = await this.#d.voice?.speak(text);
+    } catch (err) {
+      this.#log('telegram: voice reply not spoken; sending text', err);
+    }
+    if (!spoken) return this.#sendReply(chatId, text, replyTo);
+    const caption = formatChatCaption(text);
+    if (caption === undefined) this.#sendReply(chatId, text, replyTo);
+    const voice = spoken;
+    this.#post('send voice reply', async (signal) => {
+      const sent = await this.#api.sendVoice(
+        { chat_id: chatId, voice: voice.audio, duration: Math.ceil(voice.seconds), ...(caption !== undefined && { caption, parse_mode: 'HTML' }) },
+        signal,
+      );
+      if (caption !== undefined && this.#d.store.getMessage(replyTo.id)?.tgMsgId === undefined) {
+        this.#d.store.updateMessage(replyTo.id, { tgMsgId: sent.message_id });
+      }
+    });
+  }
+
   #sendHtml(chatId: number, html: string): void {
     this.#post('send', async (signal) => {
       await this.#sendMessage({ chat_id: chatId, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true } }, signal);
@@ -649,6 +769,12 @@ export class Telegram {
     if (this.#d.log) this.#d.log(line);
     else console.info(`[clippy] ${line}`);
   }
+}
+
+/** A chat reply as an HTML voice-note caption, or undefined when it doesn't fit in one. */
+export function formatChatCaption(text: string): string | undefined {
+  // The limit counts the text Telegram shows, not the escaping around it.
+  return text.length <= CAPTION_MAX ? escapeHtml(text) : undefined;
 }
 
 /** Resolve after `ms`, or as soon as `signal` aborts. */

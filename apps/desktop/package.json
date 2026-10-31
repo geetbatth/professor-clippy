@@ -1,6 +1,6 @@
 {
   "name": "@clippy/desktop",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Professor Clippy desktop app (Electron).",
@@ -18,9 +18,11 @@
   },
   "dependencies": {
     "@clippy/shared": "0.1.0",
+    "@evan/opus": "1.0.3",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "rrule": "2.8.1",
+    "sherpa-onnx-node": "1.13.8",
     "ulid": "3.0.2",
     "ws": "8.22.0",
     "zod": "4.6.7"

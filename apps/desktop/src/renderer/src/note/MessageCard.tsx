@@ -1,6 +1,7 @@
 import type { Message } from '@clippy/shared/schemas';
 import { CardMeta } from './CardMeta';
 import { SnoozeMenu } from './SnoozeMenu';
+import { SpeakButton } from '../voice/SpeakButton';
 
 /** A note or fired reminder on the stack. The agent's text is shown verbatim. */
 export function MessageCard({ m, now, onDone, onSnooze }: { m: Message; now: number; onDone: () => void; onSnooze: (until: number) => void }) {
@@ -19,6 +20,7 @@ export function MessageCard({ m, now, onDone, onSnooze }: { m: Message; now: num
           ✓ Done
         </button>
         <SnoozeMenu onSnooze={onSnooze} />
+        <SpeakButton id={`note-${m.id}`} text={[m.title, m.body].filter(Boolean).join('. ')} />
       </footer>
     </article>
   );

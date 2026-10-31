@@ -7,6 +7,8 @@
  *   the server closes).
  * - `sendMessage` returns increasing `message_id`s; every call is recorded.
  * - `failNext(method, ...)` makes the next calls of a method fail with a given status/body.
+ * - Voice: `voice(bytes)` sends a voice message whose file `getFile` + `/file/bot<token>/...`
+ *   serve; `sendVoice` takes a multipart upload (its file is recorded as `{ bytes, filename }`).
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -40,6 +42,8 @@ export class FakeTelegram {
   #delays = new Map<string, number[]>();
   /** Other bot tokens this server answers for (a second bot). */
   readonly #tokens = new Set<string>();
+  /** Files served at `/file/bot<token>/voice/<file_id>.oga`. */
+  readonly files = new Map<string, Uint8Array>();
   #me = { id: 7000001, is_bot: true, first_name: 'Professor Clippy', username: 'ProfessorClippyBot' };
 
   private constructor(token: string) {
@@ -103,6 +107,22 @@ export class FakeTelegram {
     });
   }
 
+  /** A private voice message from the user, its audio served by `getFile`. */
+  voice(bytes: Uint8Array, options: { chatId?: number } = {}): TgUpdate {
+    const chatId = options.chatId ?? 4242;
+    const fileId = `F${this.#nextMessageId}`;
+    this.files.set(fileId, bytes);
+    return this.push({
+      message: {
+        message_id: this.#nextMessageId++,
+        date: 1,
+        chat: { id: chatId, type: 'private', first_name: 'Geet' },
+        from: { id: chatId, first_name: 'Geet' },
+        voice: { file_id: fileId, mime_type: 'audio/ogg', duration: 2, file_size: bytes.length },
+      },
+    });
+  }
+
   /** A tap on an inline button of message `messageId`. */
   tap(data: string, messageId: number, options: { chatId?: number; fromId?: number; type?: string } = {}): TgUpdate {
     const chatId = options.chatId ?? 4242;
@@ -142,6 +162,15 @@ export class FakeTelegram {
 
   async #handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://x');
+    const file = /^\/file\/bot([^/]+)\/voice\/([^/]+)\.oga$/.exec(url.pathname);
+    if (file) {
+      const bytes = file[1] === this.token ? this.files.get(file[2]!) : undefined;
+      this.calls.push({ token: file[1]!, method: 'file', params: { path: url.pathname }, at: Date.now() });
+      if (!bytes) return this.#reply(res, 404, { ok: false, error_code: 404, description: 'Not Found' });
+      res.writeHead(200, { 'content-type': 'application/octet-stream' });
+      res.end(Buffer.from(bytes));
+      return;
+    }
     const m = /^\/bot([^/]+)\/(\w+)$/.exec(url.pathname);
     if (!m) return this.#reply(res, 404, { ok: false, error_code: 404, description: 'Not Found' });
     const [, token, method] = m as unknown as [string, string, string];
@@ -149,7 +178,13 @@ export class FakeTelegram {
     if (req.method === 'POST') {
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk as Buffer);
-      if (chunks.length) params = { ...params, ...(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>) };
+      const type = req.headers['content-type'] ?? '';
+      if (chunks.length && type.startsWith('multipart/form-data')) {
+        const form = await new Response(Buffer.concat(chunks), { headers: { 'content-type': type } }).formData();
+        for (const [k, v] of form) {
+          params[k] = typeof v === 'string' ? v : { bytes: new Uint8Array(await v.arrayBuffer()), filename: v.name, type: v.type };
+        }
+      } else if (chunks.length) params = { ...params, ...(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>) };
     }
     if (token !== this.token && !this.#tokens.has(token)) {
       this.wrongToken.push(method);
@@ -178,6 +213,13 @@ export class FakeTelegram {
         return this.#reply(res, 200, {
           ok: true,
           result: { message_id: this.#nextMessageId++, date: 1, chat: { id: params.chat_id, type: 'private' }, text: params.text },
+        });
+      case 'getFile':
+        return this.#reply(res, 200, { ok: true, result: { file_id: params.file_id, file_path: `voice/${String(params.file_id)}.oga` } });
+      case 'sendVoice':
+        return this.#reply(res, 200, {
+          ok: true,
+          result: { message_id: this.#nextMessageId++, date: 1, chat: { id: Number(params.chat_id), type: 'private' } },
         });
       case 'editMessageText':
         return this.#reply(res, 200, { ok: true, result: { message_id: params.message_id, chat: { id: params.chat_id, type: 'private' }, text: params.text } });

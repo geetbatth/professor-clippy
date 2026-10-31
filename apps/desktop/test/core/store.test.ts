@@ -257,12 +257,12 @@ describe('Store on disk', () => {
   it('migrates once and persists data and the FTS index across reopen', () => {
     const path = join(dir, 'clippy.db');
     const first = new Store({ path });
-    expect(first.schemaVersion).toBe(7);
+    expect(first.schemaVersion).toBe(8);
     const m = first.createMessage({ kind: 'note', body: 'persist me please', sender: 's' });
     first.close();
 
     const second = new Store({ path });
-    expect(second.schemaVersion).toBe(7);
+    expect(second.schemaVersion).toBe(8);
     expect(second.getMessage(m.id)).toEqual(m);
     expect(second.listMessages({ q: 'persist' }).map((x) => x.id)).toEqual([m.id]);
     second.close();
@@ -284,10 +284,18 @@ describe('Store on disk', () => {
       PRAGMA user_version = 1;`);
     v1.close();
     const store = new Store({ path });
-    expect(store.schemaVersion).toBe(7);
+    expect(store.schemaVersion).toBe(8);
     expect(store.getMessage('01ARZ3NDEKTSV4RRFFQ69G5FAV')?.body).toBe('old');
     store.createMessage({ kind: 'reminder', body: 'new', sender: 's', reminderId: 'R' });
     expect(store.findLatestReminderMessage('R')?.body).toBe('new');
+    store.close();
+  });
+
+  it('remembers a note that is to be read aloud (version 8)', () => {
+    const store = new Store({ path: join(dir, 'voice.db') });
+    expect(store.createMessage({ kind: 'note', body: 'plain', sender: 's' })).not.toHaveProperty('voice');
+    const spoken = store.createMessage({ kind: 'note', body: 'say it', sender: 's', voice: true });
+    expect(store.getMessage(spoken.id)?.voice).toBe(true);
     store.close();
   });
 
@@ -400,11 +408,11 @@ describe('Store on disk', () => {
     old.close();
     // Rewind to what a version-4 database looks like: no orders table, no order_id column.
     const db = new DatabaseSync(path);
-    db.exec('DROP TABLE pages; DROP TABLE watches; ALTER TABLE messages DROP COLUMN event; DROP TABLE standing_orders; ALTER TABLE messages DROP COLUMN order_id; PRAGMA user_version = 4;');
+    db.exec('ALTER TABLE messages DROP COLUMN voice; DROP TABLE pages; DROP TABLE watches; ALTER TABLE messages DROP COLUMN event; DROP TABLE standing_orders; ALTER TABLE messages DROP COLUMN order_id; PRAGMA user_version = 4;');
     db.close();
 
     const store = new Store({ path });
-    expect(store.schemaVersion).toBe(7);
+    expect(store.schemaVersion).toBe(8);
     expect(store.getMessage(m.id)).toEqual(m);
     expect(store.insertOrder('say yes').text).toBe('say yes');
     expect(store.getMessage(m.id)).not.toHaveProperty('orderId');
@@ -420,11 +428,11 @@ describe('Store on disk', () => {
     old.close();
     // Rewind to what a version-6 database looks like: no pages table.
     const db = new DatabaseSync(path);
-    db.exec('DROP TABLE pages; PRAGMA user_version = 6;');
+    db.exec('ALTER TABLE messages DROP COLUMN voice; DROP TABLE pages; PRAGMA user_version = 6;');
     db.close();
 
     const store = new Store({ path });
-    expect(store.schemaVersion).toBe(7);
+    expect(store.schemaVersion).toBe(8);
     expect(store.getMessage(m.id)).toEqual(m);
     expect(store.listActiveOrders()).toEqual([order]);
     expect(store.listActiveWatches()).toEqual([watch]);

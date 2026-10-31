@@ -24,7 +24,13 @@ files:
   - "!node_modules/react/**"
   - "!node_modules/react-dom/**"
   - "!node_modules/scheduler/**"
-# No native modules (SQLite is Electron's built-in node:sqlite).
+# Speech: sherpa-onnx (prebuilt Node-API addon + onnxruntime DLLs) and libopus. Node-API is
+# ABI-stable, so nothing is rebuilt; native files must sit outside app.asar to be loaded.
+asarUnpack:
+  - node_modules/sherpa-onnx-node/**
+  - node_modules/sherpa-onnx-win-x64/**
+  - node_modules/@evan/opus/**
+# (SQLite is Electron's built-in node:sqlite.)
 npmRebuild: false
 nodeGypRebuild: false
 # The built MCP server and Claude Code hook, run by `node` from Claude Code. The wiring

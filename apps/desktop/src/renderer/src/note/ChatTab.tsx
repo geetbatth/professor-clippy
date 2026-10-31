@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatState } from '../hooks/useChat';
+import { SpeakButton } from '../voice/SpeakButton';
 import './ChatTab.css';
 
 /** Chat with Clippy's brain: bubbles, the reply streaming in, an input box and "New chat". */
@@ -40,6 +41,11 @@ export function ChatTab({ chat }: { chat: ChatState }) {
         {lines.map((m) => (
           <div key={m.id} className={`chat-line chat-line--${m.role === 'user' ? 'user' : 'clippy'}`}>
             <p>{m.body}</p>
+            {m.role !== 'user' && (
+              <div className="reply-tools">
+                <SpeakButton id={`chat-${m.id}`} text={m.body} />
+              </div>
+            )}
           </div>
         ))}
         {chat.streaming !== undefined && (

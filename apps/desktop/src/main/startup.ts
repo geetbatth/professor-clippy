@@ -34,6 +34,8 @@ import type { PowerExecutor } from './power/executor';
 import { RelayManager, type RelayManagerOptions } from './relay';
 import { SettingsStore, type SecretBox } from './settings';
 import { TelegramManager, type TelegramManagerOptions } from './telegram';
+import { PHONE_SPEAK_MAX_CHARS } from './voice/speech';
+import { Voice, type VoiceOptions } from './voice/voice';
 import { Watcher } from './watches';
 
 export interface StartServicesOptions {
@@ -71,6 +73,11 @@ export interface StartServicesOptions {
   brief?: Pick<BriefSchedulerOptions, 'clock'>;
   /** Clock of the old-page archiver (test seam). */
   pageArchive?: { clock?: Clock };
+  /**
+   * Runs the speech models (the voice utility process in the app). Without it, voice is
+   * "not downloaded" and stays so: tests never download or run a model.
+   */
+  voice?: Pick<VoiceOptions, 'engine' | 'onStatus' | 'download' | 'log'>;
   /** Telegram test seams (fake Bot API server, short timings). */
   telegram?: Omit<TelegramManagerOptions, 'store' | 'bus' | 'asks' | 'brain' | 'settings'>;
 }
@@ -88,11 +95,22 @@ export interface Services {
   pageArchiver: { stop(): void };
   relay: RelayManager;
   telegram: TelegramManager;
+  /** Clippy's ears and voice (speech models on this PC). */
+  voice: Voice;
 }
 
 export async function startServices(options: StartServicesOptions): Promise<Services> {
   const settings = await SettingsStore.load(options.settingsFile, { ...(options.secrets && { secrets: options.secrets }) });
   const brainFiles = await writeBrainFiles(options.dataDir, options.mcp);
+  const voice = new Voice({
+    dataDir: options.dataDir,
+    engine: options.voice?.engine ?? { run: () => Promise.reject(new Error('Voice is not available here.')), stop: () => {} },
+    enabled: () => settings.get().voiceEnabled,
+    ...(options.voice?.onStatus && { onStatus: options.voice.onStatus }),
+    ...(options.voice?.download && { download: options.voice.download }),
+    ...(options.voice?.log && { log: options.voice.log }),
+  });
+  if (options.voice) await voice.init();
   const bus = options.bus ?? new Bus();
   // Reminders the scheduler catches up on inside startCore (missed while the app was off):
   // Telegram has no Worker to have sent them, so it gets them once it is listening.
@@ -180,6 +198,12 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
     asks: core.asks,
     brain,
     settings,
+    voice: {
+      enabled: () => settings.get().voiceEnabled,
+      alwaysReply: () => settings.get().voiceReplies === 'always',
+      transcribe: (ogg) => voice.transcribeOgg(ogg),
+      speak: (text) => voice.speak(text, 'ogg', PHONE_SPEAK_MAX_CHARS),
+    },
   });
   telegram.apply();
   telegram.replay(early);
@@ -197,9 +221,10 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
   settings.onChange((next, prev) => {
     relay.apply(next);
     telegram.apply();
+    if (next.voiceEnabled !== prev.voiceEnabled) voice.settingsChanged();
     if (next.briefEnabled !== prev.briefEnabled || next.briefTime !== prev.briefTime || next.briefWeekdaysOnly !== prev.briefWeekdaysOnly) {
       brief.reschedule();
     }
   });
-  return { core, settings, brain, phoneGate, watcher, onboarding, brief, pageArchiver, relay, telegram };
+  return { core, settings, brain, phoneGate, watcher, onboarding, brief, pageArchiver, relay, telegram, voice };
 }

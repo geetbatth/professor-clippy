@@ -18,6 +18,8 @@ export default defineConfig({
           index: 'src/main/index.ts',
           // "Connect Claude Code" installs run in a utility process (see wiringProcess.ts).
           wiringChild: 'src/main/wiringChild.ts',
+          // Speech (sherpa-onnx) runs in a utility process that ends when idle (see voice/voiceProcess.ts).
+          voiceChild: 'src/main/voice/voiceChild.ts',
         },
       },
     },

@@ -9,6 +9,10 @@
 export const TELEGRAM_API_BASE = 'https://api.telegram.org';
 /** Ordinary calls give up after this. */
 export const REQUEST_TIMEOUT_MS = 20_000;
+/** Bots may download files up to this size (Telegram's own limit). */
+export const MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
+/** Uploads and downloads of voice notes get this long. */
+const FILE_TIMEOUT_MS = 60_000;
 /** Extra time a long-poll may take beyond its `timeout`. */
 const LONG_POLL_GRACE_MS = 15_000;
 
@@ -34,7 +38,25 @@ export interface TgMessage {
   chat: TgChat;
   from?: TgUser;
   text?: string;
+  /** A voice message (Ogg Opus). */
+  voice?: TgFileRef & { duration?: number };
+  /** An audio file sent as music; also listened to. */
+  audio?: TgFileRef & { duration?: number };
+  caption?: string;
   reply_to_message?: TgMessage;
+}
+
+export interface TgFileRef {
+  file_id: string;
+  mime_type?: string;
+  file_size?: number;
+}
+
+export interface TgFile {
+  file_id: string;
+  file_size?: number;
+  /** Path for `<base>/file/bot<token>/<file_path>`; valid for at least an hour. */
+  file_path?: string;
 }
 
 export interface TgCallbackQuery {
@@ -61,6 +83,16 @@ export interface SendMessageParams {
   parse_mode?: 'HTML';
   reply_markup?: { inline_keyboard: InlineKeyboardButton[][] };
   link_preview_options?: { is_disabled: boolean };
+}
+
+export interface SendVoiceParams {
+  chat_id: number;
+  /** An Ogg Opus voice note. */
+  voice: Uint8Array;
+  duration?: number;
+  caption?: string;
+  parse_mode?: 'HTML';
+  reply_markup?: { inline_keyboard: InlineKeyboardButton[][] };
 }
 
 export interface EditMessageTextParams {
@@ -168,12 +200,45 @@ export class TelegramApi {
     return this.call('answerCallbackQuery', params, { signal });
   }
 
-  sendChatAction(params: { chat_id: number; action: 'typing' }, signal?: AbortSignal): Promise<true> {
+  /** Send a voice note (multipart upload). */
+  sendVoice(params: SendVoiceParams, signal?: AbortSignal): Promise<TgMessage> {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || k === 'voice') continue;
+      form.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
+    }
+    form.set('voice', new Blob([params.voice as Uint8Array<ArrayBuffer>], { type: 'audio/ogg' }), 'clippy.ogg');
+    return this.call('sendVoice', form, { signal, timeoutMs: FILE_TIMEOUT_MS });
+  }
+
+  getFile(fileId: string, signal?: AbortSignal): Promise<TgFile> {
+    return this.call('getFile', { file_id: fileId }, { signal });
+  }
+
+  /** Download a file `getFile` described (at most {@link MAX_DOWNLOAD_BYTES}). */
+  async downloadFile(filePath: string, signal?: AbortSignal): Promise<Uint8Array> {
+    const url = `${this.#base}/file/bot${this.#token}/${filePath.split('/').map(encodeURIComponent).join('/')}`;
+    const timeout = AbortSignal.timeout(FILE_TIMEOUT_MS);
+    const doFetch = this.#fetch ?? globalThis.fetch;
+    let res: Response;
+    try {
+      res = await doFetch(url, { signal: signal ? AbortSignal.any([timeout, signal]) : timeout });
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      throw new TelegramNetworkError('file download', redactToken(isAbortError(err) ? 'timed out' : errorText(err), this.#token));
+    }
+    if (!res.ok) throw new TelegramApiError('file download', res.status, redactToken(res.statusText || 'failed', this.#token));
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.length > MAX_DOWNLOAD_BYTES) throw new TelegramApiError('file download', 413, 'file is too big');
+    return bytes;
+  }
+
+  sendChatAction(params: { chat_id: number; action: 'typing' | 'record_voice' | 'upload_voice' }, signal?: AbortSignal): Promise<true> {
     return this.call('sendChatAction', params, { signal });
   }
 
   /**
-   * Call `method`: GET with `query` when there is no body, else POST JSON. Resolves with the
+   * Call `method`: GET with `query` when there is no body, else POST JSON (or multipart for a `FormData`). Resolves with the
    * `result`; rejects with {@link TelegramApiError} / {@link TelegramNetworkError} (token
    * redacted), or the abort error when `signal` aborted it.
    */
@@ -191,7 +256,9 @@ export class TelegramApi {
     try {
       res = await doFetch(url, {
         method: body === undefined ? 'GET' : 'POST',
-        ...(body !== undefined && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+        ...(body instanceof FormData
+          ? { body }
+          : body !== undefined && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
         signal,
       });
     } catch (err) {

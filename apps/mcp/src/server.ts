@@ -157,10 +157,17 @@ export function createClippyServer(options: ClippyServerOptions = {}): McpServer
         body: z.string().min(1).describe('The message, shown to the user exactly as written.'),
         title: z.string().optional().describe('Optional short heading.'),
         urgent: z.boolean().optional().describe('Draws more attention (stronger animation). Default false.'),
+        voice: z
+          .boolean()
+          .optional()
+          .describe(
+            "Read it aloud: on the user's phone it arrives as a voice note in Clippy's voice, with the text as its caption. " +
+              'Use when the user asks for a voice message / voice note. Keep such a body short and speakable.',
+          ),
       },
     },
-    async ({ body, title, urgent }) => {
-      const message = await withClient((c) => c.postMessage({ body, title, urgent, sender: sender(), project }));
+    async ({ body, title, urgent, voice }) => {
+      const message = await withClient((c) => c.postMessage({ body, title, urgent, sender: sender(), project, ...(voice && { voice }) }));
       return ok(`Left the message on Professor Clippy's sticky note (id ${message.id}).`);
     },
   );

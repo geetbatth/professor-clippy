@@ -32,6 +32,19 @@ that have waited less than an hour are sent; older ones stay on the desk.
   "remind me at 3 to call Dave" and Enter; his reply shows under the box (× clears it). Escape
   tucks him away again. It is the same conversation as the **Clippy** tab. If the hotkey is
   taken by another app, Settings says so.
+- **Voice** (Settings → Voice, on by default). At the desk, click 🎙 next to the Tell box, or
+  *hold* the Tell hotkey, and talk; let go (or click ■) to send. Your words go to Clippy exactly
+  as if typed, and he answers in text. The 🔈 on his replies and on notes reads them aloud; he
+  never speaks unless you click it. On Telegram, send him a voice note: he answers with one of
+  his own, the text as its caption (replies too long to say, over about 700 characters, come as
+  text). Settings → Voice → "Voice replies on my phone" → **Always** makes every reply he sends
+  you there a voice note, typed messages included. A spoken answer to a waiting question ("yes") answers it like typing it would. Agents
+  can send you a voice note too: `leave_message` with `voice: true`. Everything runs on this PC:
+  Whisper base.en hears, Kokoro's "Heart" voice speaks (via sherpa-onnx). The two models (about
+  560 MB) download once, the first time you use voice or from Settings → Voice. They are loaded
+  only while Clippy is listening or speaking, in a process that ends a minute after the last
+  job, which gives the memory (about 400 to 700 MB) back. English only. WhatsApp voice notes are
+  not supported yet.
 - **Clippy's own chat brain** is Claude Code running headless with your Claude Code login (no
   API key). It can read files and search the web, manage your messages and reminders, and
   answer agents' questions for you; it cannot edit files or run commands (beyond asking to restart
@@ -450,7 +463,11 @@ local API), `brain\` (the brain's MCP config) and `hook-state.json`.
   error.
 - **Checked by hand, not by the automated tests:** hiding behind a real fullscreen app (a game,
   a video, a slideshow) and dragging mini Clippy with a real mouse, including a new message
-  arriving mid-drag.
+  arriving mid-drag. Likewise the desk microphone and holding the Tell hotkey to talk (tests
+  cover the speech process with fakes; the real models were run inside Electron by hand).
+- **Voice notes are English only, and Telegram only.** WhatsApp voice notes would need the
+  Worker to fetch and upload media, and the Worker passes only text to the PC for now. The model download
+  comes from sherpa-onnx's GitHub releases.
 
 ## License
 
