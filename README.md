@@ -2,6 +2,8 @@
 
 # Professor Clippy
 
+**[⬇ Download for Windows](https://github.com/geetbatth/professor-clippy/releases/latest)** · [what you need](#requirements)
+
 A Windows desktop sticky note with a robot professor standing on it: Professor Clippy is a riveted
 steel canister stencilled "PROF. CLIPPY", with a paperclip head in mismatched goggles and a
 mortarboard, robot arms and caster wheels. Your AI agents (Claude Code and
@@ -135,6 +137,14 @@ Design decisions are in [DECISIONS.md](DECISIONS.md); the architecture is in
 
 **Setting it up for real?** Follow [docs/USER-TODO.md](docs/USER-TODO.md), the short checklist
 of everything you do by hand (Meta, Cloudflare, install, Claude Code).
+
+## Download
+
+**[Download the latest installer](https://github.com/geetbatth/professor-clippy/releases/latest)**
+(`Professor-Clippy-Setup-<version>.exe` under **Assets**), run it, and the welcome walks you
+through the rest. You still need Node.js 24+ and Claude Code (below). The installer is not
+code-signed, so Windows SmartScreen will say "Windows protected your PC": click **More info → Run
+anyway**. To build it yourself instead, see [Build and install](#build-and-install).
 
 ## Requirements
 
