@@ -25,3 +25,11 @@ export function applyToStack(stack: readonly Message[], m: Message): Message[] {
 export function isArrival(stack: readonly Message[], m: Message): boolean {
   return belongsOnStack(m) && !stack.some((x) => x.id === m.id);
 }
+
+/**
+ * What "Clear all" takes off the stack: notes and reminders. Questions stay, since an agent may
+ * be blocked waiting for the answer (or a permission decision).
+ */
+export function clearable(stack: readonly Message[]): Message[] {
+  return stack.filter((m) => m.kind !== 'ask');
+}
