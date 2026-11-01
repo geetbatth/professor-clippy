@@ -13,7 +13,7 @@ export function VoiceSection({ settings, update }: SectionProps) {
     <>
       <ToggleSetting name="voiceEnabled" settings={settings} update={update} />
       {settings.voiceEnabled && (
-        <SettingRow label="Voice replies on my phone" hint="My answers come as a voice note, with the text as its caption. Very long ones come as text.">
+        <SettingRow label="Voice replies on my phone" hint="As a voice note, with the text as its caption. Always also reads out every note: agents finishing, the morning brief. Very long ones come as text.">
           <select
             className="field-input setting-select"
             value={settings.voiceReplies}

@@ -868,6 +868,17 @@ hi`, { channel: 'telegram' }]]);
     expect(sends()).toEqual([]);
   });
 
+  it('with voiceReplies always, every note is read aloud (an agent finished, say), but questions stay text', async () => {
+    const v = fakeVoice('', true, true);
+    ctx = await setup({ chatId: ME, voice: v.voice });
+    ctx.store.createMessage({ kind: 'note', title: '✅ agent finished', body: 'Tests pass.', sender: 'claude-code' });
+    await waitFor(() => voiceSends().length === 1, 3000, 'the voice note');
+    expect(v.said).toEqual(['✅ agent finished. Tests pass.']);
+    ctx.asks.create({ question: 'Deploy?', sender: 'agent', options: ['Yes', 'No'] });
+    await waitFor(() => sends().length === 1, 3000, 'the question');
+    expect(voiceSends()).toHaveLength(1);
+  });
+
   it('a voice note too long to speak is mirrored as ordinary text', async () => {
     const v = fakeVoice();
     ctx = await setup({ chatId: ME, voice: v.voice });

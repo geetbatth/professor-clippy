@@ -5,6 +5,8 @@
 
 /** A phone reply longer than this (spoken characters) goes as text only: nobody wants a two-minute robot voice note. */
 export const PHONE_SPEAK_MAX_CHARS = 700;
+/** A note read aloud on the phone may be longer: an agent's "finished" summary often is (about 90 seconds). */
+export const NOTE_SPEAK_MAX_CHARS = 1500;
 /** The desk's speaker button reads at most this much. */
 export const DESK_SPEAK_MAX_CHARS = 4000;
 
