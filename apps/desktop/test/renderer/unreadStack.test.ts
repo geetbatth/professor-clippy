@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '@clippy/shared/schemas';
-import { applyToStack, buildStack, isArrival } from '../../src/renderer/src/note/unreadStack';
+import { applyToStack, buildStack, clearable, isArrival } from '../../src/renderer/src/note/unreadStack';
 
 let n = 0;
 function msg(p: Partial<Message>): Message {
@@ -59,5 +59,18 @@ describe('away-only notes', () => {
     expect(applyToStack([], quiet)).toEqual([]);
     const away = msg({ quietIfActive: true });
     expect(isArrival([], away)).toBe(true);
+  });
+});
+
+describe('clear all', () => {
+  it('clears notes and reminders but leaves questions, which an agent may still be waiting on', () => {
+    const note = msg({});
+    const reminder = msg({ kind: 'reminder' });
+    const ask = msg({ kind: 'ask' });
+    expect(clearable([note, reminder, ask]).map((m) => m.id)).toEqual([note.id, reminder.id]);
+  });
+
+  it('has nothing to clear when only questions are left', () => {
+    expect(clearable([msg({ kind: 'ask' })])).toEqual([]);
   });
 });

@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useNow } from '../hooks/useNow';
 import type { UnreadStack } from '../hooks/useUnread';
 import { AskCard } from './AskCard';
 import { MessageCard } from './MessageCard';
+import { clearable } from './unreadStack';
 import './cards.css';
 
 /**
@@ -25,10 +26,50 @@ export function NotesTab({ stack, footer, onHistory }: { stack: UnreadStack; foo
             )}
           </div>
         ) : (
-          <NoteCards stack={stack} now={now} />
+          <>
+            <ClearAll stack={stack} />
+            <NoteCards stack={stack} now={now} />
+          </>
         )}
       </div>
       {footer}
+    </div>
+  );
+}
+
+/**
+ * "Clear all" above the stack, once there are two or more notes or reminders: one click asks
+ * "Clear N?", the second sends them all to History. Questions stay (an agent may be waiting).
+ */
+function ClearAll({ stack }: { stack: UnreadStack }) {
+  const [confirming, setConfirming] = useState(false);
+  const count = clearable(stack.messages).length;
+  if (count < 2) return null;
+  const label = `${count} notes`;
+  return (
+    <div className="clear-bar">
+      {confirming ? (
+        <>
+          <span>Clear {label}?</span>
+          <button
+            type="button"
+            className="clear-btn clear-btn--yes"
+            onClick={() => {
+              setConfirming(false);
+              void stack.clearAll();
+            }}
+          >
+            Clear
+          </button>
+          <button type="button" className="clear-btn" onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+        </>
+      ) : (
+        <button type="button" className="clear-btn" title="Send every note and reminder to History (questions stay)" onClick={() => setConfirming(true)}>
+          Clear all
+        </button>
+      )}
     </div>
   );
 }

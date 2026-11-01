@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ClippyWindowApi } from '@clippy/shared/ipc';
 import type { Message } from '@clippy/shared/schemas';
-import { applyToStack, buildStack, isArrival } from '../note/unreadStack';
+import { applyToStack, buildStack, clearable, isArrival } from '../note/unreadStack';
 
 export interface UnreadStack {
   messages: Message[];
   markDone(id: string): Promise<void>;
+  /** Dismiss every note and reminder into History (questions stay). */
+  clearAll(): Promise<void>;
   snooze(id: string, until: number): Promise<void>;
   answer(id: string, text: string): Promise<void>;
 }
@@ -53,6 +55,10 @@ export function useUnread(api: ClippyWindowApi, onNew: (m: Message) => void): Un
     },
     [api, setMessages],
   );
+  const clearAll = useCallback(async () => {
+    const done = await Promise.all(clearable(stackRef.current).map((m) => api.markDone(m.id)));
+    setMessages((s) => done.reduce(applyToStack, s));
+  }, [api, setMessages]);
   const snooze = useCallback(
     async (id: string, until: number) => {
       const m = await api.snooze(id, until);
@@ -67,5 +73,5 @@ export function useUnread(api: ClippyWindowApi, onNew: (m: Message) => void): Un
     [api],
   );
 
-  return { messages, markDone, snooze, answer };
+  return { messages, markDone, clearAll, snooze, answer };
 }
