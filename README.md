@@ -38,7 +38,9 @@ that have waited less than an hour are sent; older ones stay on the desk.
   never speaks unless you click it. On Telegram, send him a voice note: he answers with one of
   his own, the text as its caption (replies too long to say, over about 700 characters, come as
   text). Settings → Voice → "Voice replies on my phone" → **Always** makes every reply he sends
-  you there a voice note, typed messages included. A spoken answer to a waiting question ("yes") answers it like typing it would. Agents
+  you there a voice note, typed messages included, and reads out every note too (agents
+  finishing, the morning brief; up to about 1500 characters). Questions and reminders stay text.
+  A spoken answer to a waiting question ("yes") answers it like typing it would. Agents
   can send you a voice note too: `leave_message` with `voice: true`. Everything runs on this PC:
   Whisper base.en hears, Kokoro's "Heart" voice speaks (via sherpa-onnx). The two models (about
   560 MB) download once, the first time you use voice or from Settings → Voice. They are loaded

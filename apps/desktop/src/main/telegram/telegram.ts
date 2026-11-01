@@ -94,12 +94,15 @@ export interface TelegramStatusSnapshot {
 /** Clippy's ears and voice, as the channel uses them (`Voice` in the app). */
 export interface TelegramVoice {
   enabled(): boolean;
-  /** Speak every chat reply, not only replies to voice notes (the `voiceReplies` setting). */
+  /**
+   * Speak every chat reply, not only replies to voice notes, and every note (an agent's "finished"
+   * note, say), not only ones left with `voice: true` (the `voiceReplies` setting).
+   */
   alwaysReply(): boolean;
   /** What was said in an Ogg Opus voice note; rejects with a message fit for the user. */
   transcribe(ogg: Uint8Array): Promise<string>;
-  /** `text` as a voice note, or undefined when it is too long or has nothing to say aloud. */
-  speak(text: string): Promise<{ audio: Uint8Array; seconds: number } | undefined>;
+  /** `text` as a voice note, or undefined when it is too long or has nothing to say aloud. Notes may be longer than replies. */
+  speak(text: string, kind?: 'reply' | 'note'): Promise<{ audio: Uint8Array; seconds: number } | undefined>;
 }
 
 /** Telegram's caption limit (characters, after entities are parsed). */
@@ -567,7 +570,8 @@ export class Telegram {
     if (!this.#running) return;
     // Same rule as WhatsApp (notes and asks), plus fired reminders: no Worker sends them here.
     // Desk chat is not mirrored; replies to Telegram chat are sent from #onMessage.
-    if (m.kind === 'note' && m.voice && this.#d.voice?.enabled()) void this.#mirrorSpoken(m);
+    const voice = this.#d.voice;
+    if (m.kind === 'note' && voice?.enabled() && (m.voice || voice.alwaysReply())) void this.#mirrorSpoken(m);
     else if (m.kind === 'note' || m.kind === 'ask') this.#mirror(m.id);
     else if (m.kind === 'reminder') {
       if (m.missed) this.#collectMissed(m.id);
@@ -582,7 +586,7 @@ export class Telegram {
   async #mirrorSpoken(m: Message): Promise<void> {
     let spoken: { audio: Uint8Array; seconds: number } | undefined;
     try {
-      spoken = await this.#d.voice?.speak([m.title, m.body].filter(Boolean).join('. '));
+      spoken = await this.#d.voice?.speak([m.title, m.body].filter(Boolean).join('. '), 'note');
     } catch (err) {
       this.#log(`telegram: note ${m.id} not spoken; sending text`, err);
     }

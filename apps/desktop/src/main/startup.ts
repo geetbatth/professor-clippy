@@ -34,7 +34,7 @@ import type { PowerExecutor } from './power/executor';
 import { RelayManager, type RelayManagerOptions } from './relay';
 import { SettingsStore, type SecretBox } from './settings';
 import { TelegramManager, type TelegramManagerOptions } from './telegram';
-import { PHONE_SPEAK_MAX_CHARS } from './voice/speech';
+import { NOTE_SPEAK_MAX_CHARS, PHONE_SPEAK_MAX_CHARS } from './voice/speech';
 import { Voice, type VoiceOptions } from './voice/voice';
 import { Watcher } from './watches';
 
@@ -202,7 +202,7 @@ export async function startServices(options: StartServicesOptions): Promise<Serv
       enabled: () => settings.get().voiceEnabled,
       alwaysReply: () => settings.get().voiceReplies === 'always',
       transcribe: (ogg) => voice.transcribeOgg(ogg),
-      speak: (text) => voice.speak(text, 'ogg', PHONE_SPEAK_MAX_CHARS),
+      speak: (text, kind) => voice.speak(text, 'ogg', kind === 'note' ? NOTE_SPEAK_MAX_CHARS : PHONE_SPEAK_MAX_CHARS),
     },
   });
   telegram.apply();
