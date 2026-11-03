@@ -245,6 +245,15 @@ export class ClippyClient {
     });
   }
 
+  /** `POST /power/restart-tailscale`: ask the user to confirm restarting (or starting) Tailscale. Returns at once. */
+  restartTailscale(reason?: string): Promise<PowerRequestResult> {
+    return this.#request(Routes.restartTailscale, {
+      body: reason === undefined ? {} : { reason },
+      schema: PowerRequestResult,
+      timeoutMs: Math.max(POWER_TIMEOUT_MS, this.#timeoutMs),
+    });
+  }
+
   /** `GET /power/apps`: running apps that have a window. */
   listOpenApps(): Promise<OpenApp[]> {
     return this.#request(Routes.listApps, { schema: z.array(OpenApp), timeoutMs: Math.max(POWER_TIMEOUT_MS, this.#timeoutMs) });

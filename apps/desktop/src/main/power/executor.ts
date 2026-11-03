@@ -9,6 +9,7 @@
  * `CLIPPY_POWER_TARGET` environment variable, never pasted into the script.
  */
 import { execFile as nodeExecFile, spawn as nodeSpawn, type ExecFileOptions, type SpawnOptions } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { OpenApp } from '@clippy/shared';
@@ -30,6 +31,18 @@ export interface ProcessInfo {
   windowTitle?: string | undefined;
 }
 
+/** Tailscale on this PC: is it installed, is its Windows service running, and its backend state. */
+export interface TailscaleStatus {
+  installed: boolean;
+  /** The `Tailscale` Windows service. */
+  service: 'running' | 'stopped' | 'starting' | 'missing' | 'other';
+  /** `BackendState` from `tailscale status --json` (Running, Stopped, NeedsLogin, Starting, NoState), when it answered. */
+  backend?: string | undefined;
+}
+
+/** Starting the service: done, or Windows is showing an admin (UAC) prompt on the desk. */
+export type ServiceStart = 'started' | 'needs-approval';
+
 export interface PowerExecutor {
   /** Running processes that have a main window. */
   listOpenApps(): Promise<OpenApp[]>;
@@ -44,6 +57,12 @@ export interface PowerExecutor {
   /** Abort a scheduled restart. */
   abortRestart(): Promise<void>;
   sleep(ms: number): Promise<void>;
+  /** Tailscale's state (never throws for a missing install: `installed: false`). */
+  tailscaleStatus(): Promise<TailscaleStatus>;
+  /** `tailscale up` / `tailscale down` (no admin needed for the signed-in user). */
+  tailscaleCli(command: 'up' | 'down'): Promise<void>;
+  /** Start the `Tailscale` Windows service; without admin rights, ask Windows to elevate (a UAC prompt on the desk). */
+  startTailscaleService(): Promise<ServiceStart>;
   /** Clippy's own process; it and its children are never restarted. */
   readonly self: { pid: number; exePath: string };
 }
@@ -62,6 +81,9 @@ export const unavailableExecutor: PowerExecutor = {
   scheduleRestart: () => Promise.reject(new Error('PC control is not available here')),
   abortRestart: () => Promise.reject(new Error('PC control is not available here')),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  tailscaleStatus: () => Promise.reject(new Error('PC control is not available here')),
+  tailscaleCli: () => Promise.reject(new Error('PC control is not available here')),
+  startTailscaleService: () => Promise.reject(new Error('PC control is not available here')),
   self: { pid: process.pid, exePath: process.execPath },
 };
 
@@ -148,10 +170,41 @@ export interface WindowsExecutorDeps {
   env?: NodeJS.ProcessEnv;
   /** Default: this process. */
   self?: { pid: number; exePath: string };
+  /** Default: `fs.existsSync` (is Tailscale installed?). */
+  fileExists?: (path: string) => boolean;
 }
 
 /** Longest a PowerShell lookup may take. */
 const PS_TIMEOUT_MS = 20_000;
+/** Longest `tailscale up` / `down` may take. */
+const TAILSCALE_TIMEOUT_MS = 30_000;
+
+/** Ask Windows to start the Tailscale service elevated (a UAC prompt on the desk). Fixed script, no input. */
+export const ELEVATE_TAILSCALE_SCRIPT = `${PS_PREAMBLE}Start-Process -FilePath (Join-Path (Join-Path $env:SystemRoot 'System32') 'sc.exe') -ArgumentList 'start','Tailscale' -Verb RunAs -WindowStyle Hidden
+`;
+
+/** `sc query` output → the service state. */
+export function parseServiceState(stdout: string): TailscaleStatus['service'] {
+  const state = /STATE\s*:\s*\d+\s+(\w+)/.exec(stdout)?.[1]?.toUpperCase();
+  if (state === 'RUNNING') return 'running';
+  if (state === 'STOPPED') return 'stopped';
+  if (state === 'START_PENDING') return 'starting';
+  return 'other';
+}
+
+/** `tailscale status --json` output → its BackendState, if it parses. */
+export function parseBackendState(stdout: string): string | undefined {
+  try {
+    const json: unknown = JSON.parse(stdout.replace(/^﻿/, '').trim());
+    const state = (json as { BackendState?: unknown }).BackendState;
+    return typeof state === 'string' ? state : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The text of a failed `execFile` (its stdout and message). */
+const failureText = (err: unknown) => `${String((err as { stdout?: unknown }).stdout ?? '')} ${err instanceof Error ? err.message : String(err)}`;
 
 export function createWindowsExecutor(deps: WindowsExecutorDeps = {}): PowerExecutor {
   const execFile: ExecFileFn = deps.execFile ?? (promisify(nodeExecFile) as unknown as ExecFileFn);
@@ -160,6 +213,9 @@ export function createWindowsExecutor(deps: WindowsExecutorDeps = {}): PowerExec
   const systemRoot = env.SystemRoot ?? env.SYSTEMROOT ?? 'C:\\Windows';
   const powershell = join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   const shutdown = join(systemRoot, 'System32', 'shutdown.exe');
+  const sc = join(systemRoot, 'System32', 'sc.exe');
+  const tailscale = join(env.ProgramFiles ?? env.PROGRAMFILES ?? 'C:\\Program Files', 'Tailscale', 'tailscale.exe');
+  const fileExists = deps.fileExists ?? existsSync;
 
   const runPowerShell = async (script: string, extraEnv: Record<string, string> = {}): Promise<string> => {
     const encoded = Buffer.from(script, 'utf16le').toString('base64');
@@ -208,6 +264,53 @@ export function createWindowsExecutor(deps: WindowsExecutorDeps = {}): PowerExec
       await execFile(shutdown, ['/a'], { windowsHide: true, timeout: PS_TIMEOUT_MS });
     },
     sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    async tailscaleStatus() {
+      if (!fileExists(tailscale)) return { installed: false, service: 'missing' };
+      let service: TailscaleStatus['service'];
+      try {
+        service = parseServiceState(String((await execFile(sc, ['query', 'Tailscale'], { windowsHide: true, timeout: PS_TIMEOUT_MS })).stdout));
+      } catch (err) {
+        // 1060: the service does not exist.
+        service = /\b1060\b/.test(failureText(err)) ? 'missing' : 'other';
+      }
+      let backend: string | undefined;
+      try {
+        backend = parseBackendState(String((await execFile(tailscale, ['status', '--json'], { windowsHide: true, timeout: PS_TIMEOUT_MS })).stdout));
+      } catch (err) {
+        // `tailscale status` exits non-zero while stopped but still prints the JSON.
+        backend = parseBackendState(String((err as { stdout?: unknown }).stdout ?? ''));
+      }
+      return { installed: true, service, backend };
+    },
+    async tailscaleCli(command) {
+      await execFile(tailscale, [command], { windowsHide: true, timeout: TAILSCALE_TIMEOUT_MS });
+    },
+    async startTailscaleService() {
+      try {
+        await execFile(sc, ['start', 'Tailscale'], { windowsHide: true, timeout: PS_TIMEOUT_MS });
+        return 'started';
+      } catch (err) {
+        const text = failureText(err);
+        if (/\b1056\b/.test(text)) return 'started'; // already running
+        if (!/FAILED 5\b|Access is denied/i.test(text)) throw new Error(`sc start Tailscale failed: ${text.trim()}`);
+      }
+      // No admin rights: let Windows ask (UAC). Detached, so a prompt nobody answers holds nothing up.
+      await new Promise<void>((resolve, reject) => {
+        const encoded = Buffer.from(ELEVATE_TAILSCALE_SCRIPT, 'utf16le').toString('base64');
+        const child = spawn(powershell, ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+          env,
+        });
+        child.once('error', reject);
+        child.once('spawn', () => {
+          child.unref();
+          resolve();
+        });
+      });
+      return 'needs-approval';
+    },
     self: deps.self ?? { pid: process.pid, exePath: process.execPath },
   };
 }

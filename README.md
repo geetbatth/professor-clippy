@@ -114,8 +114,14 @@ that have waited less than an hour are sent; older ones stay on the desk.
   restart themselves, like Explorer, are left to it). Windows' own processes, apps running as
   administrator and Clippy himself are refused. A PC restart happens 60 seconds after you confirm,
   with a "Cancel restart" button meanwhile. Each outcome leaves a short "🔁 Restart" note. Only
-  Clippy's brain gets these tools (`list_open_apps`, `restart_app`, `restart_computer`), not your
-  other agents.
+  Clippy's brain gets these tools (`list_open_apps`, `restart_app`, `restart_computer`,
+  `restart_tailscale`), not your other agents.
+- **Restarting or starting Tailscale** (same setting, same confirm-first rule). Say "restart
+  Tailscale" or "Tailscale is down" and he asks first. If Tailscale is connected, Restart
+  disconnects and reconnects it (`tailscale down`, then `up`). If it's disconnected, the question
+  offers Start instead and runs `tailscale up`. If its Windows service has stopped, Start starts the
+  service too. That needs admin rights, so Windows shows its admin (UAC) prompt on the PC and the
+  note asks you to approve it there. If Tailscale needs you to sign in again, the note says so.
 - **Approving agents' permission requests from your phone** (off by default: Settings → Claude
   Code → "Approve agents from my phone", which needs the Claude Code hook on). While you
   are away (the "I count as away after" time, Settings → Phone), a Claude Code agent that stops to ask "allow this

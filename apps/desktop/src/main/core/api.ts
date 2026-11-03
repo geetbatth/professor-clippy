@@ -40,6 +40,7 @@ import {
   PageSenderBody,
   RestartAppBody,
   RestartPcBody,
+  RestartTailscaleBody,
   Routes,
   SnoozeBody,
   type Health,
@@ -191,6 +192,10 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       },
     ],
     [Routes.restartPc, async ({ req }) => ({ status: 202, body: await power().requestRestartPc((await body(req, RestartPcBody)).reason) })],
+    [
+      Routes.restartTailscale,
+      async ({ req }) => ({ status: 202, body: await power().requestRestartTailscale((await body(req, RestartTailscaleBody)).reason) }),
+    ],
     [Routes.listApps, async () => ok(await power().listApps())],
     [
       Routes.requestApproval,

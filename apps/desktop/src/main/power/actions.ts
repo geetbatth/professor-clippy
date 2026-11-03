@@ -1,5 +1,7 @@
 /**
- * Power actions: restarting an app or the PC when the user asks Clippy's brain to (DECISIONS.md, "PC control" 1).
+ * Power actions: restarting an app, Tailscale or the PC when the user asks Clippy's brain to
+ * (DECISIONS.md, "PC control" 1 and 2). Tailscale's question offers Start instead of Restart
+ * when it's down; the action is `restartTailscale` (./tailscale.ts).
  *
  * The brain can only *request* one. A request is an urgent question from `Professor Clippy`
  * ("Restart Google Chrome (chrome.exe, 12 processes)? ...", options Restart / Cancel) and the
@@ -31,6 +33,7 @@ import { ForbiddenError } from '../core/errors';
 import type { Store } from '../core/store';
 import { findApp, restartApp } from './apps';
 import { unavailableExecutor, type PowerExecutor } from './executor';
+import { describeTailscale, restartTailscale } from './tailscale';
 
 /** Sender of the confirmation questions. */
 export const POWER_SENDER = 'Professor Clippy';
@@ -63,18 +66,21 @@ const SHUTDOWN_MESSAGE = 'Professor Clippy is restarting your PC because you ask
 const PendingRequest = z.discriminatedUnion('kind', [
   z.object({ id: z.string(), kind: z.literal('restart-app'), exe: z.string(), label: z.string(), createdAt: z.number() }),
   z.object({ id: z.string(), kind: z.literal('restart-pc'), createdAt: z.number() }),
+  z.object({ id: z.string(), kind: z.literal('restart-tailscale'), createdAt: z.number() }),
   z.object({ id: z.string(), kind: z.literal('cancel-pc-restart'), createdAt: z.number() }),
 ]);
 type PendingRequest = z.infer<typeof PendingRequest>;
+/** What a confirmation question asks for (the pending request minus its id and time). */
+type Confirmable = { kind: 'restart-app'; exe: string; label: string } | { kind: 'restart-pc' } | { kind: 'restart-tailscale' };
 
 /** Is `m` one of the restart questions? Only the app creates those (agents can't set `event` on an ask). */
 export function isPowerConfirmation(m: Pick<Message, 'kind' | 'event'>): boolean {
   return m.kind === 'ask' && m.event === POWER_EVENT;
 }
 
-/** Answers that confirm a restart: Restart, yes, y, ok (trimmed, any case). */
+/** Answers that confirm a restart: Restart, Start (Tailscale's option when it's down), yes, y, ok (trimmed, any case). */
 export function confirmsRestart(answer: string): boolean {
-  return /^(restart|yes|y|ok)$/i.test(answer.trim());
+  return /^(restart|start|yes|y|ok)$/i.test(answer.trim());
 }
 
 export interface PowerActionsOptions {
@@ -136,6 +142,18 @@ export class PowerActions {
     return this.#ask(question, { kind: 'restart-pc' });
   }
 
+  /**
+   * Ask the user to confirm restarting Tailscale (reconnect), or starting it when it's down
+   * (option Start). Throws ForbiddenError while the setting is off, NotFoundError when Tailscale
+   * isn't installed.
+   */
+  async requestRestartTailscale(reason?: string): Promise<PowerRequestResult> {
+    this.#assertAllowed();
+    const { verb, question } = await describeTailscale(this.#exec);
+    const full = `${question}${reasonLine(reason)}`;
+    return this.#ask(full, { kind: 'restart-tailscale' }, verb);
+  }
+
   /** Is `askId` an open restart confirmation (one only the user may answer)? */
   isConfirmation(askId: string): boolean {
     const request = this.#pending().find((r) => r.id === askId);
@@ -168,8 +186,8 @@ export class PowerActions {
     if (!this.#o.allowed()) throw new ForbiddenError(POWER_OFF_MESSAGE);
   }
 
-  #ask(question: string, request: { kind: 'restart-app'; exe: string; label: string } | { kind: 'restart-pc' }): PowerRequestResult {
-    const ask = this.#o.asks.create({ question, options: [RESTART, CANCEL], sender: POWER_SENDER, urgent: true, event: POWER_EVENT });
+  #ask(question: string, request: Confirmable, confirm = RESTART): PowerRequestResult {
+    const ask = this.#o.asks.create({ question, options: [confirm, CANCEL], sender: POWER_SENDER, urgent: true, event: POWER_EVENT });
     this.#add({ ...request, id: ask.id, createdAt: ask.createdAt }, POWER_REQUEST_TTL_MS);
     return { id: ask.id, status: 'awaiting-confirmation', question };
   }
@@ -230,20 +248,30 @@ export class PowerActions {
       this.#track(this.#cancelPcRestart());
       return;
     }
-    const what = request.kind === 'restart-app' ? request.label : 'your PC';
+    const what = request.kind === 'restart-app' ? request.label : request.kind === 'restart-tailscale' ? 'Tailscale' : 'your PC';
     if (this.#clock.now() - request.createdAt > POWER_REQUEST_TTL_MS) {
       this.#note(`The request to restart ${what} expired before you answered (after 10 minutes), so I did nothing. Ask me again if you still want it.`);
       return;
     }
     if (!confirmsRestart(answer)) {
-      this.#note(request.kind === 'restart-app' ? `Cancelled: I left ${what} alone.` : 'Cancelled: your PC stays on.');
+      this.#note(request.kind === 'restart-pc' ? 'Cancelled: your PC stays on.' : `Cancelled: I left ${what} alone.`);
       return;
     }
     if (!this.#o.allowed()) {
       this.#note(`Restarting is turned off in Settings now, so I left ${what} alone.`);
       return;
     }
-    this.#track(request.kind === 'restart-app' ? this.#restartApp(request.exe, request.label) : this.#restartPc());
+    if (request.kind === 'restart-app') this.#track(this.#restartApp(request.exe, request.label));
+    else if (request.kind === 'restart-tailscale') this.#track(this.#restartTailscale());
+    else this.#track(this.#restartPc());
+  }
+
+  async #restartTailscale(): Promise<void> {
+    try {
+      this.#note(await restartTailscale(this.#exec));
+    } catch (err) {
+      this.#note(`I could not restart Tailscale: ${errorText(err)}`);
+    }
   }
 
   async #restartApp(exe: string, label: string): Promise<void> {

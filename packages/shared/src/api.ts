@@ -42,6 +42,7 @@ export interface RouteDef {
  * - `cancelWatch` → 204, no body
  * - `restartApp` (body RestartAppBody) → PowerRequestResult (202): a question the user must confirm
  * - `restartPc` (body RestartPcBody) → PowerRequestResult (202): likewise
+ * - `restartTailscale` (body RestartTailscaleBody) → PowerRequestResult (202): likewise (404 when Tailscale isn't installed)
  * - `listApps` → OpenApp[] (windowed apps)
  * - `requestApproval` (body ApprovalRequestBody) → ApprovalResult (201 when `waiting`, else 200)
  * - `withdrawApproval` → 204, no body (also for an unknown or already closed approval)
@@ -79,6 +80,7 @@ export const Routes = {
   cancelWatch: { method: 'DELETE', path: '/watches/:id' },
   restartApp: { method: 'POST', path: '/power/restart-app' },
   restartPc: { method: 'POST', path: '/power/restart-pc' },
+  restartTailscale: { method: 'POST', path: '/power/restart-tailscale' },
   listApps: { method: 'GET', path: '/power/apps' },
   requestApproval: { method: 'POST', path: '/approvals' },
   withdrawApproval: { method: 'POST', path: '/approvals/:id/withdraw' },
@@ -145,6 +147,10 @@ export type RestartAppBody = z.infer<typeof RestartAppBody>;
 /** `POST /power/restart-pc` body. */
 export const RestartPcBody = z.object({ reason: PowerReason.optional() });
 export type RestartPcBody = z.infer<typeof RestartPcBody>;
+
+/** `POST /power/restart-tailscale` body. */
+export const RestartTailscaleBody = z.object({ reason: PowerReason.optional() });
+export type RestartTailscaleBody = z.infer<typeof RestartTailscaleBody>;
 
 /**
  * A restart request, posted to the user as a question. Nothing happens until they tap Restart

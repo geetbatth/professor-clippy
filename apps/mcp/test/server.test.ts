@@ -477,7 +477,7 @@ describe('set_look', () => {
 });
 
 describe('power tools', () => {
-  const POWER_TOOLS = ['list_open_apps', 'restart_app', 'restart_computer'];
+  const POWER_TOOLS = ['list_open_apps', 'restart_app', 'restart_computer', 'restart_tailscale'];
   const BRAIN_WITH_POWER = { CLIPPY_SENDER: 'clippy-brain', CLIPPY_POWER_TOOLS: '1' };
 
   it('are absent without CLIPPY_POWER_TOOLS=1, even for the brain, and present with it', async () => {
@@ -493,7 +493,7 @@ describe('power tools', () => {
     const { tools } = await client!.listTools();
     expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(POWER_TOOLS));
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
-    for (const t of ['restart_app', 'restart_computer']) {
+    for (const t of ['restart_app', 'restart_computer', 'restart_tailscale']) {
       // The brain must know the user confirms, the tool does not wait, and it should say so.
       expect(byName[t]!.description).toMatch(/returns at once/);
       expect(byName[t]!.description).toMatch(/unless the user taps Restart/);
@@ -539,6 +539,15 @@ describe('power tools', () => {
     const off = await call('restart_computer', { reason: 'updates' });
     expect(off.isError).toBe(true);
     expect(texts(off)[0]).toMatch(/403.*turned off/);
+  });
+
+  it('restart_tailscale posts the request with the reason and returns at once', async () => {
+    const { api } = await setup({ env: BRAIN_WITH_POWER });
+    const r = await call('restart_tailscale', { reason: 'cannot reach my server' });
+    expect(r.isError).toBeFalsy();
+    expect(api.requests.find((q) => q.path === '/power/restart-tailscale')?.body).toEqual({ reason: 'cannot reach my server' });
+    expect(JSON.parse(texts(r)[0]!)).toMatchObject({ status: 'awaiting-confirmation', question: 'Restart Tailscale?' });
+    expect(api.requests.some((q) => q.method === 'GET' && q.path.startsWith('/asks/'))).toBe(false);
   });
 });
 
