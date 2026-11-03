@@ -268,6 +268,59 @@ describe('restart the PC', () => {
   });
 });
 
+describe('restart Tailscale', () => {
+  it('connected: asks Restart / Cancel, then reconnects (down, up) and leaves a note', async () => {
+    const { id, question } = await client.restartTailscale('my server is unreachable');
+    expect(question).toBe(
+      'Restart Tailscale? It disconnects and reconnects, so anything using your tailnet drops for a few seconds. Reason: my server is unreachable',
+    );
+    expect(core.store.getMessage(id)).toMatchObject({ kind: 'ask', options: ['Restart', 'Cancel'], sender: POWER_SENDER, urgent: true, event: 'power-confirmation' });
+    expect(JSON.parse(core.store.getKv(POWER_KV_KEY)!)).toEqual([{ id, kind: 'restart-tailscale', createdAt: T0 }]);
+    expect(actions(fake)).toEqual([]);
+    core.asks.answer(id, 'Restart', 'telegram');
+    await core.power.settled();
+    expect(actions(fake)).toEqual(['tailscale down', 'tailscale up']);
+    expect(lastNote()).toBe("Restarted Tailscale. It's connected again.");
+  });
+
+  it('down: the question offers Start, and Start brings it up', async () => {
+    fake.tailscale = { installed: true, service: 'running', backend: 'Stopped' };
+    const { id } = await client.restartTailscale();
+    expect(core.store.getMessage(id)!.options).toEqual(['Start', 'Cancel']);
+    core.asks.answer(id, 'Start', 'desk');
+    await core.power.settled();
+    expect(actions(fake)).toEqual(['tailscale up']);
+    expect(lastNote()).toBe("Started Tailscale. It's connected.");
+  });
+
+  it('Cancel leaves it alone; Clippy cannot confirm it', async () => {
+    const { id } = await client.restartTailscale();
+    expect((await apiError(client.answerAsk(id, 'Restart', 'clippy')))!.status).toBe(403);
+    core.asks.answer(id, 'Cancel', 'desk');
+    await core.power.settled();
+    expect(actions(fake)).toEqual([]);
+    expect(lastNote()).toBe('Cancelled: I left Tailscale alone.');
+  });
+
+  it('404s when Tailscale is not installed and 403s with the setting off', async () => {
+    fake.tailscale = { installed: false, service: 'missing' };
+    const missing = await apiError(client.restartTailscale());
+    expect(missing!.status).toBe(404);
+    expect(missing!.message).toContain("Tailscale isn't installed");
+    allowed = false;
+    expect((await apiError(client.restartTailscale()))!.status).toBe(403);
+    expect(core.asks.listPending()).toEqual([]);
+  });
+
+  it('a failure ends up in the note', async () => {
+    const { id } = await client.restartTailscale();
+    fake.tailscaleCli = () => Promise.reject(new Error('tailscaled not responding'));
+    core.asks.answer(id, 'yes', 'whatsapp');
+    await core.power.settled();
+    expect(lastNote()).toBe('I could not restart Tailscale: tailscaled not responding');
+  });
+});
+
 describe('isPowerConfirmation', () => {
   it('is an ask with the power-confirmation event, nothing else', () => {
     expect(isPowerConfirmation({ kind: 'ask', event: 'power-confirmation' })).toBe(true);
@@ -278,8 +331,8 @@ describe('isPowerConfirmation', () => {
 });
 
 describe('confirmsRestart', () => {
-  it('is Restart, yes, y or ok, trimmed, any case', () => {
-    for (const yes of ['Restart', 'restart', ' YES ', 'y', 'Ok']) expect(confirmsRestart(yes), yes).toBe(true);
+  it('is Restart, Start, yes, y or ok, trimmed, any case', () => {
+    for (const yes of ['Restart', 'restart', 'Start', ' start ', ' YES ', 'y', 'Ok']) expect(confirmsRestart(yes), yes).toBe(true);
     for (const no of ['Cancel', 'no', 'yes!', 'okay', 'Restart later', '']) expect(confirmsRestart(no), no).toBe(false);
   });
 });

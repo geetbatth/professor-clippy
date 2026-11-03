@@ -39,6 +39,7 @@ describe('Routes', () => {
       'DELETE /watches/:id',
       'POST /power/restart-app',
       'POST /power/restart-pc',
+      'POST /power/restart-tailscale',
       'GET /power/apps',
       'POST /approvals',
       'POST /approvals/:id/withdraw',

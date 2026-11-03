@@ -3,7 +3,7 @@
  * killed, launched or shut down; every call is recorded in `calls`.
  */
 import type { OpenApp } from '@clippy/shared';
-import type { PowerExecutor, ProcessInfo } from '../../src/main/power/executor';
+import type { PowerExecutor, ProcessInfo, ServiceStart, TailscaleStatus } from '../../src/main/power/executor';
 
 export const SELF = { pid: 1000, exePath: 'C:\\Program Files\\Professor Clippy\\Professor Clippy.exe' };
 export const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
@@ -41,6 +41,12 @@ export interface FakeExecutor extends PowerExecutor {
   respawn: ProcessInfo[];
   /** Make `scheduleRestart` / `abortRestart` fail with this. */
   shutdownError?: Error;
+  /** The pretend Tailscale (edit it to set a scene). */
+  tailscale: TailscaleStatus;
+  /** What `startTailscaleService` does: start it, or need an admin prompt. */
+  serviceStart: ServiceStart;
+  /** The backend state `tailscale up` leaves (default Running). */
+  upTo: string;
 }
 
 export function fakeExecutor(processes: ProcessInfo[] = chrome()): FakeExecutor {
@@ -80,9 +86,25 @@ export function fakeExecutor(processes: ProcessInfo[] = chrome()): FakeExecutor 
     async sleep(ms) {
       fake.calls.push(`sleep ${ms}`);
     },
+    tailscale: { installed: true, service: 'running', backend: 'Running' },
+    serviceStart: 'started',
+    upTo: 'Running',
+    async tailscaleStatus() {
+      fake.calls.push('tailscale status');
+      return { ...fake.tailscale };
+    },
+    async tailscaleCli(command) {
+      fake.calls.push(`tailscale ${command}`);
+      fake.tailscale.backend = command === 'up' ? fake.upTo : 'Stopped';
+    },
+    async startTailscaleService() {
+      fake.calls.push('sc start Tailscale');
+      if (fake.serviceStart === 'started') fake.tailscale = { ...fake.tailscale, service: 'running', backend: 'Stopped' };
+      return fake.serviceStart;
+    },
   };
   return fake;
 }
 
 /** The calls that change something on the machine. */
-export const actions = (fake: FakeExecutor) => fake.calls.filter((c) => /^(kill|launch|shutdown)/.test(c));
+export const actions = (fake: FakeExecutor) => fake.calls.filter((c) => /^(kill|launch|shutdown|tailscale (up|down)|sc start)/.test(c));

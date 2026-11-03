@@ -53,6 +53,7 @@ export const BRAIN_CLIPPY_TOOLS = [
   'list_open_apps',
   'restart_app',
   'restart_computer',
+  'restart_tailscale',
   'set_look',
   'write_page',
   'read_page',

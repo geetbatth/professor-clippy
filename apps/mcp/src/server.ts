@@ -657,6 +657,23 @@ export function createClippyServer(options: ClippyServerOptions = {}): McpServer
       },
       async ({ reason }) => requested(await withClient((c) => c.restartPc(reason))),
     );
+
+    server.registerTool(
+      'restart_tailscale',
+      {
+        title: 'Restart or start Tailscale (user confirms)',
+        description:
+          'Ask the user to confirm restarting Tailscale on their PC: if it is connected it disconnects and reconnects; if it is stopped or ' +
+          'disconnected it is started (its Windows service too, which may show a Windows admin prompt on the PC). The question offers ' +
+          'Start instead of Restart when Tailscale is down. Use it when the user asks to restart or start Tailscale, or says Tailscale, ' +
+          'their tailnet or a Tailscale connection is down or not working. Fails if Tailscale is not installed. ' +
+          confirmHint,
+        inputSchema: {
+          reason: z.string().trim().min(1).max(300).optional().describe('Why, in the words of the user; shown on the question.'),
+        },
+      },
+      async ({ reason }) => requested(await withClient((c) => c.restartTailscale(reason))),
+    );
   });
 
   return server;

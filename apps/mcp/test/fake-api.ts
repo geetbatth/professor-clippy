@@ -66,8 +66,8 @@ export async function startFakeApi(appDataDir?: string) {
     if (a === 'power') {
       if (power.mode === 'off') return send(403, { error: 'Restarting apps and the PC is turned off.' });
       if (req.method === 'GET' && id === 'apps') return send(200, [{ name: 'chrome', pid: 4242, title: 'Inbox - Google Chrome' }]);
-      if (req.method === 'POST' && (id === 'restart-app' || id === 'restart-pc')) {
-        const question = id === 'restart-app' ? `Restart ${body.name}?` : 'Restart your PC?';
+      if (req.method === 'POST' && (id === 'restart-app' || id === 'restart-pc' || id === 'restart-tailscale')) {
+        const question = id === 'restart-app' ? `Restart ${body.name}?` : id === 'restart-pc' ? 'Restart your PC?' : 'Restart Tailscale?';
         const m: Message = {
           id: nextId(),
           kind: 'ask',
